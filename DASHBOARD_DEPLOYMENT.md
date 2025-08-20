@@ -2,14 +2,13 @@
 
 This guide will help you deploy your Voice Agents application directly from the Vercel dashboard.
 
-## 🔧 Backend Deployment (Fix Applied)
+## 🔧 Configuration Fixed
 
-The backend configuration has been fixed. The error you encountered was due to an invalid runtime specification.
+Both frontend and backend configurations have been corrected for separate deployment:
 
-### Backend Configuration Fixed
-- ✅ Updated `backend/vercel.json` with correct Vercel syntax
-- ✅ Uses `@vercel/node` runtime
-- ✅ Proper routing configuration
+- ✅ **Backend**: `backend/vercel.json` with correct Node.js runtime
+- ✅ **Frontend**: `frontend/vercel.json` with Vite configuration
+- ✅ **Root**: No root `vercel.json` (not needed for separate deployments)
 
 ## 🚀 Deployment Steps
 
