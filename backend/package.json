@@ -1,0 +1,41 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "imports": {
+    "#controllers/*": "./controllers/*",
+    "#models/*": "./models/*",
+    "#routes/*": "./routes/*",
+    "#utils/*": "./utils/*",
+    "#middlewares/*": "./middlewares/*",
+    "#services/*": "./services/*",
+    "#constants/*": "./constants/*"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "setup-db": "node setup-database.js",
+    "setup-calls": "node setup-calls-table.js",
+    "check-env": "node check-env.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.55.0",
+    "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "livekit-server-sdk": "^2.13.1",
+    "mongoose": "^8.16.4",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}
