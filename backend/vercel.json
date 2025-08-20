@@ -5,6 +5,12 @@
       "runtime": "nodejs18.x"
     }
   },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/index.js"
+    }
+  ],
   "env": {
     "NODE_ENV": "production"
   }
