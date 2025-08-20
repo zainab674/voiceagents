@@ -21,6 +21,7 @@ import {
   Save
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { AGENTS_ENDPOINT } from "@/constants/URLConstant";
 
 const AllAgents = () => {
   const { user } = useAuth();
@@ -85,7 +86,7 @@ const AllAgents = () => {
         return;
       }
 
-      const response = await fetch('http://localhost:4000/api/v1/agents', {
+      const response = await fetch(AGENTS_ENDPOINT, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -130,7 +131,7 @@ const AllAgents = () => {
         return;
       }
 
-      const response = await fetch(`http://localhost:4000/api/v1/agents/${agentId}`, {
+      const response = await fetch(`${AGENTS_ENDPOINT}/${agentId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -188,7 +189,7 @@ const AllAgents = () => {
         return;
       }
 
-      const response = await fetch(`http://localhost:4000/api/v1/agents/${editingAgent.id}`, {
+      const response = await fetch(`${AGENTS_ENDPOINT}/${editingAgent.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

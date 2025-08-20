@@ -19,6 +19,7 @@ import {
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { ANALYTICS_ENDPOINT } from "@/constants/URLConstant";
 
 const Analytics = () => {
   const { user } = useAuth();
@@ -59,7 +60,7 @@ const Analytics = () => {
         return;
       }
 
-      const response = await fetch('http://localhost:4000/api/v1/analytics/agents', {
+      const response = await fetch(`${ANALYTICS_ENDPOINT}/agents`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -67,19 +68,7 @@ const Analytics = () => {
 
       if (response.ok) {
         const result = await response.json();
-        const agentsWithAnalytics = result.data.agents.map(agent => ({
-          ...agent,
-          totalCalls: agent.analytics?.totalCalls || 0,
-          successfulCalls: agent.analytics?.successfulCalls || 0,
-          failedCalls: agent.analytics?.failedCalls || 0,
-          successRate: agent.analytics?.successRate || 0,
-          avgCallDuration: agent.analytics?.avgCallDuration || "0:00",
-          totalCallTime: agent.analytics?.totalCallTime || "0:00:00",
-          conversionRate: agent.analytics?.conversionRate || 0,
-          lastActive: agent.analytics?.lastActive || 'Never',
-          status: agent.analytics?.status || 'inactive'
-        }));
-        setAgentAnalytics(agentsWithAnalytics);
+        setAgentAnalytics(result.data || []);
       } else {
         console.error('Failed to fetch agent analytics:', response.status);
       }
@@ -99,7 +88,7 @@ const Analytics = () => {
         return;
       }
 
-      const response = await fetch('http://localhost:4000/api/v1/analytics/calls?period=7', {
+      const response = await fetch(`${ANALYTICS_ENDPOINT}/calls?period=7`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

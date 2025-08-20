@@ -24,6 +24,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { AGENTS_ENDPOINT, ANALYTICS_ENDPOINT } from "@/constants/URLConstant";
 
 const Dashboard = () => {
   const { user } = useAuth();
@@ -69,7 +70,7 @@ const Dashboard = () => {
       }
 
       console.log('Fetching agents with token length:', token.length);
-      const response = await fetch('http://localhost:4000/api/v1/agents', {
+      const response = await fetch(AGENTS_ENDPOINT, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -103,7 +104,7 @@ const Dashboard = () => {
         return;
       }
 
-      const response = await fetch('http://localhost:4000/api/v1/analytics/agents', {
+      const response = await fetch(`${ANALYTICS_ENDPOINT}/agents`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -143,7 +144,7 @@ const Dashboard = () => {
         return;
       }
 
-      const response = await fetch('http://localhost:4000/api/v1/analytics/calls?period=7', {
+      const response = await fetch(`${ANALYTICS_ENDPOINT}/calls?period=7`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

@@ -39,6 +39,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { AGENTS_ENDPOINT } from "@/constants/URLConstant";
 
 const AICallInterface = () => {
   const [isCallActive, setIsCallActive] = useState(false);
@@ -97,7 +98,7 @@ const AICallInterface = () => {
         return;
       }
       
-      const response = await fetch('http://localhost:4000/api/v1/agents', {
+      const response = await fetch(AGENTS_ENDPOINT, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

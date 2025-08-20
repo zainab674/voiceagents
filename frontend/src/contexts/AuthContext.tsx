@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
+import { API_BASE_URL, AUTH_ENDPOINT } from "@/constants/URLConstant";
 
 interface User {
   id: string;
@@ -32,9 +33,6 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
-// API base URL
-const API_BASE_URL = 'http://localhost:4000/api/v1';
-
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,7 +45,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (session?.user) {
           // Get user profile from our backend
           const token = session.access_token;
-          const response = await fetch(`${API_BASE_URL}/auth/me`, {
+          const response = await fetch(`${AUTH_ENDPOINT}/me`, {
             headers: {
               'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json'
@@ -74,7 +72,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (event === 'SIGNED_IN' && session?.user) {
           try {
             const token = session.access_token;
-            const response = await fetch(`${API_BASE_URL}/auth/me`, {
+            const response = await fetch(`${AUTH_ENDPOINT}/me`, {
               headers: {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json'
@@ -113,7 +111,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // Get user profile from our backend
         const token = data.session?.access_token;
         if (token) {
-          const response = await fetch(`${API_BASE_URL}/auth/me`, {
+          const response = await fetch(`${AUTH_ENDPOINT}/me`, {
             headers: {
               'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json'
@@ -137,7 +135,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const register = async (email: string, password: string, firstName: string, lastName: string, phone?: string) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/register`, {
+      const response = await fetch(`${AUTH_ENDPOINT}/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -190,7 +188,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const token = (await supabase.auth.getSession()).data.session?.access_token;
       if (!token) return;
 
-      const response = await fetch(`${API_BASE_URL}/auth/me`, {
+      const response = await fetch(`${AUTH_ENDPOINT}/me`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,

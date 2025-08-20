@@ -9,6 +9,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { Bot, ArrowLeft, Save } from "lucide-react";
+import { AGENTS_ENDPOINT } from "@/constants/URLConstant";
 
 const CreateAgent = () => {
   const { user } = useAuth();
@@ -46,7 +47,7 @@ const CreateAgent = () => {
         throw new Error('No authentication token available. Please log in again.');
       }
       
-      const response = await fetch('http://localhost:4000/api/v1/agents', {
+      const response = await fetch(AGENTS_ENDPOINT, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
