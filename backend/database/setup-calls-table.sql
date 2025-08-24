@@ -55,45 +55,5 @@ CREATE POLICY "Users can update own calls" ON calls
 CREATE POLICY "Users can delete own calls" ON calls
   FOR DELETE USING (auth.uid() = user_id);
 
--- Insert sample data for testing (optional)
--- Uncomment the lines below if you want to insert sample data
-
-/*
-INSERT INTO calls (agent_id, user_id, contact_name, contact_phone, status, duration_seconds, outcome, success, started_at, ended_at) VALUES
-(
-  (SELECT id FROM agents LIMIT 1),
-  (SELECT user_id FROM agents LIMIT 1),
-  'John Smith',
-  '+1234567890',
-  'completed',
-  245,
-  'booked',
-  true,
-  NOW() - INTERVAL '1 hour',
-  NOW() - INTERVAL '1 hour' + INTERVAL '4 minutes 5 seconds'
-),
-(
-  (SELECT id FROM agents LIMIT 1),
-  (SELECT user_id FROM agents LIMIT 1),
-  'Sarah Johnson',
-  '+1234567891',
-  'completed',
-  180,
-  'follow-up',
-  true,
-  NOW() - INTERVAL '2 hours',
-  NOW() - INTERVAL '2 hours' + INTERVAL '3 minutes'
-),
-(
-  (SELECT id FROM agents LIMIT 1),
-  (SELECT user_id FROM agents LIMIT 1),
-  'Mike Davis',
-  '+1234567892',
-  'failed',
-  45,
-  'no-answer',
-  false,
-  NOW() - INTERVAL '3 hours',
-  NOW() - INTERVAL '3 hours' + INTERVAL '45 seconds'
-);
-*/
+-- The calls table is now ready for real call data
+-- No sample data will be inserted automatically

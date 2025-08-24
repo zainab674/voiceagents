@@ -1,14 +1,16 @@
 import { CardContent } from '@/components/ui/card'
-import { Mic, MicOff, Phone, PhoneOff, Sparkles, Volume2, VolumeX } from 'lucide-react'
-import React, { useEffect } from 'react'
+import { Mic, MicOff, Phone, PhoneOff, Sparkles, Volume2, VolumeX, Calendar } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
 import { Button } from './ui/button'
 import { Badge } from './ui/badge'
 import { ConnectionState, Track } from 'livekit-client';
 import { useConnectionState, useLocalParticipant, useRoomContext, useTracks } from '@livekit/components-react';
 import { useToast } from '@/hooks/use-toast'
+import InCallCalendar from './InCallCalendar'
+import { useVoiceCallTracking } from '@/hooks/useVoiceCallTracking'
 
 
-const CallPopupComponent = ({ setIsCallActive, setCallStatus, callStatus, isCallActive, isMuted, isAudioEnabled, handleEndCall, setIsAudioEnabled, setIsMuted }) => {
+const CallPopupComponent = ({ setIsCallActive, setCallStatus, callStatus, isCallActive, isMuted, isAudioEnabled, handleEndCall, setIsAudioEnabled, setIsMuted, agentId }) => {
     const tracks = useTracks([Track.Source.Camera, Track.Source.Microphone], {
         onlySubscribed: true,
     });
@@ -17,6 +19,7 @@ const CallPopupComponent = ({ setIsCallActive, setCallStatus, callStatus, isCall
     const roomState = useConnectionState();
     const room = useRoomContext();
     const { toast } = useToast();
+    const { startCallTracking, endCallTracking } = useVoiceCallTracking();
 
 
     useEffect(() => {
@@ -25,16 +28,21 @@ const CallPopupComponent = ({ setIsCallActive, setCallStatus, callStatus, isCall
             setIsCallActive(true);
             localParticipant.setMicrophoneEnabled(true);
             setCallStatus("connected");
+            if (agentId) {
+                startCallTracking(agentId, 'Voice Call');
+            }
         }
 
         if (roomState === ConnectionState.Disconnected && isCallActive) {
+            // End tracking when room disconnects
+            endCallTracking(true, 'completed');
             handleEndCall();
             setCallStatus("ended");
         }
     }, [localParticipant, roomState, tracks]);
 
 
-    
+
 
     return (
         <CardContent>
@@ -65,10 +73,15 @@ const CallPopupComponent = ({ setIsCallActive, setCallStatus, callStatus, isCall
                 <div className="flex justify-center gap-4">
 
                     <div className="flex gap-3">
+
                         <Button
                             variant="destructive"
                             size="lg"
-                            onClick={handleEndCall}
+                            onClick={() => {
+                                // Ensure we end tracking when user manually ends the call
+                                endCallTracking(true, 'completed');
+                                handleEndCall();
+                            }}
                         >
                             <PhoneOff className="w-5 h-5" />
                         </Button>
@@ -96,6 +109,8 @@ const CallPopupComponent = ({ setIsCallActive, setCallStatus, callStatus, isCall
                     </div>
                 </div>
             </div>
+
+
         </CardContent>
     )
 }

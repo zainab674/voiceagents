@@ -16,7 +16,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 async function setupCallsTable() {
   try {
     console.log('Setting up calls table...');
-    console.log('Note: This script will create the table structure and insert sample data.');
+    console.log('Note: This script will create the table structure for real call data.');
     console.log('Make sure you have already created the agents table first.');
 
     // Check if agents table exists and has data
@@ -124,7 +124,7 @@ CREATE POLICY "Users can delete own calls" ON calls
   FOR DELETE USING (auth.uid() = user_id);
         `);
         console.log('='.repeat(60));
-        console.log('\nAfter running the SQL above, run this script again to insert sample data.');
+        console.log('\nAfter running the SQL above, run this script again to complete the setup.');
         return;
       } else {
         console.error('❌ Error testing calls table:', testError.message);
@@ -142,74 +142,13 @@ CREATE POLICY "Users can delete own calls" ON calls
 
     console.log('✅ Calls table created successfully!');
 
-    // Insert some sample data for testing
-    console.log('Inserting sample call data...');
-    
-    // Get a sample agent to associate with calls
-    const { data: agents, error: agentsError } = await supabase
-      .from('agents')
-      .select('id, user_id')
-      .limit(1);
-
-    if (agentsError || !agents.length) {
-      console.log('No agents found. Please create an agent first.');
-      return;
-    }
-
-    const sampleAgent = agents[0];
-    
-    // Insert sample calls
-    const sampleCalls = [
-      {
-        agent_id: sampleAgent.id,
-        user_id: sampleAgent.user_id,
-        contact_name: 'John Smith',
-        contact_phone: '+1234567890',
-        status: 'completed',
-        duration_seconds: 245,
-        outcome: 'booked',
-        success: true,
-        started_at: new Date(Date.now() - 3600000).toISOString(),
-        ended_at: new Date(Date.now() - 3355000).toISOString()
-      },
-      {
-        agent_id: sampleAgent.id,
-        user_id: sampleAgent.user_id,
-        contact_name: 'Sarah Johnson',
-        contact_phone: '+1234567891',
-        status: 'completed',
-        duration_seconds: 180,
-        outcome: 'follow-up',
-        success: true,
-        started_at: new Date(Date.now() - 7200000).toISOString(),
-        ended_at: new Date(Date.now() - 7020000).toISOString()
-      },
-      {
-        agent_id: sampleAgent.id,
-        user_id: sampleAgent.user_id,
-        contact_name: 'Mike Davis',
-        contact_phone: '+1234567892',
-        status: 'failed',
-        duration_seconds: 45,
-        outcome: 'no-answer',
-        success: false,
-        started_at: new Date(Date.now() - 10800000).toISOString(),
-        ended_at: new Date(Date.now() - 10755000).toISOString()
-      }
-    ];
-
-    const { error: insertError } = await supabase
-      .from('calls')
-      .insert(sampleCalls);
-
-    if (insertError) {
-      console.error('Error inserting sample calls:', insertError);
-    } else {
-      console.log('✅ Sample call data inserted successfully!');
-    }
+    console.log('✅ Calls table created successfully!');
+    console.log('📊 The calls table is ready for real call data.');
+    console.log('   No sample data will be inserted - only real calls will be recorded.');
 
     console.log('🎉 Calls table setup completed!');
-    console.log('You can now view real-time analytics in your dashboard.');
+    console.log('📊 You can now view real-time analytics in your dashboard.');
+    console.log('   All data will be from real calls - no sample data included.');
 
   } catch (error) {
     console.error('Setup failed:', error);

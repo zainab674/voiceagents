@@ -50,6 +50,12 @@ CREATE TABLE IF NOT EXISTS agents (
     description TEXT NOT NULL,
     prompt TEXT NOT NULL,
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    -- Cal.com Integration Fields
+    cal_api_key VARCHAR(255),
+    cal_event_type_slug VARCHAR(100),
+    cal_event_type_id VARCHAR(100),
+    cal_timezone VARCHAR(50) DEFAULT 'UTC',
+    cal_enabled BOOLEAN DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

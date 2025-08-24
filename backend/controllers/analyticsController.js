@@ -12,20 +12,22 @@ if (!supabaseUrl || !supabaseServiceKey) {
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// Helper function to format duration
+// Helper function to format duration (mm:ss) rounded to whole seconds
 const formatDuration = (seconds) => {
   if (!seconds) return "0:00";
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
+  const totalSeconds = Math.max(0, Math.round(Number(seconds)));
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainingSeconds = totalSeconds % 60;
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
 
-// Helper function to format total duration
+// Helper function to format total duration (hh:mm:ss) rounded to whole seconds
 const formatTotalDuration = (seconds) => {
   if (!seconds) return "0:00:00";
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const remainingSeconds = seconds % 60;
+  const totalSeconds = Math.max(0, Math.round(Number(seconds)));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
   return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
 
@@ -67,23 +69,23 @@ export const getAgentAnalytics = async (req, res) => {
         const successfulCalls = totalCalls.filter(call => call.success).length;
         const failedCalls = totalCalls.filter(call => !call.success).length;
         const successRate = totalCalls.length > 0 ? (successfulCalls / totalCalls.length) * 100 : 0;
-        
+
         // Calculate duration metrics
         const totalDuration = totalCalls.reduce((sum, call) => sum + (call.duration_seconds || 0), 0);
         const avgDuration = totalCalls.length > 0 ? totalDuration / totalCalls.length : 0;
-        
+
         // Get recent activity
         const recentCalls = totalCalls
           .filter(call => call.ended_at)
           .sort((a, b) => new Date(b.ended_at) - new Date(a.ended_at))
           .slice(0, 5);
 
-        const lastActive = recentCalls.length > 0 
+        const lastActive = recentCalls.length > 0
           ? getTimeAgo(new Date(recentCalls[0].ended_at))
           : 'Never';
 
         // Calculate conversion rate (calls with positive outcomes)
-        const positiveOutcomes = totalCalls.filter(call => 
+        const positiveOutcomes = totalCalls.filter(call =>
           call.outcome && ['booked', 'follow-up', 'interested'].includes(call.outcome.toLowerCase())
         ).length;
         const conversionRate = totalCalls.length > 0 ? (positiveOutcomes / totalCalls.length) * 100 : 0;
@@ -96,6 +98,7 @@ export const getAgentAnalytics = async (req, res) => {
             failedCalls,
             successRate: Math.round(successRate * 100) / 100,
             avgCallDuration: formatDuration(avgDuration),
+            avgCallDurationSeconds: Math.round(avgDuration * 100) / 100,
             totalCallTime: formatTotalDuration(totalDuration),
             conversionRate: Math.round(conversionRate * 100) / 100,
             lastActive,
@@ -208,6 +211,7 @@ export const getCallAnalytics = async (req, res) => {
         successfulCalls,
         failedCalls,
         avgDuration: formatDuration(avgDuration),
+        avgDurationSeconds: Math.round(avgDuration * 100) / 100,
         topPerformers,
         durationDistribution: durationRanges
       }
@@ -226,7 +230,7 @@ export const getCallAnalytics = async (req, res) => {
 function getTimeAgo(date) {
   const now = new Date();
   const diffInSeconds = Math.floor((now - date) / 1000);
-  
+
   if (diffInSeconds < 60) return `${diffInSeconds} seconds ago`;
   if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`;
   if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`;

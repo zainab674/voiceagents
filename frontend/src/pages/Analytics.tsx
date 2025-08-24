@@ -2,11 +2,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  BarChart3, 
-  TrendingUp, 
-  Users, 
-  Phone, 
+import {
+  BarChart3,
+  TrendingUp,
+  Users,
+  Phone,
   MessageSquare,
   Calendar,
   Download,
@@ -68,7 +68,19 @@ const Analytics = () => {
 
       if (response.ok) {
         const result = await response.json();
-        setAgentAnalytics(result.data || []);
+        const agentsWithAnalytics = (result?.data?.agents || []).map((agent) => ({
+          ...agent,
+          totalCalls: agent.analytics?.totalCalls || 0,
+          successfulCalls: agent.analytics?.successfulCalls || 0,
+          failedCalls: agent.analytics?.failedCalls || 0,
+          successRate: agent.analytics?.successRate || 0,
+          avgCallDuration: agent.analytics?.avgCallDuration || "0:00",
+          totalCallTime: agent.analytics?.totalCallTime || "0:00:00",
+          conversionRate: agent.analytics?.conversionRate || 0,
+          lastActive: agent.analytics?.lastActive || 'Never',
+          status: agent.analytics?.status || 'inactive'
+        }));
+        setAgentAnalytics(agentsWithAnalytics);
       } else {
         console.error('Failed to fetch agent analytics:', response.status);
       }
@@ -120,13 +132,18 @@ const Analytics = () => {
   };
 
   const getAvgDuration = () => {
-    if (agentAnalytics.length === 0) return "0:00";
-    const totalDuration = agentAnalytics.reduce((sum, agent) => {
-      const [mins, secs] = agent.avgCallDuration.split(':').map(Number);
-      return sum + mins + secs / 60;
+    if (agentAnalytics.length === 0) return "0.00s";
+    const totalSeconds = agentAnalytics.reduce((sum, agent) => {
+      // Prefer server-provided seconds if available
+      if (typeof agent.avgCallDurationSeconds === 'number') {
+        return sum + agent.avgCallDurationSeconds;
+      }
+      // Fallback: parse mm:ss
+      const [mins, secs] = String(agent.avgCallDuration).split(':').map(Number);
+      return sum + (isNaN(mins) || isNaN(secs) ? 0 : mins * 60 + secs);
     }, 0);
-    const avgMinutes = totalDuration / agentAnalytics.length;
-    return avgMinutes.toFixed(2) + "m";
+    const avgSeconds = totalSeconds / agentAnalytics.length;
+    return `${avgSeconds.toFixed(2)}s`;
   };
 
   const getTotalBookings = () => {
@@ -233,7 +250,7 @@ const Analytics = () => {
               </CardContent>
             </Card>
 
-            <Card className="shadow-lg">
+            {/* <Card className="shadow-lg">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
@@ -247,7 +264,7 @@ const Analytics = () => {
                   <Calendar className="w-8 h-8 text-orange-600" />
                 </div>
               </CardContent>
-            </Card>
+            </Card> */}
           </div>
 
           {/* Call Analytics Over Time */}
@@ -264,7 +281,7 @@ const Analytics = () => {
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                 </div>
               ) : callAnalytics ? (
-              <div className="space-y-4">
+                <div className="space-y-4">
                   <div className="grid grid-cols-5 gap-4 p-4 rounded-lg bg-muted/50">
                     <div>
                       <p className="font-medium">Last 7 Days</p>
@@ -290,7 +307,7 @@ const Analytics = () => {
               ) : (
                 <div className="text-center py-8">
                   <p className="text-muted-foreground">No call data available</p>
-              </div>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -299,7 +316,7 @@ const Analytics = () => {
         <TabsContent value="performance" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Conversion Metrics */}
-            <Card className="shadow-lg">
+            {/* <Card className="shadow-lg">
               <CardHeader>
                 <CardTitle>Conversion Metrics</CardTitle>
               </CardHeader>
@@ -309,7 +326,7 @@ const Analytics = () => {
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                   </div>
                 ) : (
-                <div className="space-y-4">
+                  <div className="space-y-4">
                     <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                       <div>
                         <p className="font-medium">Call to Conversion</p>
@@ -319,7 +336,7 @@ const Analytics = () => {
                         Real-time
                       </Badge>
                     </div>
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                     <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                       <div>
                         <p className="font-medium">Total Conversions</p>
                         <p className="text-2xl font-bold text-primary">{getTotalBookings()}</p>
@@ -327,11 +344,11 @@ const Analytics = () => {
                       <Badge variant="default">
                         Live data
                       </Badge>
-                    </div>
-                </div>
+                    </div> 
+                  </div>
                 )}
               </CardContent>
-            </Card>
+            </Card> */}
 
             {/* Top Performing AI Agents */}
             <Card className="shadow-lg">
@@ -344,28 +361,28 @@ const Analytics = () => {
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                   </div>
                 ) : agentAnalytics.length > 0 ? (
-                <div className="space-y-4">
+                  <div className="space-y-4">
                     {agentAnalytics
                       .sort((a, b) => b.successRate - a.successRate)
                       .slice(0, 4)
                       .map((agent, index) => (
                         <div key={agent.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-gradient-to-r from-primary to-accent rounded-full flex items-center justify-center text-white font-bold text-sm">
-                          #{index + 1}
-                        </div>
-                        <div>
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-gradient-to-r from-primary to-accent rounded-full flex items-center justify-center text-white font-bold text-sm">
+                              #{index + 1}
+                            </div>
+                            <div>
                               <p className="font-medium">{agent.name}</p>
                               <p className="text-sm text-muted-foreground">{agent.totalCalls} calls</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
+                            </div>
+                          </div>
+                          <div className="text-right">
                             <p className="font-bold text-lg">{agent.successRate}%</p>
                             <p className="text-sm text-muted-foreground">{agent.successfulCalls}/{agent.totalCalls}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
                 ) : (
                   <div className="text-center py-8">
                     <p className="text-muted-foreground">No agent data available</p>
@@ -393,7 +410,7 @@ const Analytics = () => {
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                 </div>
               ) : agentAnalytics.length > 0 ? (
-              <div className="space-y-6">
+                <div className="space-y-6">
                   {/* Dynamic insights based on real data */}
                   {getTotalCalls() > 0 && (
                     <div className="p-4 border rounded-lg">
@@ -421,26 +438,26 @@ const Analytics = () => {
 
                   {agentAnalytics.filter(a => a.status === 'active').length > 0 && (
                     <div className="p-4 border rounded-lg">
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
                           <h3 className="font-semibold">Agent Status Overview</h3>
                           <Badge variant="default" className="mt-1">
                             Medium Impact
-                        </Badge>
+                          </Badge>
+                        </div>
                       </div>
-                    </div>
                       <p className="text-muted-foreground mb-3">
                         You have {agentAnalytics.filter(a => a.status === 'active').length} active agents and {agentAnalytics.filter(a => a.status === 'inactive').length} inactive ones.
                       </p>
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium text-primary">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium text-primary">
                           💡 Recommendation: {agentAnalytics.filter(a => a.status === 'inactive').length > 0 ? 'Consider reactivating inactive agents or creating new ones to increase capacity.' : 'All agents are active and performing well.'}
-                      </p>
-                      <Button variant="outline" size="sm">
-                        Apply
-                      </Button>
+                        </p>
+                        <Button variant="outline" size="sm">
+                          Apply
+                        </Button>
+                      </div>
                     </div>
-                  </div>
                   )}
 
                   {getTotalCalls() === 0 && (
@@ -470,7 +487,7 @@ const Analytics = () => {
               ) : (
                 <div className="text-center py-8">
                   <p className="text-muted-foreground">No insights available yet. Make some calls to generate insights!</p>
-              </div>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -479,7 +496,7 @@ const Analytics = () => {
         <TabsContent value="reports" className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[
-              { name: "Daily Performance Report", description: "Daily summary of calls and conversions", schedule: "Daily at 9 AM" },
+              // { name: "Daily Performance Report", description: "Daily summary of calls and conversions", schedule: "Daily at 9 AM" },
               { name: "Weekly Analytics Summary", description: "Comprehensive weekly performance analysis", schedule: "Mondays at 8 AM" },
               { name: "Monthly Business Review", description: "Complete monthly business metrics", schedule: "1st of each month" },
               { name: "AI Agent Performance", description: "Individual AI agent performance metrics", schedule: "Weekly" },

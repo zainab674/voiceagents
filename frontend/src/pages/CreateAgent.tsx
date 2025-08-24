@@ -4,11 +4,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
-import { Bot, ArrowLeft, Save } from "lucide-react";
+import { Bot, ArrowLeft, Save, Calendar } from "lucide-react";
 import { AGENTS_ENDPOINT } from "@/constants/URLConstant";
 
 const CreateAgent = () => {
@@ -17,6 +18,9 @@ const CreateAgent = () => {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [calApiKey, setCalApiKey] = useState("");
+  const [calEventTypeSlug, setCalEventTypeSlug] = useState("");
+  const [calTimezone, setCalTimezone] = useState("UTC");
   const [isCreating, setIsCreating] = useState(false);
 
   const handleCreateAgent = async () => {
@@ -42,11 +46,11 @@ const CreateAgent = () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      
+
       if (!token) {
         throw new Error('No authentication token available. Please log in again.');
       }
-      
+
       const response = await fetch(AGENTS_ENDPOINT, {
         method: 'POST',
         headers: {
@@ -57,6 +61,9 @@ const CreateAgent = () => {
           name: title.trim(),
           description: description.trim(),
           prompt: prompt.trim(),
+          calApiKey: calApiKey.trim() || null,
+          calEventTypeSlug: calEventTypeSlug.trim() || null,
+          calTimezone: calTimezone,
         })
       });
 
@@ -78,7 +85,7 @@ const CreateAgent = () => {
       setTimeout(() => {
         navigate('/voice-calls');
       }, 1500);
-      
+
     } catch (error) {
       console.error('Error creating agent:', error);
       toast({
@@ -183,6 +190,77 @@ const CreateAgent = () => {
                 <p className="text-sm text-muted-foreground">
                   This is the core instruction that defines how your AI agent will behave during calls
                 </p>
+              </div>
+
+              {/* Cal.com Integration Section */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-primary" />
+                  <Label className="text-base font-medium">Cal.com Integration (Optional)</Label>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Enable your agent to schedule appointments using Cal.com
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="calApiKey" className="text-sm font-medium">
+                      Cal.com API Key
+                    </Label>
+                    <Input
+                      id="calApiKey"
+                      type="password"
+                      placeholder="cal_live_..."
+                      value={calApiKey}
+                      onChange={(e) => setCalApiKey(e.target.value)}
+                      disabled={isCreating}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Get this from your Cal.com account settings
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="calEventTypeSlug" className="text-sm font-medium">
+                      Event Type Slug
+                    </Label>
+                    <Input
+                      id="calEventTypeSlug"
+                      placeholder="e.g., consultation, meeting"
+                      value={calEventTypeSlug}
+                      onChange={(e) => setCalEventTypeSlug(e.target.value)}
+                      disabled={isCreating}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      The slug of your Cal.com event type
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="calTimezone" className="text-sm font-medium">
+                    Timezone
+                  </Label>
+                  <Select value={calTimezone} onValueChange={setCalTimezone} disabled={isCreating}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="UTC">UTC</SelectItem>
+                      <SelectItem value="America/New_York">Eastern Time</SelectItem>
+                      <SelectItem value="America/Chicago">Central Time</SelectItem>
+                      <SelectItem value="America/Denver">Mountain Time</SelectItem>
+                      <SelectItem value="America/Los_Angeles">Pacific Time</SelectItem>
+                      <SelectItem value="Europe/London">London</SelectItem>
+                      <SelectItem value="Europe/Paris">Paris</SelectItem>
+                      <SelectItem value="Asia/Tokyo">Tokyo</SelectItem>
+                      <SelectItem value="Asia/Shanghai">Shanghai</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Timezone for appointment scheduling
+                  </p>
+                </div>
               </div>
 
               {/* Action Buttons */}

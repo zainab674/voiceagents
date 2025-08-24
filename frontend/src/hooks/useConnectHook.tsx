@@ -8,13 +8,14 @@ const LIVEKIT_URL = NEXT_PUBLIC_LIVEKIT_URL as string;
 const useConnect = () => {
     const [token, setToken] = useState<string | null>(null);
     const [identity, setIdentity] = useState<string | null>(null);
-   
-   
-    const createToken = async (prompt:string,setStatus:React.Dispatch<React.SetStateAction<"idle" | "connecting" | "connected" | "ended">>) => {
+
+
+    const createToken = async (prompt: string, agentId: string, setStatus: React.Dispatch<React.SetStateAction<"idle" | "connecting" | "connected" | "ended">>) => {
         setStatus("connecting");
         try {
             const formData = {
                 metadata: { prompt },
+                agentId: agentId,
             }
             const response = await createTokenRequest(formData);
 
@@ -27,7 +28,7 @@ const useConnect = () => {
         }
     };
 
-    return { token, wsUrl:LIVEKIT_URL, identity, createToken,setToken};
+    return { token, wsUrl: LIVEKIT_URL, identity, createToken, setToken };
 };
 
 export default useConnect;

@@ -30,6 +30,7 @@ import {
 } from "@livekit/components-react";
 import CallPopupComponent from "@/components/CallPopupComponent";
 import CallDemoCard from "@/components/CallDemoCardComponent";
+import CalendarSlotSelector from "@/components/CalendarSlotSelector";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import {
@@ -66,7 +67,7 @@ const AICallInterface = () => {
     if (agents.length > 0) {
       const urlParams = new URLSearchParams(window.location.search);
       const agentIdFromUrl = urlParams.get('agentId');
-      
+
       if (agentIdFromUrl) {
         const agentExists = agents.find(agent => agent.id === agentIdFromUrl);
         if (agentExists) {
@@ -88,16 +89,16 @@ const AICallInterface = () => {
 
   const fetchAgents = async () => {
     if (!user) return;
-    
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      
+
       if (!token) {
         console.error('No auth token available');
         return;
       }
-      
+
       const response = await fetch(AGENTS_ENDPOINT, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -148,7 +149,13 @@ const AICallInterface = () => {
       return;
     }
 
-    await createToken(selectedAgent.prompt, setCallStatus);
+    // Create enhanced prompt for calendar-enabled agents
+    let enhancedPrompt = selectedAgent.prompt;
+    if (selectedAgent.cal_enabled) {
+      enhancedPrompt += `\n\nIMPORTANT: This agent has Cal.com integration enabled. When users want to book appointments, you can show them available calendar slots and help them schedule. You have access to calendar functionality during the call.`;
+    }
+
+    await createToken(enhancedPrompt, selectedAgentId, setCallStatus);
   };
 
   const handleEndCall = () => {
@@ -254,9 +261,35 @@ const AICallInterface = () => {
                 )}
               </div>
 
+              {/* Cal.com Integration Status */}
+              {selectedAgentId && agents.find(agent => agent.id === selectedAgentId)?.cal_enabled && (
+                <div className="space-y-2">
+                  <Label className="text-base font-medium">
+                    Cal.com Integration
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="default" className="bg-green-100 text-green-800">
+                      <Calendar className="w-3 h-3 mr-1" />
+                      Active
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">
+                      Agent can schedule appointments
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded border">
+                    <span className="font-medium">Event Type:</span> {agents.find(agent => agent.id === selectedAgentId)?.cal_event_type_slug}
+                    <br />
+                    <span className="font-medium">Timezone:</span> {agents.find(agent => agent.id === selectedAgentId)?.cal_timezone}
+                  </div>
+
+
+                </div>
+              )}
+
+              {/* Manual Cal.com Link (Legacy) */}
               <div>
                 <Label htmlFor="calcom" className="text-base font-medium">
-                  Cal.com Integration
+                  Manual Cal.com Link (Optional)
                 </Label>
                 <div className="flex gap-2 mt-2">
                   <Input
@@ -272,7 +305,7 @@ const AICallInterface = () => {
                 </div>
                 {calComLink && (
                   <Badge variant="secondary" className="mt-2">
-                    Calendar integration active
+                    Manual calendar link active
                   </Badge>
                 )}
               </div>
@@ -291,7 +324,18 @@ const AICallInterface = () => {
             {
               token && (
                 <LiveKitRoom serverUrl={wsUrl} token={token} connect>
-                  <CallPopupComponent setCallStatus={setCallStatus} setIsCallActive={setIsCallActive} callStatus={callStatus} isCallActive={isCallActive} isMuted={isMuted} isAudioEnabled={isAudioEnabled} handleEndCall={handleEndCall} setIsMuted={setIsMuted} setIsAudioEnabled={setIsAudioEnabled}/>
+                  <CallPopupComponent
+                    setCallStatus={setCallStatus}
+                    setIsCallActive={setIsCallActive}
+                    callStatus={callStatus}
+                    isCallActive={isCallActive}
+                    isMuted={isMuted}
+                    isAudioEnabled={isAudioEnabled}
+                    handleEndCall={handleEndCall}
+                    setIsMuted={setIsMuted}
+                    setIsAudioEnabled={setIsAudioEnabled}
+                    agentId={selectedAgentId}
+                  />
                   <RoomAudioRenderer />
                   <StartAudio label="Click to enable audio playback" />
                 </LiveKitRoom>
@@ -299,7 +343,7 @@ const AICallInterface = () => {
             }
 
             {!token && (
-              <CallDemoCard setIsCallActive={setIsCallActive} callStatus={callStatus} isCallActive={isCallActive} isMuted={isMuted} isAudioEnabled={isAudioEnabled} handleStartCall={handleStartCall}  />
+              <CallDemoCard setIsCallActive={setIsCallActive} callStatus={callStatus} isCallActive={isCallActive} isMuted={isMuted} isAudioEnabled={isAudioEnabled} handleStartCall={handleStartCall} />
             )}
           </Card>
         </div>
@@ -324,18 +368,18 @@ const AICallInterface = () => {
                 <div className="w-12 h-12 mx-auto bg-gradient-to-r from-primary to-accent rounded-full flex items-center justify-center text-white font-bold text-lg">
                   2
                 </div>
-                <h3 className="font-semibold">Connect Calendar</h3>
+                <h3 className="font-semibold">Start Your Call</h3>
                 <p className="text-sm text-muted-foreground">
-                  Link your Cal.com for seamless scheduling integration
+                  Begin your AI conversation and book appointments during the call
                 </p>
               </div>
               <div className="text-center space-y-2">
                 <div className="w-12 h-12 mx-auto bg-gradient-to-r from-primary to-accent rounded-full flex items-center justify-center text-white font-bold text-lg">
                   3
                 </div>
-                <h3 className="font-semibold">Start Calling</h3>
+                <h3 className="font-semibold">Book Appointments</h3>
                 <p className="text-sm text-muted-foreground">
-                  Begin your AI-powered voice conversations
+                  Use the calendar button during calls to schedule appointments
                 </p>
               </div>
             </div>
@@ -347,3 +391,5 @@ const AICallInterface = () => {
 };
 
 export default AICallInterface;
+
+

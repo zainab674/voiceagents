@@ -167,61 +167,6 @@ const Dashboard = () => {
     navigate('/create-agent');
   };
 
-  const stats = [
-    {
-      title: "Total Calls Today",
-      value: "247",
-      change: "+12%",
-      trend: "up",
-      icon: Phone,
-      color: "text-blue-600"
-    },
-    {
-      title: "Active Conversations",
-      value: "18",
-      change: "+5%",
-      trend: "up",
-      icon: MessageSquare,
-      color: "text-green-600"
-    },
-    {
-      title: "CRM Contacts",
-      value: "1,324",
-      change: "+8%",
-      trend: "up",
-      icon: Users,
-      color: "text-purple-600"
-    },
-    {
-      title: "Success Rate",
-      value: "94.2%",
-      change: "-2%",
-      trend: "down",
-      icon: BarChart3,
-      color: "text-orange-600"
-    }
-  ];
-
-  const recentCalls = [
-    { id: 1, contact: "John Smith", status: "completed", duration: "5:32", time: "10 mins ago", outcome: "Booked" },
-    { id: 2, contact: "Sarah Johnson", status: "in-progress", duration: "2:15", time: "Now", outcome: "Talking" },
-    { id: 3, contact: "Mike Davis", status: "failed", duration: "0:45", time: "15 mins ago", outcome: "No Answer" },
-    { id: 4, contact: "Emily Brown", status: "completed", duration: "8:21", time: "22 mins ago", outcome: "Follow-up" },
-  ];
-
-  const upcomingBookings = [
-    { id: 1, contact: "Alex Chen", time: "2:00 PM", type: "Demo Call", platform: "Zoom" },
-    { id: 2, contact: "Lisa Wang", time: "3:30 PM", type: "Consultation", platform: "Phone" },
-    { id: 3, contact: "Tom Wilson", time: "4:15 PM", type: "Follow-up", platform: "Teams" },
-  ];
-
-  // Helper function to format duration
-  const formatDuration = (duration) => {
-    if (typeof duration === 'string') return duration;
-    const minutes = Math.floor(duration / 60);
-    const seconds = duration % 60;
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
 
   // Helper function to get status color
   const getStatusColor = (status) => {
@@ -257,7 +202,7 @@ const Dashboard = () => {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat, index) => (
           <Card key={index} className="shadow-lg">
             <CardContent className="p-6">
@@ -283,7 +228,7 @@ const Dashboard = () => {
             </CardContent>
           </Card>
         ))}
-      </div>
+      </div> */}
 
       {/* AI Agents Analytics Section */}
       <Card className="shadow-lg">
@@ -343,7 +288,7 @@ const Dashboard = () => {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="bg-gradient-to-br from-green-50 to-green-100 p-6 rounded-lg">
                   <div className="flex items-center gap-3">
                     <div className="p-3 bg-green-600 rounded-full">
@@ -351,7 +296,7 @@ const Dashboard = () => {
                     </div>
                     <div>
                       <p className="text-2xl font-bold text-green-900">
-                        {agentAnalytics.length > 0 
+                        {agentAnalytics.length > 0
                           ? (agentAnalytics.reduce((sum, agent) => sum + agent.successRate, 0) / agentAnalytics.length).toFixed(1)
                           : 0}%
                       </p>
@@ -359,19 +304,19 @@ const Dashboard = () => {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-6 rounded-lg">
                   <div className="flex items-center gap-3">
                     <div className="p-3 bg-purple-600 rounded-full">
                       <Clock className="w-6 h-6 text-white" />
                     </div>
                     <div>
-                                              <p className="text-2xl font-bold text-purple-900">
-                        {agentAnalytics.length > 0 
+                      <p className="text-2xl font-bold text-purple-900">
+                        {agentAnalytics.length > 0
                           ? (agentAnalytics.reduce((sum, agent) => {
-                              const [mins, secs] = agent.avgCallDuration.split(':').map(Number);
-                              return sum + mins + secs / 60;
-                            }, 0) / agentAnalytics.length).toFixed(2)
+                            const [mins, secs] = agent.avgCallDuration.split(':').map(Number);
+                            return sum + mins + secs / 60;
+                          }, 0) / agentAnalytics.length).toFixed(2)
                           : 0}m
                       </p>
                       <p className="text-purple-700 font-medium">Avg Call Duration</p>
@@ -399,7 +344,7 @@ const Dashboard = () => {
                             <p className="text-sm text-muted-foreground">Success Rate</p>
                           </div>
                         </div>
-                        
+
                         <div className="grid grid-cols-2 gap-4 mb-4">
                           <div className="text-center">
                             <p className="text-lg font-semibold text-blue-600">{agent.totalCalls}</p>
@@ -413,12 +358,12 @@ const Dashboard = () => {
                             <p className="text-lg font-semibold text-purple-600">{agent.avgCallDuration}</p>
                             <p className="text-xs text-muted-foreground">Avg Duration</p>
                           </div>
-                          <div className="text-center">
+                          {/* <div className="text-center">
                             <p className="text-lg font-semibold text-orange-600">{agent.conversionRate}%</p>
                             <p className="text-xs text-muted-foreground">Conversion</p>
-                          </div>
+                          </div> */}
                         </div>
-                        
+
                         <div className="space-y-2">
                           <div className="flex justify-between text-sm">
                             <span className="text-muted-foreground">Total Call Time:</span>
@@ -520,8 +465,8 @@ const Dashboard = () => {
                     <span className="text-xs text-muted-foreground">
                       Created {new Date(agent.created_at).toLocaleDateString()}
                     </span>
-                    <Button variant="outline" size="sm" 
-                    onClick={()=>navigate(`/voice-calls?agentId=${agent.id}`)}
+                    <Button variant="outline" size="sm"
+                      onClick={() => navigate(`/voice-calls?agentId=${agent.id}`)}
                     >
                       <Zap className="w-3 h-3 mr-1" />
                       Use

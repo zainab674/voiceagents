@@ -1,0 +1,79 @@
+# ========================================
+# Frontend Configuration
+# ========================================
+
+# Vite Development Server Port
+VITE_PORT=3000
+
+# Node Environment
+NODE_ENV=development
+
+# ========================================
+# Backend API Configuration
+# ========================================
+
+# Backend API Base URL
+VITE_API_BASE_URL=http://localhost:4000
+
+# Backend API Version
+VITE_API_VERSION=v1
+
+# ========================================
+# Supabase Configuration
+# ========================================
+
+# Supabase URL (your Supabase project URL)
+VITE_SUPABASE_URL=https://your-project.supabase.co
+
+# Supabase Anon Key (for client operations)
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key_here
+
+# ========================================
+# LiveKit Configuration
+# ========================================
+
+# LiveKit Server URL
+VITE_LIVEKIT_URL=ws://localhost:7880
+
+# LiveKit API Key
+VITE_LIVEKIT_API_KEY=your_livekit_api_key_here
+
+# ========================================
+# External Services
+# ========================================
+
+# Cal.com Integration (if needed on frontend)
+VITE_CAL_API_URL=https://api.cal.com
+
+# ========================================
+# Feature Flags
+# ========================================
+
+# Enable Calendar Integration
+VITE_ENABLE_CALENDAR=true
+
+# Enable Analytics
+VITE_ENABLE_ANALYTICS=true
+
+# Enable Debug Mode
+VITE_DEBUG_MODE=false
+
+# ========================================
+# UI Configuration
+# ========================================
+
+# Default Theme
+VITE_DEFAULT_THEME=light
+
+# Enable Dark Mode
+VITE_ENABLE_DARK_MODE=true
+
+# ========================================
+# Development Tools
+# ========================================
+
+# Enable React DevTools
+VITE_ENABLE_REACT_DEVTOOLS=true
+
+# Enable Error Boundary
+VITE_ENABLE_ERROR_BOUNDARY=true

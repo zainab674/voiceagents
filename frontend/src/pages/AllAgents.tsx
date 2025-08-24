@@ -347,6 +347,7 @@ const AllAgents = () => {
                     <th className="text-left p-3 font-medium">Description</th>
                     <th className="text-left p-3 font-medium">Prompt Preview</th>
                     <th className="text-left p-3 font-medium">Created</th>
+                    <th className="text-left p-3 font-medium">Cal.com</th>
                     <th className="text-left p-3 font-medium">Test Demo</th>
                     <th className="text-left p-3 font-medium">Actions</th>
                   </tr>
@@ -382,6 +383,21 @@ const AllAgents = () => {
                           <Calendar className="w-4 h-4" />
                           {formatDate(agent.created_at)}
                         </div>
+                      </td>
+                      <td className="p-3">
+                        {agent.cal_enabled ? (
+                          <div className="flex items-center gap-2">
+                            <Badge variant="default" className="bg-green-100 text-green-800 text-xs">
+                              <Calendar className="w-3 h-3 mr-1" />
+                              Active
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {agent.cal_event_type_slug}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Not configured</span>
+                        )}
                       </td>
                       <td className="p-3">
                         <Button
