@@ -218,7 +218,7 @@ async def entrypoint(ctx: agents.JobContext):
 
     participant = await ctx.wait_for_participant()
     metadata = json.loads(participant.metadata)
-    instructions = metadata.get("prompt", "You are an AI Assistant that helps users .")
+    instructions = metadata.get("prompt", "You are an AI Assistant that helps callers .")
     
     # Check for Cal.com integration
     cal_api_key = metadata.get("cal_api_key")
