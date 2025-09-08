@@ -33,7 +33,7 @@ export const fetchConversations = async (): Promise<ConversationsData> => {
       throw new Error('No authentication token available');
     }
 
-    const response = await fetch('/api/v1/calls/history', {
+    const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'}/api/v1/calls/history`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',

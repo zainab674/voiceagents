@@ -31,7 +31,7 @@ export const saveTranscription = async (request: SaveTranscriptionRequest): Prom
       throw new Error('No authentication token available');
     }
 
-    const response = await fetch('/api/v1/calls/transcription', {
+    const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'}/api/v1/calls/transcription`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -71,7 +71,7 @@ export const addTranscriptionItem = async (
     }
 
     // First, get the existing transcription
-    const getResponse = await fetch('/api/v1/calls/history', {
+    const getResponse = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'}/api/v1/calls/history`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
