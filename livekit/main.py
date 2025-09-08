@@ -1,279 +1,582 @@
 
 
 
-from dotenv import load_dotenv
-import os
-import logging
+from __future__ import annotations
 
-from livekit import agents
-from livekit.agents import AgentSession, Agent, RunContext, function_tool, ToolError
-from livekit.plugins import groq
-from livekit.plugins import deepgram
 import json
+import urllib.request
+import urllib.parse
+import logging
 import datetime
+from typing import Optional, Tuple, Iterable
+import base64
+import os
+import re
+import hashlib
+import uuid
+
+from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
 
-# Import our calendar API
+from livekit import agents
+from livekit.agents import AgentSession, Agent, RunContext, function_tool
+
+# ⬇️ OpenAI + VAD plugins
+from livekit.plugins import openai as lk_openai  # LLM, STT, TTS
+from livekit.plugins import silero              # VAD
+
+try:
+    from supabase import create_client, Client  # type: ignore
+except Exception:  # pragma: no cover
+    create_client = None  # type: ignore
+    Client = object  # type: ignore
+
+# Calendar integration (your module)
 from cal_calendar_api import Calendar, CalComCalendar, AvailableSlot, SlotUnavailableError
 
+# Assistant service
+from services.assistant import Assistant
+
 load_dotenv()
+logging.basicConfig(level=logging.INFO)
 
+# ===================== Utilities =====================
 
-class Assistant(Agent):
-    def __init__(self, instructions: str, calendar: Calendar = None) -> None:
-        # Combine instructions before passing to parent
-        if calendar:
-            calendar_instructions = (
-                " You are a helpful and friendly scheduling assistant with access to a calendar system. keep language humanly, natural and donot speak functions or any technical stuff "
-                
-                "MANDATORY SCHEDULING WORKFLOW - FOLLOW THIS EXACT ORDER: "
-                "Step 1: When user wants to book appointment, ask user his preference then IMMEDIATELY call   @function_tool list_available_slots() first then tell user first 5 options  "
-                "Step 2: Present the available slots as numbered options (Option 1, Option 2, etc.) tell user all options one by one according to user preference "
-                "Step 3: first tell caller all options then Ask user to choose an option number from the list "
-                "Step 4: Once user picks an option, ask for their name "
-                "Step 5: Ask for their email address "
-                "Step 6: Ask for their phone number "
-                "Step 7: Ask for any notes or reason for the appointment "
-                "Step 8: Call schedule_appointment() with their chosen option and all details "
-                
-                "CONTACT DETAILS TO COLLECT: "
-                "- Name: Full name of the person booking the appointment "
-                "- Email: Valid email address for confirmation "
-                "- Phone: Phone number for contact "
-                "- Notes: Purpose of appointment or any special requests "
-                
-                "CRITICAL RULES: "
-                "- NEVER attempt to schedule without first calling list_available_slots() "
-                "- NEVER suggest specific times without checking calendar first "
-                "- ALWAYS call list_available_slots() BEFORE collecting any user details "
-                "- If user asks for specific times, say 'Let me check what's available' and call list_available_slots() "
-                "- Only use slot IDs that came from the list_available_slots response "
-                "- If list_available_slots returns no slots, inform user no times are available "
-                "- Collect contact details ONLY AFTER user has chosen a time slot "
-                
-                "EXAMPLE CONVERSATION FLOW: "
-                "User: 'I want to book an appointment' "
-                "Assistant: 'I'll check what appointment times are available for you.' [calls list_available_slots()] "
-                "Assistant: Shows available options "
-                "User: 'I want option 2' "
-                "Assistant: 'Great! I'll book option 2 for you. What's your name?' "
-                "User: 'John Smith' "
-                "Assistant: 'And your email address?' "
-                "[Continue collecting details then call schedule_appointment()]"
+def sha256_text(s: str) -> str:
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()
+
+def preview(s: str, n: int = 160) -> str:
+    return s[:n] + ("…" if len(s) > n else "")
+
+def determine_call_status(call_duration: int) -> str:
+    """Simple duration-based status."""
+    if call_duration < 5:
+        return "dropped"
+    if call_duration < 15:
+        return "no_response"
+    return "completed"
+
+def _flatten_history_content(session_history: list) -> str:
+    """Join all text content from history items into a single lowercase string."""
+    chunks: list[str] = []
+    for item in session_history or []:
+        content = item.get("content") if isinstance(item, dict) else None
+        if isinstance(content, str):
+            chunks.append(content.lower())
+        elif isinstance(content, list):
+            for c in content:
+                if isinstance(c, str):
+                    chunks.append(c.lower())
+    return " ".join(chunks)
+
+async def save_call_history_to_supabase(
+    call_id: str,
+    assistant_id: str,
+    called_did: str,
+    start_time: datetime.datetime,
+    end_time: datetime.datetime,
+    session_history: list,
+    participant_identity: str = None,
+    user_id: str = None,
+    call_sid: str = None
+
+) -> bool:
+    """Save call history to Supabase with enhanced status detection."""
+    try:
+        if not create_client:
+            logging.warning("Supabase client not available, skipping call history save")
+            return False
+
+        supabase_url = os.getenv("SUPABASE_URL", "").strip()
+        supabase_key = (
+            os.getenv("SUPABASE_SERVICE_ROLE", "").strip()
+            or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+        )
+
+        if not supabase_url or not supabase_key:
+            logging.warning("Supabase credentials not configured, skipping call history save")
+            return False
+
+        sb: Client = create_client(supabase_url, supabase_key)  # type: ignore
+
+        # Calculate call duration
+        call_duration = int((end_time - start_time).total_seconds())
+
+        # Determine call status
+        call_status = determine_call_status(call_duration)
+
+        # Map to calls.status
+        status_mapping = {
+            "completed": "completed",
+            "dropped": "failed",
+            "spam": "failed",
+            "no_response": "failed",
+        }
+        mapped_status = status_mapping.get(call_status, "completed")
+        success = (call_status == "completed")
+
+        # Prepare transcription data
+        transcription = []
+        for item in session_history:
+            if isinstance(item, dict) and "role" in item and "content" in item:
+                transcription.append({
+                    "role": item["role"],
+                    "content": item["content"]
+                })
+        
+        logging.info("TRANSCRIPTION_PREPARED | items_count=%d | transcription_entries=%d", 
+                    len(session_history), len(transcription))
+
+        # Outcome from transcript content
+        all_content = _flatten_history_content(session_history)
+        outcome = None
+        if call_status == "completed":
+            if any(k in all_content for k in ["appointment", "book", "schedule", "confirm"]):
+                outcome = "booked"
+            else:
+                outcome = "completed"
+        elif call_status == "dropped":
+            outcome = "no-answer"
+        else:
+            outcome = "failed"
+
+        call_data = {
+            "id": call_id,
+            "agent_id": assistant_id,
+            "user_id": user_id,
+            "contact_phone": called_did,
+            "status": mapped_status,
+            "duration_seconds": call_duration,
+            "outcome": outcome,
+            "notes": f"History items: {len(session_history)}",
+            "started_at": start_time.isoformat(),
+            "ended_at": end_time.isoformat(),
+            "success": success,
+            "call_sid": call_sid,
+
+            "transcription": transcription,  # ✅ ADD TRANSCRIPTION DATA
+        }
+
+        result = sb.table("calls").insert(call_data).execute()
+
+        if getattr(result, "data", None):
+            logging.info(
+                "CALL_SAVED | call_id=%s | duration=%ds | status=%s | outcome=%s ",
+                call_id, call_duration, mapped_status, outcome
             )
-            instructions += calendar_instructions
-        
-        super().__init__(instructions=instructions)
-        self.calendar = calendar
-        self._slots_map: dict[str, AvailableSlot] = {}
+            return True
+        else:
+            logging.error("CALL_SAVE_FAILED | call_id=%s", call_id)
+            return False
 
-    @function_tool
-    async def list_available_slots(
-            self, 
-            ctx: RunContext, 
-            range_days: int = 7
-        ) -> str:
-        logging.info(f"toolcalllllllllllllllllllllllllllllllll")
+    except Exception as e:
+        logging.exception("CALL_SAVE_ERROR | call_id=%s | error=%s", call_id, str(e))
+        return False
 
-        """
-        Return a list of available appointment slots. MUST be called before any booking attempt.
+def extract_called_did(room_name: str) -> str | None:
+    """Find the first +E.164 sequence anywhere in the room name."""
+    m = re.search(r'\+\d{7,}', room_name)
+    return m.group(0) if m else None
 
-        Args:
-            range_days: How many days ahead to search for available slots (default: 7).
-        """
-        if not self.calendar:
-            return "Cal.com calendar integration is not available for this agent. Please ensure Cal.com API key and event type are configured."
-        
-        now = datetime.datetime.now(ZoneInfo("UTC"))
-        end_time = now + datetime.timedelta(days=range_days)
-        
+def _parse_json_or_b64(raw: str) -> tuple[dict, str]:
+    """Try JSON; if that fails, base64(JSON). Return (dict, source_kind)."""
+    try:
+        d = json.loads(raw)
+        return (d if isinstance(d, dict) else {}), "json"
+    except Exception:
         try:
-            logging.info(f"Agent: Requesting slots from {now} to {end_time}")
-            slots = await self.calendar.list_available_slots(start_time=now, end_time=end_time)
-            logging.info(f"Agent: Received {len(slots)} slots from calendar")
-            
-            if not slots:
-                return "No appointment slots available in the next few days. Please try a different date range."
-            
-            # Clear previous slots map
-            self._slots_map.clear()
-            
-            lines = ["Here are the available appointment times:"]
-            for i, slot in enumerate(slots[:10], 1):  # Limit to 10 slots for readability
-                local = slot.start_time.astimezone(self.calendar.tz)
-                now_local = datetime.datetime.now(self.calendar.tz)
+            decoded = base64.b64decode(raw).decode()
+            d = json.loads(decoded)
+            return (d if isinstance(d, dict) else {}), "base64_json"
+        except Exception:
+            return {}, "invalid"
 
-                # Use date-based delta for cleaner "in X days" labeling
-                days = (local.date() - now_local.date()).days
-                if local.date() == now_local.date():
-                    rel = "today"
-                elif local.date() == (now_local.date() + datetime.timedelta(days=1)):
-                    rel = "tomorrow"
-                elif days < 7:
-                    rel = f"in {days} days"
-                else:
-                    rel = f"in {days // 7} weeks"
+def _from_env_json(*env_keys: str) -> tuple[dict, str]:
+    """First non-empty env var parsed as JSON. Return (dict, 'env:KEY:kind') or ({}, 'env:none')."""
+    for k in env_keys:
+        raw = os.getenv(k, "")
+        if raw.strip():
+            d, kind = _parse_json_or_b64(raw)
+            return d, f"env:{k}:{kind}"
+    return {}, "env:none"
 
-                # Present as "Option X" for user-friendliness while storing the hash
-                lines.append(
-                    f"Option {i}: {local.strftime('%A, %B %d, %Y')} at "
-                    f"{local.strftime('%I:%M %p')} ({rel})"
-                )
-                # Store multiple ways to reference this slot
-                self._slots_map[slot.unique_hash] = slot
-                self._slots_map[f"option_{i}"] = slot
-                self._slots_map[f"option {i}"] = slot
-                self._slots_map[str(i)] = slot  # Allow just "1", "2", etc.
-                
-                logging.info(f"Stored slot option {i} with hash {slot.unique_hash}")
-            
-            lines.append("\nWhich option would you like to book? Just say the option number (like 'Option 1' or '1').")
-            return "\n".join(lines)
-            
-        except Exception as e:
-            logging.error(f"Error listing available slots: {e}")
-            return "Sorry, I encountered an error while checking available slots. Please try again."
-    
-    @function_tool
-    async def schedule_appointment(
-        self,
-        ctx: RunContext,
-        slot_id: str,
-        attendee_name: str,
-        attendee_email: str,
-        attendee_phone: str | None = None,
-        notes: str | None = None,
-    ) -> str:
-        """
-        Schedule an appointment at the given slot. Can only be used after list_available_slots has been called.
+def choose_from_sources(
+    sources: Iterable[tuple[str, dict]],
+    *paths: Tuple[str, ...],
+    default: Optional[str] = None,
+) -> tuple[Optional[str], str]:
+    """First non-empty string across sources/paths. Return (value, 'label.path') or (default,'default')."""
+    for label, d in sources:
+        for path in paths:
+            cur = d
+            ok = True
+            for k in path:
+                if not isinstance(cur, dict) or k not in cur:
+                    ok = False
+                    break
+                cur = cur[k]
+            if ok and isinstance(cur, str) and cur.strip():
+                return cur, f"{label}:" + ".".join(path)
+    return default, "default"
 
-        Args:
-            slot_id: The identifier for the selected time slot (can be option number or hash).
-            attendee_name: Name of the person scheduling the appointment.
-            attendee_email: Email address for the appointment.
-            attendee_phone: Phone number (optional).
-            notes: Additional notes for the appointment (optional).
-        """
-        if not self.calendar:
-            return "Cal.com calendar integration is not available for this agent. Please ensure Cal.com API key and event type are configured."
-        
-        # Check if we have any slots loaded
-        if not self._slots_map:
-            return "I need to check available times first. Let me show you what's available."
-        
-        # Handle different ways users might reference the slot
-        slot = None
-        
-        # Log what we're looking for and what we have
-        logging.info(f"Looking for slot_id: '{slot_id}' in slots_map keys: {list(self._slots_map.keys())}")
-        
-        # Try direct hash lookup first
-        if slot_id in self._slots_map:
-            slot = self._slots_map[slot_id]
-            logging.info(f"Found slot by direct lookup: {slot_id}")
-        # Try as option number ("option_1", "1", etc.)
-        elif f"option_{slot_id}" in self._slots_map:
-            slot = self._slots_map[f"option_{slot_id}"]
-            logging.info(f"Found slot by option_ lookup: option_{slot_id}")
-        elif f"option {slot_id}" in self._slots_map:
-            slot = self._slots_map[f"option {slot_id}"]
-            logging.info(f"Found slot by 'option ' lookup: option {slot_id}")
-        # Try parsing "Option X" format
-        elif slot_id.lower().startswith("option"):
-            option_num = slot_id.lower().replace("option", "").strip()
-            if option_num in self._slots_map:
-                slot = self._slots_map[option_num]
-                logging.info(f"Found slot by parsing option: {option_num}")
-        
-        if not slot:
-            logging.warning(f"Could not find slot for '{slot_id}' in available options")
-            return f"I couldn't find that appointment option '{slot_id}'. Let me show you the available times again so you can choose from the list."
-        
-        try:
-            logging.info(f"Attempting to schedule appointment for {attendee_name} at {slot.start_time}")
-            await self.calendar.schedule_appointment(
-                start_time=slot.start_time,
-                attendee_name=attendee_name,
-                attendee_email=attendee_email,
-                attendee_phone=attendee_phone or "",
-                notes=notes or "",
-            )
-            
-            local = slot.start_time.astimezone(self.calendar.tz)
-            return (
-                f"Perfect! I've successfully scheduled your appointment for "
-                f"{local.strftime('%A, %B %d, %Y at %I:%M %p %Z')}. "
-                f"You'll receive a confirmation email at {attendee_email} shortly."
-            )
+def _http_get_json(url: str, timeout: int = 5) -> dict | None:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        logging.warning("resolver GET failed: %s (%s)", url, getattr(e, "reason", e))
+        return None
 
-        except SlotUnavailableError:
-            return "I'm sorry, but that time slot is no longer available. Let me show you the current available times."
-        except Exception as e:
-            logging.error(f"Error scheduling appointment: {e}")
-            return "I encountered an error while scheduling your appointment. Please try again or contact support."
-
+# ===================== Entrypoint (Single-Assistant) =====================
 
 async def entrypoint(ctx: agents.JobContext):
     await ctx.connect()
 
-    participant = await ctx.wait_for_participant()
-    metadata = json.loads(participant.metadata)
-    instructions = metadata.get("prompt", "You are an AI Assistant that helps callers .")
-    
-    # Check for Cal.com integration
-    cal_api_key = metadata.get("cal_api_key")
-    cal_event_type_slug = metadata.get("cal_event_type_slug")
-    cal_event_type_id = metadata.get("cal_event_type_id")
-    cal_timezone = metadata.get("cal_timezone", "UTC")
+    # --- Room / DID context -----------------------------------------
+    room_name = getattr(ctx.room, "name", "") or ""
+    prefix = os.getenv("DISPATCH_ROOM_PREFIX", "did-")
+    called_did = extract_called_did(room_name) or (room_name[len(prefix):] if room_name.startswith(prefix) else None)
+    logging.info("DID ROUTE | room=%s | called_did=%s", room_name, called_did)
 
-    logging.info(
-        "Cal.com metadata: api_key=%s, event_type_id=%s, event_type_slug=%s, tz=%s",
-        "present" if bool(cal_api_key) else "missing",
-        str(cal_event_type_id),
-        str(cal_event_type_slug),
-        str(cal_timezone),
+    participant = await ctx.wait_for_participant()
+
+    # --- Call tracking setup ----------------------------------------
+    start_time = datetime.datetime.now()
+    call_id = str(uuid.uuid4())
+    logging.info("CALL_START | call_id=%s | start_time=%s", call_id, start_time.isoformat())
+    # ----------------------------------------------------------------
+
+    call_sid = None
+
+
+    # Extract Call SID from participant attributes
+    # The Call SID is available in participantAttributes as sip.twilio.callSid
+    try:
+        logging.info("PARTICIPANT_DEBUG | participant_type=%s | has_attributes=%s",
+                    type(participant).__name__, hasattr(participant, 'attributes'))
+
+        if hasattr(participant, 'attributes') and participant.attributes:
+            logging.info("PARTICIPANT_ATTRIBUTES_DEBUG | attributes=%s", participant.attributes)
+
+            # Check for sip.twilio.callSid in attributes
+            if hasattr(participant.attributes, 'get'):
+                call_sid = participant.attributes.get('sip.twilio.callSid')
+                if call_sid:
+                    logging.info("CALL_SID_FROM_PARTICIPANT_ATTRIBUTES | call_sid=%s", call_sid)
+
+            # Also try direct attribute access
+            if not call_sid and hasattr(participant.attributes, 'sip'):
+                sip_attrs = participant.attributes.sip
+                if hasattr(sip_attrs, 'twilio') and hasattr(sip_attrs.twilio, 'callSid'):
+                    call_sid = sip_attrs.twilio.callSid
+                    if call_sid:
+                        logging.info("CALL_SID_FROM_SIP_ATTRIBUTES | call_sid=%s", call_sid)
+        else:
+            logging.info("NO_PARTICIPANT_ATTRIBUTES | has_attributes=%s", hasattr(participant, 'attributes'))
+
+    except Exception as e:
+        logging.warning("Failed to get call_sid from participant attributes: %s", str(e))
+
+    # Fallback: Try to extract call SID from room metadata or participant metadata
+    if not call_sid and hasattr(ctx.room, 'metadata') and ctx.room.metadata:
+        try:
+            room_meta = json.loads(ctx.room.metadata) if isinstance(ctx.room.metadata, str) else ctx.room.metadata
+            call_sid = room_meta.get('call_sid') or room_meta.get('CallSid') or room_meta.get('provider_id')
+            if call_sid:
+                logging.info("CALL_SID_FROM_ROOM_METADATA | call_sid=%s", call_sid)
+        except Exception as e:
+            logging.warning("Failed to parse room metadata for call_sid: %s", str(e))
+
+    if not call_sid and hasattr(participant, 'metadata') and participant.metadata:
+        try:
+            participant_meta = json.loads(participant.metadata) if isinstance(participant.metadata, str) else participant.metadata
+            call_sid = participant_meta.get('call_sid') or participant_meta.get('CallSid') or participant_meta.get('provider_id')
+            if call_sid:
+                logging.info("CALL_SID_FROM_PARTICIPANT_METADATA | call_sid=%s", call_sid)
+        except Exception as e:
+            logging.warning("Failed to parse participant metadata for call_sid: %s", str(e))
+
+    # Log final call_sid resolution
+    if call_sid:
+        logging.info("CALL_SID_RESOLVED | call_sid=%s", call_sid)
+    else:
+        logging.warning("CALL_SID_NOT_FOUND | Will use generated call_id=%s", call_id)
+
+
+
+    # --- Resolve assistantId ---------------------------------------
+    resolver_meta: dict = {}
+    resolver_label: str = "none"
+
+    p_meta, p_kind = ({}, "none")
+    if participant.metadata:
+        p_meta, p_kind = _parse_json_or_b64(participant.metadata)
+
+    r_meta_raw = getattr(ctx.room, "metadata", "") or ""
+    r_meta, r_kind = ({}, "none")
+    if r_meta_raw:
+        r_meta, r_kind = _parse_json_or_b64(r_meta_raw)
+
+    e_meta, e_label = _from_env_json("ASSISTANT_JSON", "DEFAULT_ASSISTANT_JSON")
+
+    id_sources: list[tuple[str, dict]] = [
+        (f"participant.{p_kind}", p_meta),
+        (f"room.{r_kind}", r_meta),
+        (e_label, e_meta),
+    ]
+
+    assistant_id, id_src = choose_from_sources(
+        id_sources,
+        ("assistantId",),
+        ("assistant", "id"),
+        default=None,
     )
 
+    if not assistant_id:
+        env_assistant_id = os.getenv("ASSISTANT_ID", "").strip() or None
+        if env_assistant_id:
+            assistant_id = env_assistant_id
+            id_src = "env:ASSISTANT_ID"
+
+    backend_url = os.getenv("BACKEND_URL", "http://localhost:4000").rstrip("/")
+    resolver_path = os.getenv("ASSISTANT_RESOLVER_PATH", "/api/v1/livekit/assistant").lstrip("/")
+    base_resolver = f"{backend_url}/{resolver_path}".rstrip("/")
+
+    if not assistant_id and called_did:
+        q = urllib.parse.urlencode({"number": called_did})
+        for path in ("by-number", ""):
+            url = f"{base_resolver}/{path}?{q}" if path else f"{base_resolver}?{q}"
+            data = _http_get_json(url)
+            if data and data.get("success") and isinstance(data.get("assistant"), dict):
+                assistant_id = data["assistant"].get("id") or None
+                if assistant_id:
+                    resolver_meta = {
+                        "assistant": {
+                            "id": assistant_id,
+                            "name": data["assistant"].get("name"),
+                            "prompt": data["assistant"].get("prompt"),
+                            "firstMessage": data["assistant"].get("firstMessage"),
+                        },
+                        "cal_api_key": data.get("cal_api_key"),
+                        "cal_event_type_id": (
+                            str(data.get("cal_event_type_id"))
+                            if data.get("cal_event_type_id") is not None else None
+                        ),
+                        "cal_timezone": data.get("cal_timezone"),
+                    }
+                    resolver_label = "resolver.by_number"
+                    id_src = f"{resolver_label}.assistant.id"
+                    break
+
+    if assistant_id:
+        supabase_url = os.getenv("SUPABASE_URL", "").strip()
+        supabase_key = (
+            os.getenv("SUPABASE_SERVICE_ROLE", "").strip()
+            or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+        )
+        logging.info(
+            "SUPABASE_CHECK | url_present=%s | key_present=%s | create_client=%s",
+            bool(supabase_url), bool(supabase_key), create_client is not None
+        )
+        used_supabase = False
+        if create_client and supabase_url and supabase_key:
+            try:
+                sb: Client = create_client(supabase_url, supabase_key)  # type: ignore
+                resp = sb.table("agents").select(
+                    "id, name, prompt, first_message, cal_api_key, cal_event_type_id, cal_timezone, user_id"
+                ).eq("id", assistant_id).single().execute()
+                row = resp.data
+                print("row", row)
+                if row:
+                    resolver_meta = {
+                        "assistant": {
+                            "id": row.get("id") or assistant_id,
+                            "name": row.get("name") or "Assistant",
+                            "prompt": row.get("prompt") or "",
+                            "firstMessage": row.get("first_message") or "",
+                        },
+                        "cal_api_key": row.get("cal_api_key"),
+                        "cal_event_type_id": row.get("cal_event_type_id"),
+                        "cal_timezone": row.get("cal_timezone") or "UTC",
+                        "user_id": row.get("user_id"),
+                    }
+                    resolver_label = "resolver.supabase"
+                    used_supabase = True
+            except Exception:
+                logging.exception("SUPABASE_ERROR | agent fetch failed")
+
+        if not used_supabase:
+            url = f"{base_resolver}/{assistant_id}"
+            data = _http_get_json(url)
+            if data and data.get("success") and isinstance(data.get("assistant"), dict):
+                a = data["assistant"]
+                resolver_meta = {
+                    "assistant": {
+                        "id": a.get("id") or assistant_id,
+                        "name": a.get("name"),
+                        "prompt": a.get("prompt"),
+                        "firstMessage": a.get("firstMessage"),
+                    },
+                    "cal_api_key": data.get("cal_api_key"),
+                    "cal_event_type_id": (
+                        str(data.get("cal_event_type_id"))
+                        if data.get("cal_event_type_id") is not None else None
+                    ),
+                    "cal_timezone": data.get("cal_timezone"),
+                }
+                resolver_label = "resolver.id_http"
+            else:
+                resolver_label = "resolver.error"
+
+    logging.info(
+        "ASSISTANT_ID | value=%s | source=%s | resolver=%s",
+        assistant_id or "<none>", id_src, resolver_label
+    )
+
+    # --- Build instructions strictly from RESOLVED ASSISTANT ONLY ----------
+    assistant_name = (resolver_meta.get("assistant") or {}).get("name") or os.getenv("DEFAULT_ASSISTANT_NAME", "Assistant")
+    prompt = (resolver_meta.get("assistant") or {}).get("prompt") or os.getenv("DEFAULT_INSTRUCTIONS", "You are a helpful voice assistant.")
+    first_message = (resolver_meta.get("assistant") or {}).get("firstMessage") or ""
+
+    logging.info(
+        "AGENT_CONFIG | name=%s | has_prompt=%s | has_first_message=%s",
+        assistant_name, bool(prompt), bool(first_message)
+    )
+
+    # Calendar (from resolver only)
+    cal_api_key = resolver_meta.get("cal_api_key")
+    cal_event_type_id = resolver_meta.get("cal_event_type_id")
+    cal_timezone = resolver_meta.get("cal_timezone") or "UTC"
+
+     # ✅ Use only the Supabase prompt as instructions (no extra text)
+    def _strict_wrap(prompt_text: str) -> str:
+     p = (prompt_text or "").strip() or "You are a helpful voice assistant."
+     return f"""
+      You are a real-time voice agent.
+
+     CRITICAL RULES (apply to every turn):
+     - The TASK PROMPT below is your ONLY domain instruction. Follow it exactly.
+     - Make measurable progress toward fulfilling the TASK PROMPT on EVERY turn.
+     - If the TASK PROMPT implies collecting info, ask for it immediately, ONE item at a time.
+     - Keep responses short and spoken-friendly. Ask at most ONE question per turn.
+     - Never invent values; only use what the caller said. If missing, ask.
+     - If the caller goes off-topic, briefly acknowledge then steer back to the TASK PROMPT.
+ 
+     TASK PROMPT:
+      \"\"\"{p}\"\"\"
+     """.strip()
+
+
+    instructions = _strict_wrap(prompt)
+
+
+    # Calendar object is optional; tools remain available only when configured
+    calendar: Calendar | None = None
     if cal_api_key and cal_event_type_id:
         try:
-            logging.info(
-                "Initializing Cal.com calendar with event type id: %s",
-                str(cal_event_type_id),
-            )
             calendar = CalComCalendar(
-                api_key=cal_api_key,
-                timezone=cal_timezone or "UTC",
+                api_key=str(cal_api_key),
+                timezone=str(cal_timezone or "UTC"),
                 event_type_id=int(cal_event_type_id),
             )
             await calendar.initialize()
-            logging.info("Cal.com calendar initialized successfully")
-        except Exception as e:
-            logging.error(f"Failed to initialize Cal.com calendar: {e}")
-            logging.error(
-                "Cal.com integration failed - agent will not have calendar access"
-            )
-            calendar = None
-    else:
-        logging.info(
-            "Cal.com credentials missing or event_type_id not provided - agent will not have calendar access"
-        )
-        calendar = None
+            logging.info("CALENDAR_READY | event_type_id=%s | tz=%s", cal_event_type_id, cal_timezone)
+        except Exception:
+            logging.exception("Failed to initialize Cal.com calendar")
+
+    logging.info(
+        "PROMPT_TRACE_FINAL | sha256=%s | len=%d | preview=%s",
+        sha256_text(instructions), len(instructions), preview(instructions)
+    )
+    logging.info("FIRST_MESSAGE | message=%s", first_message)
+
+    # --- OpenAI + VAD configuration ----------------------------------------
+    openai_api_key = os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API")
+    if not openai_api_key:
+        logging.warning("OPENAI_API_KEY/OPENAI_API not set; OpenAI plugins will fail to auth.")
+
+    llm_model = os.getenv("OPENAI_LLM_MODEL", "gpt-4o-mini")
+    stt_model = os.getenv("OPENAI_STT_MODEL", "gpt-4o-transcribe")
+    tts_model = os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
+    tts_voice = os.getenv("OPENAI_TTS_VOICE", "alloy")
+
+    # VAD
+    vad = ctx.proc.userdata.get("vad") if hasattr(ctx, "proc") else None
+    if vad is None:
+        vad = silero.VAD.load()
+
+    # Block tool calls unless calendar is configured
+    tool_choice_mode = "auto" if (cal_api_key and cal_event_type_id) else "none"
 
     session = AgentSession(
-      stt=deepgram.STT(model="nova-3"),
-      llm=groq.LLM(model="llama-3.3-70b-versatile", temperature=0.1),  # Best for tool use!
-      tts=deepgram.TTS(model="aura-asteria-en"),
+        turn_detection="vad",
+        vad=vad,
+        stt=lk_openai.STT(model=stt_model, api_key=openai_api_key),
+        llm=lk_openai.LLM(
+            model=llm_model,
+            api_key=openai_api_key,
+            temperature=0.0,            # tighter adherence to your prompt
+            parallel_tool_calls=False,
+            tool_choice=tool_choice_mode,
+        ),
+        tts=lk_openai.TTS(model=tts_model, voice=tts_voice, api_key=openai_api_key),
     )
 
     await session.start(
         room=ctx.room,
-        agent=Assistant(instructions=instructions, calendar=calendar)
+        agent=Assistant(instructions=instructions, calendar=calendar),
     )
 
-    await session.generate_reply()
+    # ✅ Speak only the Supabase first_message (no hardcoded greeting)
+    if first_message and first_message.strip():
+        await session.say(first_message.strip(), allow_interruptions=True)
 
+    # -------------------- Shutdown hook: save call --------------------------
+    async def save_call_on_shutdown():
+        end_time = datetime.datetime.now()
+        logging.info("CALL_END | call_id=%s | end_time=%s", call_id, end_time.isoformat())
+
+        # Get session history
+        session_history = []
+        try:
+            if hasattr(session, 'history') and session.history:
+                history_dict = session.history.to_dict()
+                if "items" in history_dict:
+                    session_history = history_dict["items"]
+        except Exception as e:
+            logging.warning("Failed to get session history: %s", str(e))
+
+        # Save to Supabase
+        await save_call_history_to_supabase(
+            call_id=call_id,
+            assistant_id=assistant_id or "unknown",
+            called_did=called_did or "unknown",
+            start_time=start_time,
+            end_time=end_time,
+            session_history=session_history,
+            participant_identity=participant.identity if participant else None,
+            user_id=resolver_meta.get("user_id"),
+            call_sid=call_sid
+
+        )
+
+    ctx.add_shutdown_callback(save_call_on_shutdown)
+
+    # Start turn loop (no injected greeting; we already said first_message)
+    await session.run(user_input="")
+
+def prewarm(proc: agents.JobProcess):
+    """Preload VAD so it’s instantly available for sessions."""
+    try:
+        proc.userdata["vad"] = silero.VAD.load()
+    except Exception:
+        logging.exception("Failed to prewarm Silero VAD")
 
 if __name__ == "__main__":
-    agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint))
-
-
+    agents.cli.run_app(
+        agents.WorkerOptions(
+            entrypoint_fnc=entrypoint,
+            prewarm_fnc=prewarm,
+            agent_name=os.getenv("LK_AGENT_NAME", "ai"),
+        )
+    )

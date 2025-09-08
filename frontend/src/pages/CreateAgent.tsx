@@ -18,6 +18,7 @@ const CreateAgent = () => {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [firstMessage, setFirstMessage] = useState("");
   const [calApiKey, setCalApiKey] = useState("");
   const [calEventTypeSlug, setCalEventTypeSlug] = useState("");
   const [calTimezone, setCalTimezone] = useState("UTC");
@@ -61,6 +62,7 @@ const CreateAgent = () => {
           name: title.trim(),
           description: description.trim(),
           prompt: prompt.trim(),
+          firstMessage: firstMessage.trim() || null,
           calApiKey: calApiKey.trim() || null,
           calEventTypeSlug: calEventTypeSlug.trim() || null,
           calTimezone: calTimezone,
@@ -189,6 +191,24 @@ const CreateAgent = () => {
                 />
                 <p className="text-sm text-muted-foreground">
                   This is the core instruction that defines how your AI agent will behave during calls
+                </p>
+              </div>
+
+              {/* First Message Field */}
+              <div className="space-y-2">
+                <Label htmlFor="firstMessage" className="text-base font-medium">
+                  First Message (Optional)
+                </Label>
+                <Input
+                  id="firstMessage"
+                  placeholder="Enter the greeting message for your agent (e.g., 'Hi! You've reached ABC Company. How can I help you today?')"
+                  value={firstMessage}
+                  onChange={(e) => setFirstMessage(e.target.value)}
+                  className="text-base"
+                  disabled={isCreating}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Custom greeting message that will be spoken when the call starts. If left empty, a default greeting will be used.
                 </p>
               </div>
 

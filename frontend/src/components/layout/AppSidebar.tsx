@@ -13,7 +13,9 @@ import {
   Mail,
   Calendar,
   FileText,
-  Shield
+  Shield,
+  Network,
+  MessageCircle
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
@@ -32,6 +34,8 @@ import {
 const navigationItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
   { title: "Voice AI Calls", url: "/voice-calls", icon: Phone },
+  { title: "Conversations", url: "/conversations", icon: MessageCircle },
+  { title: "Twilio Configuration", url: "/trunk-management", icon: Network },
   { title: "Communication Hub", url: "/communication", icon: MessageSquare },
   { title: "CRM Integration", url: "/crm", icon: Database },
   { title: "Analytics", url: "/analytics", icon: BarChart3 },

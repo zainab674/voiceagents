@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
@@ -37,7 +38,12 @@ const AllAgents = () => {
   const [editForm, setEditForm] = useState({
     name: "",
     description: "",
-    prompt: ""
+    prompt: "",
+    firstMessage: "",
+    calApiKey: "",
+    calEventTypeSlug: "",
+    calEventTypeId: "",
+    calTimezone: "UTC"
   });
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -162,7 +168,12 @@ const AllAgents = () => {
     setEditForm({
       name: agent.name,
       description: agent.description,
-      prompt: agent.prompt
+      prompt: agent.prompt,
+      firstMessage: agent.first_message || "",
+      calApiKey: agent.cal_api_key || "",
+      calEventTypeSlug: agent.cal_event_type_slug || "",
+      calEventTypeId: agent.cal_event_type_id || "",
+      calTimezone: agent.cal_timezone || "UTC"
     });
     setIsEditModalOpen(true);
   };
@@ -199,6 +210,11 @@ const AllAgents = () => {
           name: editForm.name.trim(),
           description: editForm.description.trim(),
           prompt: editForm.prompt.trim(),
+          firstMessage: editForm.firstMessage.trim() || null,
+          calApiKey: editForm.calApiKey.trim() || null,
+          calEventTypeSlug: editForm.calEventTypeSlug.trim() || null,
+          calEventTypeId: editForm.calEventTypeId.trim() || null,
+          calTimezone: editForm.calTimezone,
         })
       });
 
@@ -209,7 +225,7 @@ const AllAgents = () => {
         });
         setIsEditModalOpen(false);
         setEditingAgent(null);
-        setEditForm({ name: "", description: "", prompt: "" });
+        setEditForm({ name: "", description: "", prompt: "", firstMessage: "", calApiKey: "", calEventTypeSlug: "", calEventTypeId: "", calTimezone: "UTC" });
         fetchAgents(); // Refresh the list
       } else {
         throw new Error('Failed to update agent');
@@ -495,6 +511,95 @@ const AllAgents = () => {
                 className="min-h-[120px] text-base"
                 disabled={isUpdating}
               />
+            </div>
+
+            {/* First Message */}
+            <div className="grid gap-2">
+              <Label htmlFor="edit-firstMessage" className="text-base font-medium">
+                First Message (Optional)
+              </Label>
+              <Input
+                id="edit-firstMessage"
+                placeholder="Enter the greeting message for your agent..."
+                value={editForm.firstMessage}
+                onChange={(e) => setEditForm({ ...editForm, firstMessage: e.target.value })}
+                className="text-base"
+                disabled={isUpdating}
+              />
+              <p className="text-sm text-muted-foreground">
+                Custom greeting message that will be spoken when the call starts.
+              </p>
+            </div>
+
+            {/* Cal.com Integration Section */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-primary" />
+                <Label className="text-base font-medium">Cal.com Integration (Optional)</Label>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Enable your agent to schedule appointments using Cal.com
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-calApiKey" className="text-sm font-medium">
+                    Cal.com API Key
+                  </Label>
+                  <Input
+                    id="edit-calApiKey"
+                    type="password"
+                    placeholder="cal_live_..."
+                    value={editForm.calApiKey}
+                    onChange={(e) => setEditForm({ ...editForm, calApiKey: e.target.value })}
+                    disabled={isUpdating}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Get this from your Cal.com account settings
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-calEventTypeSlug" className="text-sm font-medium">
+                    Event Type Slug
+                  </Label>
+                  <Input
+                    id="edit-calEventTypeSlug"
+                    placeholder="e.g., consultation, meeting"
+                    value={editForm.calEventTypeSlug}
+                    onChange={(e) => setEditForm({ ...editForm, calEventTypeSlug: e.target.value })}
+                    disabled={isUpdating}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The slug of your Cal.com event type
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-calTimezone" className="text-sm font-medium">
+                  Timezone
+                </Label>
+                <Select value={editForm.calTimezone} onValueChange={(value) => setEditForm({ ...editForm, calTimezone: value })} disabled={isUpdating}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="UTC">UTC</SelectItem>
+                    <SelectItem value="America/New_York">Eastern Time</SelectItem>
+                    <SelectItem value="America/Chicago">Central Time</SelectItem>
+                    <SelectItem value="America/Denver">Mountain Time</SelectItem>
+                    <SelectItem value="America/Los_Angeles">Pacific Time</SelectItem>
+                    <SelectItem value="Europe/London">London</SelectItem>
+                    <SelectItem value="Europe/Paris">Paris</SelectItem>
+                    <SelectItem value="Asia/Tokyo">Tokyo</SelectItem>
+                    <SelectItem value="Asia/Shanghai">Shanghai</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Timezone for appointment scheduling
+                </p>
+              </div>
             </div>
           </div>
 

@@ -18,6 +18,8 @@ import NotFound from "./pages/NotFound";
 import { AuthPage } from "./components/auth/AuthPage";
 import { UserProfile } from "./components/auth/UserProfile";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
+import TrunkManagement from "./components/TrunkManagement";
+import Conversations from "./pages/Conversations";
 
 const queryClient = new QueryClient();
 
@@ -43,6 +45,8 @@ const App = () => (
             <Route path="/communication" element={<ProtectedRoute><AppLayout><CommunicationHub /></AppLayout></ProtectedRoute>} />
             <Route path="/crm" element={<ProtectedRoute><AppLayout><CRMIntegration /></AppLayout></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><AppLayout><Analytics /></AppLayout></ProtectedRoute>} />
+            <Route path="/trunk-management" element={<ProtectedRoute><AppLayout><TrunkManagement /></AppLayout></ProtectedRoute>} />
+            <Route path="/conversations" element={<ProtectedRoute><AppLayout><Conversations /></AppLayout></ProtectedRoute>} />
             <Route path="/bookings" element={<ProtectedRoute><AppLayout><div className="p-6"><h1 className="text-2xl font-bold">Bookings - Coming Soon</h1></div></AppLayout></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute><AppLayout><AdminPanel /></AppLayout></ProtectedRoute>} />
             <Route path="/white-label" element={<ProtectedRoute><AppLayout><div className="p-6"><h1 className="text-2xl font-bold">White Label - Coming Soon</h1></div></AppLayout></ProtectedRoute>} />

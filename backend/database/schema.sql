@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS agents (
     name VARCHAR(255) NOT NULL,
     description TEXT NOT NULL,
     prompt TEXT NOT NULL,
+    first_message TEXT,
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     -- Cal.com Integration Fields
     cal_api_key VARCHAR(255),
@@ -89,6 +90,7 @@ CREATE TABLE IF NOT EXISTS calls (
     duration_seconds INTEGER DEFAULT 0,
     outcome VARCHAR(100), -- booked, follow-up, no-answer, etc.
     notes TEXT,
+    call_sid TEXT, -- Twilio Call SID for tracking calls and linking with recording data
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     started_at TIMESTAMP WITH TIME ZONE,
     ended_at TIMESTAMP WITH TIME ZONE,
@@ -101,6 +103,7 @@ CREATE INDEX IF NOT EXISTS idx_calls_user_id ON calls(user_id);
 CREATE INDEX IF NOT EXISTS idx_calls_status ON calls(status);
 CREATE INDEX IF NOT EXISTS idx_calls_created_at ON calls(created_at);
 CREATE INDEX IF NOT EXISTS idx_calls_success ON calls(success);
+CREATE INDEX IF NOT EXISTS idx_calls_call_sid ON calls(call_sid);
 
 -- Create function to update call duration
 CREATE OR REPLACE FUNCTION update_call_duration()

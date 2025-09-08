@@ -12,7 +12,8 @@ const requiredVars = [
   'SUPABASE_ANON_KEY',
   'SUPABASE_SERVICE_ROLE_KEY',
   'DATABASE_URL',
-  'JWT_SECRET'
+  'JWT_SECRET',
+  'LIVEKIT_SIP_URI'
 ];
 
 let allGood = true;

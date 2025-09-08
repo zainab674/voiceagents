@@ -36,11 +36,11 @@ router.get("/test", authenticateToken, async (req, res) => {
 // Create a new agent
 router.post("/", authenticateToken, async (req, res) => {
   try {
-    const { name, description, prompt, calApiKey, calEventTypeSlug, calTimezone, calEventTypeId, calEventTitle, calEventLength } = req.body;
+    const { name, description, prompt, firstMessage, calApiKey, calEventTypeSlug, calTimezone, calEventTypeId, calEventTitle, calEventLength } = req.body;
     const userId = req.user.userId;
 
     console.log('Creating agent for user:', userId);
-    console.log('Agent data:', { name, description, prompt, calApiKey: calApiKey ? '***' : null, calEventTypeSlug, calTimezone, calEventTypeId, calEventTitle, calEventLength });
+    console.log('Agent data:', { name, description, prompt, firstMessage, calApiKey: calApiKey ? '***' : null, calEventTypeSlug, calTimezone, calEventTypeId, calEventTitle, calEventLength });
 
     if (!name || !description || !prompt) {
       return res.status(400).json({
@@ -84,6 +84,7 @@ router.post("/", authenticateToken, async (req, res) => {
           name: name.trim(),
           description: description.trim(),
           prompt: prompt.trim(),
+          first_message: firstMessage ? firstMessage.trim() : null,
           user_id: userId,
           cal_api_key: calApiKey || null,
           cal_event_type_slug: finalEventTypeSlug || null,
@@ -206,7 +207,7 @@ router.get("/:agentId", authenticateToken, async (req, res) => {
 router.put("/:agentId", authenticateToken, async (req, res) => {
   try {
     const { agentId } = req.params;
-    const { name, description, prompt, calApiKey, calEventTypeSlug, calTimezone } = req.body;
+    const { name, description, prompt, firstMessage, calApiKey, calEventTypeSlug, calEventTypeId, calTimezone } = req.body;
     const userId = req.user.userId;
 
     if (!name || !description || !prompt) {
@@ -216,16 +217,46 @@ router.put("/:agentId", authenticateToken, async (req, res) => {
       });
     }
 
+    let finalEventTypeId = calEventTypeId || null;
+    let finalEventTypeSlug = calEventTypeSlug || null;
+    let finalTimezone = calTimezone || 'UTC';
+
+    // If a Cal API key is provided but no event type id, create one via v2 (use provided slug if any)
+    if (calApiKey && !finalEventTypeId) {
+      try {
+        const CalService = (await import('../services/calService.js')).default;
+        const calendarService = new CalService(calApiKey, null, finalTimezone, null);
+        const baseSlug = (finalEventTypeSlug || name || 'voice-agent-meeting')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/(^-|-$)/g, '');
+        const title = `${name} Meeting`;
+        const lengthInMinutes = 30;
+        const resp = await calendarService.createEventTypeV2({ title, slug: baseSlug, lengthInMinutes });
+        if (resp?.status === 'success' && resp?.data?.id) {
+          finalEventTypeId = String(resp.data.id);
+          finalEventTypeSlug = resp.data.slug || baseSlug;
+          console.log('Created Cal.com event type for edit', resp.data);
+        } else {
+          console.warn('Cal.com create event type did not return success', resp);
+        }
+      } catch (e) {
+        console.error('Failed to create Cal.com event type during edit:', e?.response?.data || e.message);
+      }
+    }
+
     const { data, error } = await supabase
       .from('agents')
       .update({
         name: name.trim(),
         description: description.trim(),
         prompt: prompt.trim(),
+        first_message: firstMessage ? firstMessage.trim() : null,
         cal_api_key: calApiKey || null,
-        cal_event_type_slug: calEventTypeSlug || null,
-        cal_timezone: calTimezone || 'UTC',
-        cal_enabled: !!(calApiKey && calEventTypeSlug),
+        cal_event_type_slug: finalEventTypeSlug || null,
+        cal_event_type_id: finalEventTypeId || null,
+        cal_timezone: finalTimezone,
+        cal_enabled: !!(calApiKey && finalEventTypeSlug),
         updated_at: new Date().toISOString(),
       })
       .eq('id', agentId)

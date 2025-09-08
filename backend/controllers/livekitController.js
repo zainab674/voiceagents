@@ -29,6 +29,13 @@ export const createToken = catchAsyncError(async (req, res, next) => {
                 if (!error && agent) {
                     enhancedMetadata = {
                         ...metadata,
+                        assistantId: agent.id,
+                        assistant: {
+                            id: agent.id,
+                            name: agent.name,
+                            prompt: agent.prompt,
+                            firstMessage: agent.first_message || ""
+                        },
                         cal_api_key: agent.cal_api_key,
                         cal_event_type_slug: agent.cal_event_type_slug,
                         cal_event_type_id: agent.cal_event_type_id,
