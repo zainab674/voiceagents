@@ -8,7 +8,7 @@ import {
   testTwilioCredentials,
   createTwilioClient
 } from "#services/twilioCredentialsService.js";
-import { createMainTrunkForUser } from "#services/twilioMainTrunkService.js";
+import { createMainTrunkForUser } from "#services/twilio-trunk-service.js";
 
 /**
  * Get active Twilio credentials for the authenticated user
@@ -71,10 +71,10 @@ export const saveCredentials = async (req, res) => {
       });
     }
 
-    // Create main elastic SIP trunk for the user
-    let trunkSid;
+    // Create main elastic SIP trunk for the user with SIP configuration
+    let trunkResult;
     try {
-      const trunkResult = await createMainTrunkForUser({
+      trunkResult = await createMainTrunkForUser({
         accountSid,
         authToken,
         userId,
@@ -85,8 +85,7 @@ export const saveCredentials = async (req, res) => {
         throw new Error(trunkResult.message || 'Failed to create trunk');
       }
       
-      trunkSid = trunkResult.trunkSid;
-      console.log(`Created main trunk ${trunkSid} for user ${userId}`);
+      console.log(`Created main trunk ${trunkResult.trunkSid} for user ${userId}`);
     } catch (trunkError) {
       console.error('Error creating main trunk:', trunkError);
       return res.status(500).json({
@@ -95,12 +94,21 @@ export const saveCredentials = async (req, res) => {
       });
     }
 
-    const credentials = await saveTwilioCredentials(userId, {
-      accountSid,
-      authToken,
-      trunkSid,
-      label
-    });
+    // The trunk service already saves the credentials with SIP configuration
+    // Just return the result from the trunk creation
+    const credentials = {
+      user_id: userId,
+      account_sid: accountSid,
+      auth_token: authToken,
+      trunk_sid: trunkResult.trunkSid,
+      label: label,
+      domain_name: trunkResult.domainName,
+      domain_prefix: trunkResult.domainPrefix,
+      credential_list_sid: trunkResult.credentialListSid,
+      sip_username: trunkResult.sipUsername,
+      sip_password: trunkResult.sipPassword,
+      is_active: true
+    };
 
     // Don't return sensitive auth_token in response
     const { auth_token, ...safeCredentials } = credentials;
@@ -110,8 +118,12 @@ export const saveCredentials = async (req, res) => {
       message: "Twilio credentials saved successfully with main elastic SIP trunk created",
       credentials: safeCredentials,
       trunkInfo: {
-        trunkSid,
-        message: "Main trunk created with LiveKit origination URL"
+        trunkSid: trunkResult.trunkSid,
+        domainName: trunkResult.domainName,
+        domainPrefix: trunkResult.domainPrefix,
+        credentialListSid: trunkResult.credentialListSid,
+        sipUsername: trunkResult.sipUsername,
+        message: "Main trunk created with SIP configuration and LiveKit origination URL"
       }
     });
   } catch (error) {
@@ -294,6 +306,56 @@ export const testCredentials = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to test Twilio credentials"
+    });
+  }
+};
+
+/**
+ * Create main trunk for user (auto-generated with SIP configuration)
+ */
+export const createMainTrunk = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { accountSid, authToken, label } = req.body;
+
+    if (!accountSid || !authToken || !label) {
+      return res.status(400).json({
+        success: false,
+        message: "accountSid, authToken, and label are required"
+      });
+    }
+
+    // Create main trunk for the user with SIP configuration
+    const trunkResult = await createMainTrunkForUser({
+      accountSid,
+      authToken,
+      userId,
+      label
+    });
+
+    if (!trunkResult.success) {
+      return res.status(500).json({
+        success: false,
+        message: trunkResult.message || 'Failed to create main trunk'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Main trunk created successfully with SIP configuration',
+      trunkSid: trunkResult.trunkSid,
+      trunkName: trunkResult.trunkName,
+      domainName: trunkResult.domainName,
+      domainPrefix: trunkResult.domainPrefix,
+      credentialListSid: trunkResult.credentialListSid,
+      sipUsername: trunkResult.sipUsername,
+      sipPassword: trunkResult.sipPassword
+    });
+  } catch (error) {
+    console.error('Error creating main trunk:', error);
+    res.status(500).json({
+      success: false,
+      message: `Failed to create main trunk: ${error.message}`
     });
   }
 };

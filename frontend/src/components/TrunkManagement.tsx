@@ -85,7 +85,8 @@ const TrunkManagement = () => {
     phoneNumbers: false,
     inboundTrunks: false,
     dispatchRules: false,
-    agents: false
+    agents: false,
+    assigning: false
   });
 
   // Form states
@@ -212,6 +213,11 @@ const TrunkManagement = () => {
 
   // Action functions - Two-step assignment process (like SaaS project)
   const assignNumberToAgent = async (phoneNumber?: string, assistantId?: string) => {
+    // Prevent multiple simultaneous calls
+    if (loading.assigning) {
+      return;
+    }
+
     if (!hasCredentials) {
       toast({
         title: "Error",
@@ -232,6 +238,9 @@ const TrunkManagement = () => {
       });
       return;
     }
+
+    // Set loading state
+    setLoading(prev => ({ ...prev, assigning: true }));
 
     // Find the phone number object to get the SID
     const phoneObj = phoneNumbers.find(n => n.phoneNumber === phoneToAssign);
@@ -326,6 +335,9 @@ const TrunkManagement = () => {
         description: error.message || "Please try again.",
         variant: "destructive"
       });
+    } finally {
+      // Reset loading state
+      setLoading(prev => ({ ...prev, assigning: false }));
     }
   };
 
@@ -619,9 +631,9 @@ const TrunkManagement = () => {
                                   <Button
                                     size="sm"
                                     onClick={() => assignNumberToAgent(number.phoneNumber, selectedAgent)}
-                                    disabled={loading.phoneNumbers || selectedPhoneNumber !== number.phoneNumber || !selectedAgent}
+                                    disabled={loading.phoneNumbers || loading.assigning || selectedPhoneNumber !== number.phoneNumber || !selectedAgent}
                                   >
-                                    Assign
+                                    {loading.assigning ? "Assigning..." : "Assign"}
                                   </Button>
                                 ) : isAssigned ? (
                                   <span className="text-green-600 dark:text-green-400 text-sm">✓</span>

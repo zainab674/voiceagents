@@ -8,6 +8,8 @@ import urllib.request
 import urllib.parse
 import logging
 import datetime
+import asyncio
+import sys
 from typing import Optional, Tuple, Iterable
 import base64
 import os
@@ -18,8 +20,8 @@ import uuid
 from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
 
-from livekit import agents
-from livekit.agents import AgentSession, Agent, RunContext, function_tool
+from livekit import agents, api
+from livekit.agents import AgentSession, Agent, RunContext, function_tool, AutoSubscribe
 
 # ⬇️ OpenAI + VAD plugins
 from livekit.plugins import openai as lk_openai  # LLM, STT, TTS
@@ -34,7 +36,7 @@ except Exception:  # pragma: no cover
 # Calendar integration (your module)
 from cal_calendar_api import Calendar, CalComCalendar, AvailableSlot, SlotUnavailableError
 
-# Assistant service
+# Assistant service (used for INBOUND only)
 from services.assistant import Assistant
 
 load_dotenv()
@@ -227,25 +229,156 @@ def _http_get_json(url: str, timeout: int = 5) -> dict | None:
         logging.warning("resolver GET failed: %s (%s)", url, getattr(e, "reason", e))
         return None
 
+# ===================== Campaign Outbound Helper =====================
+
+def build_campaign_outbound_instructions(contact_name: str | None, campaign_prompt: str | None) -> str:
+    name = (contact_name or "there").strip() or "there"
+    script = (campaign_prompt or "").strip()
+    return f"""
+You are a concise, friendly **campaign dialer** (NOT the full assistant). Rules:
+- Wait for the callee to speak first; if silence for ~2–3 seconds, give one polite greeting.
+- Personalize by name when possible: use "{name}".
+- Follow the campaign script briefly; keep turns short (1–2 sentences).
+- If not interested / wrong number: apologize and end gracefully.
+- Do NOT use any tools or calendars. No side effects.
+
+If they don't speak: say once, "Hi {name}, "
+
+CAMPAIGN SCRIPT (use naturally, don't read verbatim if awkward):
+{(script if script else "(no campaign script provided)")}
+""".strip()
+
 # ===================== Entrypoint (Single-Assistant) =====================
 
+# Global counter for debugging
+dispatch_count = 0
+
 async def entrypoint(ctx: agents.JobContext):
-    await ctx.connect()
+    global dispatch_count
+    dispatch_count += 1
+    logging.info("🎯 DISPATCH_RECEIVED | count=%d | room=%s | job_metadata=%s", dispatch_count, ctx.room.name, ctx.job.metadata)
+    logging.info("🚀 AGENT_ENTRYPOINT_START | room=%s | job_metadata=%s", ctx.room.name, ctx.job.metadata)
+
+    # Initialize connection with auto-subscribe to audio only (crucial for SIP)
+    await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
+    logging.info("✅ AGENT_CONNECTED | room=%s", ctx.room.name)
+
+    # --- Check if this is an outbound call --------------------------
+    phone_number = None
+    assistant_id_from_job = None
+    try:
+        dial_info = json.loads(ctx.job.metadata)
+        phone_number = dial_info.get("phone_number")
+        assistant_id_from_job = dial_info.get("agentId")
+        logging.info("OUTBOUND_CHECK | phone_number=%s | metadata=%s", phone_number, ctx.job.metadata)
+    except Exception as e:
+        logging.warning("Failed to parse job metadata for outbound call: %s", str(e))
 
     # --- Room / DID context -----------------------------------------
     room_name = getattr(ctx.room, "name", "") or ""
     prefix = os.getenv("DISPATCH_ROOM_PREFIX", "did-")
     called_did = extract_called_did(room_name) or (room_name[len(prefix):] if room_name.startswith(prefix) else None)
-    logging.info("DID ROUTE | room=%s | called_did=%s", room_name, called_did)
+    logging.info("🎯 AGENT_TRIGGERED | room=%s | called_did=%s | room_type=%s | is_outbound=%s",
+                 room_name, called_did, type(ctx.room).__name__, phone_number is not None)
 
-    participant = await ctx.wait_for_participant()
+    # --- Handle outbound calling (create SIP participant) -----------
+    if phone_number is not None:
+        logging.info("🔥 OUTBOUND_CALL_DETECTED | phone_number=%s", phone_number)
+        try:
+            # Get trunk ID from job metadata (passed by campaign execution engine)
+            sip_trunk_id = None
+            try:
+                # Parse job metadata to get campaign info and outbound trunk ID
+                job_metadata = json.loads(ctx.job.metadata) if isinstance(ctx.job.metadata, str) else ctx.job.metadata
+                campaign_id = job_metadata.get('campaignId')
+                assistant_id = job_metadata.get('agentId')
+                sip_trunk_id = job_metadata.get('outbound_trunk_id')
+                
+                logging.info("🔍 JOB_METADATA | campaign_id=%s | assistant_id=%s | outbound_trunk_id=%s", campaign_id, assistant_id, sip_trunk_id)
+                
+                if not sip_trunk_id:
+                    logging.error("❌ No outbound_trunk_id found in job metadata")
+                    
+            except Exception as metadata_error:
+                logging.error("❌ Metadata parsing failed: %s", str(metadata_error))
+            
+            # Fallback to environment variable if metadata lookup failed
+            if not sip_trunk_id:
+                sip_trunk_id = os.getenv("SIP_TRUNK_ID")
+                logging.info("🔄 FALLBACK_TO_ENV | sip_trunk_id=%s", sip_trunk_id)
+            
+            logging.info("🔍 SIP_TRUNK_ID_CHECK | sip_trunk_id=%s", sip_trunk_id)
+            if not sip_trunk_id:
+                logging.error("❌ SIP_TRUNK_ID not configured - cannot make outbound call")
+                await ctx.api.room.delete_room(api.DeleteRoomRequest(room=ctx.room.name))
+                return
+
+            logging.info("📞 OUTBOUND_CALL_START | phone_number=%s | trunk_id=%s | room=%s", phone_number, sip_trunk_id, ctx.room.name)
+            sip_request = api.CreateSIPParticipantRequest(
+                room_name=ctx.room.name,
+                sip_trunk_id=sip_trunk_id,
+                sip_call_to=phone_number,
+                participant_identity=phone_number,
+                wait_until_answered=True,
+            )
+            logging.info("📞 SIP_REQUEST_CREATED | request=%s", sip_request)
+            result = await ctx.api.sip.create_sip_participant(sip_request)
+            logging.info("✅ OUTBOUND_CALL_CONNECTED | phone_number=%s | result=%s", phone_number, result)
+        except api.TwirpError as e:
+            logging.error("❌ OUTBOUND_CALL_FAILED | phone_number=%s | error=%s | sip_status=%s | metadata=%s",
+                          phone_number, e.message, e.metadata.get('sip_status_code'), e.metadata)
+            await ctx.api.room.delete_room(api.DeleteRoomRequest(room=ctx.room.name))
+            return
+        except Exception as e:
+            logging.error("❌ OUTBOUND_CALL_ERROR | phone_number=%s | error=%s | type=%s", phone_number, str(e), type(e).__name__)
+            await ctx.api.room.delete_room(api.DeleteRoomRequest(room=ctx.room.name))
+            return
+    else:
+        logging.info("📞 INBOUND_CALL_DETECTED | phone_number=None")
+
+    # Wait for participant with timeout (crucial for SIP participants)
+    try:
+        participant = await asyncio.wait_for(
+            ctx.wait_for_participant(),
+            timeout=10.0
+        )
+        logging.info("PARTICIPANT_CONNECTED | identity=%s | type=%s | metadata=%s",
+                     participant.identity, type(participant).__name__, participant.metadata)
+        if hasattr(participant, 'attributes') and participant.attributes:
+            logging.info("SIP_PARTICIPANT_ATTRIBUTES | attributes=%s", participant.attributes)
+    except asyncio.TimeoutError:
+        logging.error("PARTICIPANT_CONNECTION_TIMEOUT | room=%s", room_name)
+        await ctx.api.room.delete_room(api.DeleteRoomRequest(room=ctx.room.name))
+        return
+
+    # --- Campaign metadata extraction (room metadata) ----------------
+    campaign_prompt = ""
+    contact_info = {}
+    contact_name = None
+    if hasattr(ctx.room, 'metadata') and ctx.room.metadata:
+        try:
+            room_meta = json.loads(ctx.room.metadata) if isinstance(ctx.room.metadata, str) else ctx.room.metadata
+            campaign_prompt = room_meta.get('campaignPrompt', '') or ''
+            contact_info = room_meta.get('contactInfo', {}) or {}
+            contact_name = contact_info.get('name') or room_meta.get('contactName')
+            logging.info("CAMPAIGN_METADATA | has_prompt=%s | contact_name=%s | contact_phone=%s | room_meta_keys=%s",
+                         bool(campaign_prompt),
+                         contact_name or 'Unknown',
+                         contact_info.get('phone', 'Unknown'),
+                         list(room_meta.keys()) if room_meta else [])
+        except Exception as e:
+            logging.warning("Failed to parse room metadata for campaign info: %s", str(e))
+    else:
+        logging.info("NO_ROOM_METADATA | has_metadata_attr=%s | metadata_exists=%s",
+                     hasattr(ctx.room, 'metadata'), bool(getattr(ctx.room, 'metadata', None)))
 
     # --- Call tracking setup ----------------------------------------
     start_time = datetime.datetime.now()
     call_id = str(uuid.uuid4())
     logging.info("CALL_START | call_id=%s | start_time=%s", call_id, start_time.isoformat())
-    # ----------------------------------------------------------------
 
+    # --- Recording setup (Twilio SID discovery) ---------------------
+    recording_sid = None
     call_sid = None
 
 
@@ -302,9 +435,98 @@ async def entrypoint(ctx: agents.JobContext):
     else:
         logging.warning("CALL_SID_NOT_FOUND | Will use generated call_id=%s", call_id)
 
+    # ----------------------------------------------------------------
+    # From this point, BRANCH:
+    #   - OUTBOUND (campaign dialer): NO Assistant resolution, NO calendar; use lightweight Agent.
+    #   - INBOUND: resolve Assistant & calendar and use services.assistant.Assistant.
+    # ----------------------------------------------------------------
 
+    # --- OpenAI + VAD configuration (shared) ------------------------
+    openai_api_key = os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API")
+    if not openai_api_key:
+        logging.warning("OPENAI_API_KEY/OPENAI_API not set; OpenAI plugins will fail to auth.")
 
-    # --- Resolve assistantId ---------------------------------------
+    stt_model = os.getenv("OPENAI_STT_MODEL", "gpt-4o-transcribe")
+    tts_model = os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
+    tts_voice = os.getenv("OPENAI_TTS_VOICE", "alloy")
+
+    # VAD
+    vad = ctx.proc.userdata.get("vad") if hasattr(ctx, "proc") else None
+    if vad is None:
+        vad = silero.VAD.load()
+
+    # ===================== OUTBOUND PATH ============================
+    if phone_number is not None:
+        # Build campaign-only instructions (no assistant, no calendar)
+        outbound_instructions = build_campaign_outbound_instructions(
+            contact_name=contact_name,
+            campaign_prompt=campaign_prompt
+        )
+        logging.info("PROMPT_TRACE_FINAL (OUTBOUND) | sha256=%s | len=%d | preview=%s",
+                     sha256_text(outbound_instructions), len(outbound_instructions), preview(outbound_instructions))
+
+        # LLM config for outbound: use env/defaults, not per-assistant
+        llm_model = os.getenv("OPENAI_LLM_MODEL", "gpt-4o-mini")
+        temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.3"))
+        max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "250"))
+
+        session = AgentSession(
+            turn_detection="vad",
+            vad=vad,
+            stt=lk_openai.STT(model=stt_model, api_key=openai_api_key),
+            llm=lk_openai.LLM(
+                model=llm_model,
+                api_key=openai_api_key,
+                temperature=temperature,
+                tool_choice="none",  # outbound
+            ),
+            tts=lk_openai.TTS(model=tts_model, voice=tts_voice, api_key=openai_api_key),
+        )
+
+        logging.info("STARTING_SESSION (OUTBOUND) | instructions_length=%d | has_calendar=%s",
+                     len(outbound_instructions), False)
+
+        await session.start(
+            room=ctx.room,
+            agent=Agent(instructions=outbound_instructions),
+        )
+        logging.info("SESSION_STARTED (OUTBOUND) | session_active=%s", session is not None)
+
+        async def save_call_on_shutdown_outbound():
+            end_time = datetime.datetime.now()
+            logging.info("CALL_END | call_id=%s | end_time=%s", call_id, end_time.isoformat())
+            session_history = []
+            try:
+                if hasattr(session, 'history') and session.history:
+                    history_dict = session.history.to_dict()
+                    if "items" in history_dict:
+                        session_history = history_dict["items"]
+                        logging.info("SESSION_HISTORY_RETRIEVED | items_count=%d", len(session_history))
+            except Exception as e:
+                logging.warning("Failed to get session history: %s", str(e))
+
+            # Use agentId from job if present; otherwise mark as "campaign"
+            assistant_id = assistant_id_from_job or "campaign"
+            await save_call_history_to_supabase(
+                call_id=call_id,
+                assistant_id=assistant_id,
+                called_did=called_did or "unknown",
+                start_time=start_time,
+                end_time=end_time,
+                session_history=session_history,
+                participant_identity=participant.identity if participant else None,
+                call_sid=call_sid
+            )
+
+        ctx.add_shutdown_callback(save_call_on_shutdown_outbound)
+
+        logging.info("STARTING_SESSION_RUN (OUTBOUND) | user_input=empty")
+        await session.run(user_input="")
+        logging.info("SESSION_RUN_COMPLETED (OUTBOUND)")
+        return  # ✅ stop here; do not fall through to inbound logic
+
+    # ===================== INBOUND PATH =============================
+    # --- Resolve assistantId (INBOUND ONLY) -------------------------
     resolver_meta: dict = {}
     resolver_label: str = "none"
 
@@ -433,10 +655,31 @@ async def entrypoint(ctx: agents.JobContext):
         assistant_id or "<none>", id_src, resolver_label
     )
 
-    # --- Build instructions strictly from RESOLVED ASSISTANT ONLY ----------
-    assistant_name = (resolver_meta.get("assistant") or {}).get("name") or os.getenv("DEFAULT_ASSISTANT_NAME", "Assistant")
-    prompt = (resolver_meta.get("assistant") or {}).get("prompt") or os.getenv("DEFAULT_INSTRUCTIONS", "You are a helpful voice assistant.")
+    # --- Build INBOUND instructions (assistant + optional campaign info) ----
+    assistant_name = (resolver_meta.get("assistant") or {}).get("name") or "Assistant"
+    base_prompt = (resolver_meta.get("assistant") or {}).get("prompt") or "You are a helpful voice assistant."
     first_message = (resolver_meta.get("assistant") or {}).get("firstMessage") or ""
+
+    if campaign_prompt and contact_info:
+        enhanced_prompt = campaign_prompt.replace('{name}', contact_info.get('name', 'there'))
+        enhanced_prompt = enhanced_prompt.replace('{email}', contact_info.get('email', 'your email'))
+        enhanced_prompt = enhanced_prompt.replace('{phone}', contact_info.get('phone', 'your phone number'))
+        prompt = f"""{base_prompt}
+
+CAMPAIGN CONTEXT:
+You are handling an inbound call. If relevant, follow this script:
+{enhanced_prompt}
+
+CONTACT INFORMATION:
+- Name: {contact_info.get('name', 'Unknown')}
+- Email: {contact_info.get('email', 'Not provided')}
+- Phone: {contact_info.get('phone', 'Not provided')}
+"""
+        logging.info("ENHANCED_PROMPT | campaign_prompt_length=%d | contact_name=%s | enhanced_prompt=%s",
+                     len(enhanced_prompt), contact_info.get('name', 'Unknown'), enhanced_prompt)
+    else:
+        logging.info("NO_CAMPAIGN_CONTEXT | campaign_prompt=%s | contact_info=%s", campaign_prompt, contact_info)
+        prompt = base_prompt
 
     logging.info(
         "AGENT_CONFIG | name=%s | has_prompt=%s | has_first_message=%s",
@@ -448,26 +691,20 @@ async def entrypoint(ctx: agents.JobContext):
     cal_event_type_id = resolver_meta.get("cal_event_type_id")
     cal_timezone = resolver_meta.get("cal_timezone") or "UTC"
 
-     # ✅ Use only the Supabase prompt as instructions (no extra text)
-    def _strict_wrap(prompt_text: str) -> str:
-     p = (prompt_text or "").strip() or "You are a helpful voice assistant."
-     return f"""
-      You are a real-time voice agent.
+    flow_instructions = """
+GUIDED CALL POLICY (be natural, not rigid):
+- Prefer one tool call per caller turn. (Parallel tool calls are disabled.)
+- Only pass values the caller actually said—no placeholders.
+- If they mention symptoms, be empathetic, then ask if they want to book.
+- If they want to book:
+  1) Ask for the reason -> set_notes(reason).
+  2) Ask for a day -> list_slots_on_day(day), read numbered options.
+  3) They pick -> choose_slot(option).
+  4) Collect name -> email -> phone (one by one).
+  5) Read back summary. If yes -> confirm_details_yes(); if no -> confirm_details_no() and fix it, then repeat.
+""".strip()
 
-     CRITICAL RULES (apply to every turn):
-     - The TASK PROMPT below is your ONLY domain instruction. Follow it exactly.
-     - Make measurable progress toward fulfilling the TASK PROMPT on EVERY turn.
-     - If the TASK PROMPT implies collecting info, ask for it immediately, ONE item at a time.
-     - Keep responses short and spoken-friendly. Ask at most ONE question per turn.
-     - Never invent values; only use what the caller said. If missing, ask.
-     - If the caller goes off-topic, briefly acknowledge then steer back to the TASK PROMPT.
- 
-     TASK PROMPT:
-      \"\"\"{p}\"\"\"
-     """.strip()
-
-
-    instructions = _strict_wrap(prompt)
+    instructions = prompt + "\n\n" + flow_instructions
 
 
     # Calendar object is optional; tools remain available only when configured
@@ -484,26 +721,30 @@ async def entrypoint(ctx: agents.JobContext):
         except Exception:
             logging.exception("Failed to initialize Cal.com calendar")
 
-    logging.info(
-        "PROMPT_TRACE_FINAL | sha256=%s | len=%d | preview=%s",
-        sha256_text(instructions), len(instructions), preview(instructions)
-    )
-    logging.info("FIRST_MESSAGE | message=%s", first_message)
+    # First message (INBOUND greets)
+    force_first = (os.getenv("FORCE_FIRST_MESSAGE", "true").lower() != "false")
+    if force_first and first_message:
+        instructions += f' IMPORTANT: Begin the call by saying: "{first_message}"'
+        logging.info("INBOUND_FIRST_MESSAGE_SET | first_message=%s", first_message)
 
-    # --- OpenAI + VAD configuration ----------------------------------------
-    openai_api_key = os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API")
-    if not openai_api_key:
-        logging.warning("OPENAI_API_KEY/OPENAI_API not set; OpenAI plugins will fail to auth.")
+    logging.info("PROMPT_TRACE_FINAL (INBOUND) | sha256=%s | len=%d | preview=%s",
+                 sha256_text(instructions), len(instructions), preview(instructions))
 
-    llm_model = os.getenv("OPENAI_LLM_MODEL", "gpt-4o-mini")
-    stt_model = os.getenv("OPENAI_STT_MODEL", "gpt-4o-transcribe")
-    tts_model = os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
-    tts_voice = os.getenv("OPENAI_TTS_VOICE", "alloy")
+    # INBOUND model config comes from assistant data
+    assistant_data = resolver_meta.get("assistant", {})
+    llm_model = assistant_data.get("llm_model", os.getenv("OPENAI_LLM_MODEL", "gpt-4o-mini"))
+    original_model = llm_model
+    if llm_model == "GPT-4o Mini":
+        llm_model = "gpt-4o-mini"
+    elif llm_model == "GPT-4o":
+        llm_model = "gpt-4o"
+    elif llm_model == "GPT-4":
+        llm_model = "gpt-4"
+    if original_model != llm_model:
+        logging.info("MODEL_NAME_FIXED | original=%s | fixed=%s", original_model, llm_model)
 
-    # VAD
-    vad = ctx.proc.userdata.get("vad") if hasattr(ctx, "proc") else None
-    if vad is None:
-        vad = silero.VAD.load()
+    temperature = assistant_data.get("temperature", 0.1)
+    max_tokens = assistant_data.get("max_tokens", 250)
 
     # Block tool calls unless calendar is configured
     tool_choice_mode = "auto" if (cal_api_key and cal_event_type_id) else "none"
@@ -515,38 +756,43 @@ async def entrypoint(ctx: agents.JobContext):
         llm=lk_openai.LLM(
             model=llm_model,
             api_key=openai_api_key,
-            temperature=0.0,            # tighter adherence to your prompt
+            temperature=temperature,
             parallel_tool_calls=False,
             tool_choice=tool_choice_mode,
         ),
         tts=lk_openai.TTS(model=tts_model, voice=tts_voice, api_key=openai_api_key),
     )
 
+    logging.info("STARTING_SESSION (INBOUND) | instructions_length=%d | has_calendar=%s",
+                 len(instructions), calendar is not None)
+
     await session.start(
         room=ctx.room,
         agent=Assistant(instructions=instructions, calendar=calendar),
     )
 
-    # ✅ Speak only the Supabase first_message (no hardcoded greeting)
-    if first_message and first_message.strip():
-        await session.say(first_message.strip(), allow_interruptions=True)
+    logging.info("SESSION_STARTED (INBOUND) | session_active=%s", session is not None)
 
-    # -------------------- Shutdown hook: save call --------------------------
-    async def save_call_on_shutdown():
+    async def save_call_on_shutdown_inbound():
         end_time = datetime.datetime.now()
         logging.info("CALL_END | call_id=%s | end_time=%s", call_id, end_time.isoformat())
 
-        # Get session history
         session_history = []
         try:
             if hasattr(session, 'history') and session.history:
                 history_dict = session.history.to_dict()
                 if "items" in history_dict:
                     session_history = history_dict["items"]
+                    logging.info("SESSION_HISTORY_RETRIEVED | items_count=%d", len(session_history))
+                else:
+                    logging.warning("SESSION_HISTORY_NO_ITEMS | history_dict_keys=%s",
+                                    list(history_dict.keys()) if history_dict else "None")
+            else:
+                logging.warning("SESSION_HISTORY_NOT_AVAILABLE | has_history_attr=%s | history_exists=%s",
+                                hasattr(session, 'history'), bool(getattr(session, 'history', None)))
         except Exception as e:
             logging.warning("Failed to get session history: %s", str(e))
 
-        # Save to Supabase
         await save_call_history_to_supabase(
             call_id=call_id,
             assistant_id=assistant_id or "unknown",
@@ -557,13 +803,13 @@ async def entrypoint(ctx: agents.JobContext):
             participant_identity=participant.identity if participant else None,
             user_id=resolver_meta.get("user_id"),
             call_sid=call_sid
-
         )
 
-    ctx.add_shutdown_callback(save_call_on_shutdown)
+    ctx.add_shutdown_callback(save_call_on_shutdown_inbound)
 
-    # Start turn loop (no injected greeting; we already said first_message)
+    logging.info("STARTING_SESSION_RUN (INBOUND) | user_input=empty")
     await session.run(user_input="")
+    logging.info("SESSION_RUN_COMPLETED (INBOUND)")
 
 def prewarm(proc: agents.JobProcess):
     """Preload VAD so it’s instantly available for sessions."""
@@ -573,10 +819,37 @@ def prewarm(proc: agents.JobProcess):
         logging.exception("Failed to prewarm Silero VAD")
 
 if __name__ == "__main__":
+    # Check required environment variables
+    required_vars = ["LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"]
+    missing_vars = [var for var in required_vars if not os.getenv(var)]
+    
+    if missing_vars:
+        logging.error("❌ Missing required environment variables: %s", ", ".join(missing_vars))
+        logging.error("Please set these variables in your .env file or environment")
+        sys.exit(1)
+    
+    # Log configuration
+    livekit_url = os.getenv("LIVEKIT_URL")
+    agent_name = os.getenv("LK_AGENT_NAME", "ai")
+    sip_trunk_id = os.getenv("SIP_TRUNK_ID")
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    
+    logging.info("🚀 Starting LiveKit agent")
+    logging.info("📡 LiveKit URL: %s", livekit_url)
+    logging.info("🤖 Agent name: %s", agent_name)
+    logging.info("📞 SIP_TRUNK_ID (fallback): %s", sip_trunk_id)
+    logging.info("📋 Metadata-driven trunk selection: ENABLED")
+    logging.info("🔍 Environment check: LIVEKIT_URL=%s, LIVEKIT_API_KEY=%s, LIVEKIT_API_SECRET=%s",
+                 bool(os.getenv("LIVEKIT_URL")), bool(os.getenv("LIVEKIT_API_KEY")), bool(os.getenv("LIVEKIT_API_SECRET")))
+
+    logging.info("🔧 WorkerOptions: agent_name=%s, entrypoint_fnc=%s", agent_name, entrypoint.__name__)
+    logging.info("🎯 Agent is ready to receive dispatches!")
+
     agents.cli.run_app(
         agents.WorkerOptions(
             entrypoint_fnc=entrypoint,
-            prewarm_fnc=prewarm,
-            agent_name=os.getenv("LK_AGENT_NAME", "ai"),
+            prewarm_fnc=prewarm,  # ✅ ensures VAD is ready
+            agent_name=agent_name,
         )
     )

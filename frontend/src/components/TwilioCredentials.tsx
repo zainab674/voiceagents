@@ -26,7 +26,13 @@ interface TwilioCredentials {
   user_id: string;
   account_sid: string;
   auth_token: string;
+  trunk_sid: string;
   label: string;
+  domain_name?: string;
+  domain_prefix?: string;
+  credential_list_sid?: string;
+  sip_username?: string;
+  sip_password?: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -319,6 +325,18 @@ const TwilioCredentials = () => {
                     <Network className="w-4 h-4 text-muted-foreground" />
                     <span>Trunk SID: {formatSid(activeCredentials?.trunk_sid)}</span>
                   </div>
+                  {activeCredentials?.domain_name && (
+                    <div className="flex items-center gap-2">
+                      <Network className="w-4 h-4 text-muted-foreground" />
+                      <span>Domain: {activeCredentials.domain_name}</span>
+                    </div>
+                  )}
+                  {activeCredentials?.sip_username && (
+                    <div className="flex items-center gap-2">
+                      <Key className="w-4 h-4 text-muted-foreground" />
+                      <span>SIP User: {activeCredentials.sip_username}</span>
+                    </div>
+                  )}
                 </div>
                 <div className="text-xs text-muted-foreground">
                   Updated: {new Date(activeCredentials.updated_at).toLocaleDateString()}
@@ -379,8 +397,8 @@ const TwilioCredentials = () => {
                 <div className="flex items-start gap-2">
                   <div className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5">ℹ️</div>
                   <div className="text-sm text-blue-800 dark:text-blue-200">
-                    <p className="font-medium mb-1">Auto-Generated Trunks</p>
-                    <p>Trunks are automatically created for each phone number. No manual trunk configuration needed!</p>
+                    <p className="font-medium mb-1">Auto-Generated SIP Configuration</p>
+                    <p>Main trunk with domain name and credential list will be automatically created with SIP authentication for LiveKit integration.</p>
                   </div>
                 </div>
               </div>
@@ -446,6 +464,9 @@ const TwilioCredentials = () => {
                       </div>
                       <div className="text-sm text-muted-foreground">
                         Account: {formatSid(cred.account_sid)} • Trunk: {formatSid(cred.trunk_sid)}
+                        {cred.domain_name && (
+                          <span> • Domain: {cred.domain_name}</span>
+                        )}
                       </div>
                     </div>
                   </div>

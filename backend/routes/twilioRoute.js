@@ -25,6 +25,13 @@ import {
   enableTrunkRecordingController,
   getCallRecordingInfoController,
 } from "#controllers/twilioController.js";
+import {
+  sendSMS,
+  getSMSMessages,
+  smsWebhook,
+  smsStatusCallback,
+  getSMSStats
+} from "#controllers/smsController.js";
 
 const router = express.Router();
 
@@ -55,6 +62,14 @@ router.post("/sip/assistant-trunk", authenticateToken, createAssistantTrunkContr
 // ------------------- Recording Functions (require auth) -------------------
 router.post("/recording/enable", authenticateToken, enableTrunkRecordingController);
 router.get("/recording/:callSid", authenticateToken, getCallRecordingInfoController);
+
+// ------------------- SMS Functions -------------------
+router.post("/sms/send", authenticateToken, sendSMS);
+router.get("/sms/conversation/:conversationId", authenticateToken, getSMSMessages);
+router.get("/sms/stats", authenticateToken, getSMSStats);
+// Webhook endpoints (no auth required)
+router.post("/sms/webhook", express.urlencoded({ extended: false }), smsWebhook);
+router.post("/sms/status-callback", express.urlencoded({ extended: false }), smsStatusCallback);
 
 export default router;
 

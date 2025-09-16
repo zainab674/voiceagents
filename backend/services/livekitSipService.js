@@ -414,13 +414,47 @@ export const resolveAssistant = async (assistantId) => {
   }
 };
 
-export const createAssistantTrunk = async ({ assistantId, assistantName, phoneNumber }) => {
+export const createAssistantTrunk = async ({ assistantId, assistantName, phoneNumber, userId }) => {
   const ctx = { route: 'createAssistantTrunk', rid: rid() };
-  log(ctx, 'creating assistant trunk', { assistantId, assistantName, phoneNumber });
+  log(ctx, 'creating assistant trunk', { assistantId, assistantName, phoneNumber, userId });
 
   try {
     const e164 = toE164(phoneNumber);
     const agentName = process.env.LK_AGENT_NAME || 'ai';
+    
+    // Check if trunk already exists for this phone number
+    try {
+      const existingTrunks = await lk.listSipInboundTrunk();
+      const existingTrunk = existingTrunks.find(trunk => 
+        trunk.numbers && trunk.numbers.includes(e164)
+      );
+      
+      if (existingTrunk) {
+        console.log(`⚠️ Trunk already exists for phone number ${e164}:`, existingTrunk.sipTrunkId);
+        log(ctx, 'trunk already exists, skipping creation', { 
+          existingTrunkId: existingTrunk.sipTrunkId,
+          phoneNumber: e164 
+        });
+        
+        // Return existing trunk info
+        return {
+          success: true,
+          trunk: {
+            id: existingTrunk.sipTrunkId,
+            name: existingTrunk.name,
+            numbers: existingTrunk.numbers
+          },
+          outboundTrunk: null, // Would need to check for existing outbound trunk too
+          rule: null, // Would need to check for existing rule too
+          phoneNumber: e164,
+          assistantId,
+          assistantName
+        };
+      }
+    } catch (listError) {
+      console.warn('Could not check for existing trunks:', listError.message);
+      // Continue with creation if we can't check
+    }
     
     // Create unique, safe trunk name (like SaaS project)
     const trunkName = `ast-${assistantName}-${Date.now()}`.toLowerCase().replace(/[^a-z0-9-]+/g, '-');
@@ -444,6 +478,90 @@ export const createAssistantTrunk = async ({ assistantId, assistantName, phoneNu
     
     const trunkId = readId(trunk, 'sip_trunk_id', 'sipTrunkId', 'id');
     log(ctx, 'created assistant trunk', { trunkId, trunkName, numbers: [e164] });
+
+    // Create outbound trunk for making calls
+    let outboundTrunkId = null;
+    let outboundTrunkName = null;
+    
+    if (userId) {
+      try {
+        console.log(`🔍 Getting SIP config for user ${userId} to create outbound trunk`);
+        
+        // Import the SIP config function
+        const { getSipConfigForLiveKit } = await import('./twilio-trunk-service.js');
+        
+        const sipConfig = await getSipConfigForLiveKit(userId);
+        console.log(`📊 Retrieved SIP config successfully:`, {
+          domainName: sipConfig.domainName,
+          sipUsername: sipConfig.sipUsername,
+          hasPassword: !!sipConfig.sipPassword,
+          trunkSid: sipConfig.trunkSid,
+          credentialListSid: sipConfig.credentialListSid
+        });
+        
+        // Create corresponding outbound trunk for making calls
+        outboundTrunkName = sipConfig.domainName.replace('.pstn.twilio.com', ''); // Remove .pstn.twilio.com suffix
+        log(ctx, 'creating outbound trunk', { assistantId, assistantName, phoneNumber: e164, outboundTrunkName });
+        
+        const destinationCountry = process.env.SIP_DESTINATION_COUNTRY || 'US';
+
+        // Debug Twilio credentials
+        console.log('🔍 Dynamic Twilio SIP Configuration:', {
+          domainName: sipConfig.domainName,
+          destinationCountry,
+          sipUsername: sipConfig.sipUsername ? `${sipConfig.sipUsername.substring(0, 8)}...` : 'MISSING',
+          sipPassword: sipConfig.sipPassword ? `${sipConfig.sipPassword.substring(0, 8)}...` : 'MISSING'
+        });
+
+        // Create outbound trunk using dynamic configuration
+        const trunkOptions = {
+          auth_username: sipConfig.sipUsername,
+          auth_password: sipConfig.sipPassword,
+          destination_country: destinationCountry,
+          metadata: JSON.stringify({
+            kind: 'per-assistant-outbound-trunk',
+            assistantId,
+            assistantName,
+            phoneNumber: e164,
+            domainName: sipConfig.domainName,
+            trunkSid: sipConfig.trunkSid,
+            userId: userId,
+            createdAt: new Date().toISOString(),
+          }),
+        };
+
+        console.log(`🚀 Creating LiveKit outbound trunk with:`, {
+          outboundTrunkName,
+          domainName: sipConfig.domainName,
+          phoneNumber: e164,
+          trunkOptions
+        });
+        
+        const outboundTrunk = await lk.createSipOutboundTrunk(
+          outboundTrunkName,
+          sipConfig.domainName,  // Dynamic domain name
+          [e164], // Use the same phone number for outbound calls
+          trunkOptions
+        );
+
+        outboundTrunkId = readId(outboundTrunk, 'sip_trunk_id', 'sipTrunkId', 'id');
+        console.log(`✅ Created LiveKit outbound trunk:`, {
+          outboundTrunkId,
+          outboundTrunkName,
+          phoneNumber: e164,
+          fullResponse: outboundTrunk
+        });
+        log(ctx, 'created outbound trunk', { outboundTrunkId, outboundTrunkName, numbers: [e164] });
+
+      } catch (outboundError) {
+        console.error('❌ Failed to create outbound trunk:', outboundError);
+        logErr(ctx, 'outbound trunk creation failed', outboundError);
+        // Continue with inbound trunk creation even if outbound fails
+      }
+    } else {
+      console.log('⚠️ No userId provided, skipping outbound trunk creation');
+      log(ctx, 'skipping outbound trunk creation', { reason: 'no userId provided' });
+    }
 
     // Minimal agent metadata; worker fetches full prompt by assistantId if needed
     const agentMetadataJson = JSON.stringify({
@@ -483,6 +601,11 @@ export const createAssistantTrunk = async ({ assistantId, assistantName, phoneNu
         name: trunkName,
         numbers: [e164]
       },
+      outboundTrunk: outboundTrunkId ? {
+        id: outboundTrunkId,
+        name: outboundTrunkName,
+        numbers: [e164]
+      } : null,
       rule: {
         id: ruleId,
         name: `assistant:${assistantId}:${Date.now()}`

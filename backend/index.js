@@ -3,6 +3,9 @@ import express from "express";
 import cors from "cors";
 import router from "#routes/index.js";
 import { getCallRecordingInfo as getTwilioRecordingInfo } from '#services/twilioMainTrunkService.js';
+import { ngrokService } from './services/ngrok-service.js';
+import { campaignEngine } from './services/campaign-execution-engine.js';
+
 const PORT = process.env.PORT || 4000;
 
 const app = express();
@@ -149,11 +152,37 @@ app.use((err, req, res, next) => {
     });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`🚀 Server is running on port ${PORT}`);
     console.log(`📡 API available at http://localhost:${PORT}/api/v1`);
     console.log(`🔍 Health check at http://localhost:${PORT}/health`);
     console.log(`🌐 Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:8080"}`);
+    
+    // Check if ngrok should be started
+    if (process.env.NODE_ENV === 'development' && process.env.ENABLE_NGROK === 'true') {
+        try {
+            console.log('\n🌐 Starting ngrok tunnel for development...');
+            await ngrokService.start();
+            
+            const webhookUrls = ngrokService.getWebhookUrls();
+            if (webhookUrls) {
+                console.log('\n📋 Webhook URLs for development:');
+                console.log(`   SMS Webhook: ${webhookUrls.smsWebhook}`);
+                console.log(`   Voice Webhook: ${webhookUrls.voiceWebhook}`);
+                console.log(`   Status Callback: ${webhookUrls.statusCallback}`);
+            }
+        } catch (error) {
+            console.error('❌ Failed to start ngrok:', error.message);
+            console.log('💡 You can still use the server locally without ngrok');
+        }
+    } else if (process.env.NGROK_URL) {
+        console.log(`🌐 Using existing ngrok URL: ${process.env.NGROK_URL}`);
+    }
+    
+    // Start campaign execution engine
+    console.log('\n🚀 Starting campaign execution engine...');
+    campaignEngine.start();
+    console.log('✅ Campaign execution engine started');
 });
 
 

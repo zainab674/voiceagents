@@ -216,7 +216,7 @@ export const getUserPhoneNumbers = async (req) => {
 export const assignNumber = async (req) => {
   try {
     const userId = req.user.userId;
-    const { phoneSid, assistantId, label } = req.body || {};
+    const { phoneSid, assistantId, assistantName, label } = req.body || {};
     if (!phoneSid || !assistantId) {
       return { success: false, message: 'phoneSid and assistantId are required' };
     }
@@ -251,6 +251,44 @@ export const assignNumber = async (req) => {
       label: label || num.friendlyName || null
     });
 
+    // Get assistant name if not provided
+    let finalAssistantName = assistantName;
+    if (!finalAssistantName) {
+      const { data: assistant, error: assistantError } = await supa
+        .from('agents')
+        .select('name')
+        .eq('id', assistantId)
+        .single();
+      
+      if (assistantError || !assistant) {
+        return { success: false, message: 'Assistant not found' };
+      }
+      
+      finalAssistantName = assistant.name;
+    }
+
+    // Create both inbound and outbound trunks using the createAssistantTrunk function
+    const { createAssistantTrunk } = await import('./livekitSipService.js');
+    
+    console.log(`🚀 Creating assistant trunk for assignment: user=${userId}, assistant=${assistantId}, phone=${num.phoneNumber}`);
+    
+    const trunkResult = await createAssistantTrunk({
+      assistantId,
+      assistantName: finalAssistantName,
+      phoneNumber: num.phoneNumber,
+      userId
+    });
+
+    if (!trunkResult.success) {
+      console.error('Failed to create assistant trunk:', trunkResult.message);
+      return { success: false, message: `Failed to create assistant trunk: ${trunkResult.message}` };
+    }
+
+    console.log('✅ Assistant trunk created successfully:', {
+      inboundTrunkId: trunkResult.trunk?.id,
+      outboundTrunkId: trunkResult.outboundTrunk?.id
+    });
+
     // Use the new phone number service
     const { upsertPhoneNumber } = await import('./phoneNumberService.js');
     const phoneNumberData = {
@@ -258,6 +296,9 @@ export const assignNumber = async (req) => {
       number: num.phoneNumber,
       label: label || num.friendlyName || null,
       inbound_assistant_id: assistantId,
+      inbound_trunk_id: trunkResult.trunk?.id,
+      outbound_trunk_id: trunkResult.outboundTrunk?.id,
+      outbound_trunk_name: trunkResult.outboundTrunk?.name,
       webhook_status: 'configured',
       status: 'active',
       trunk_sid: credentials.trunk_sid,
@@ -276,7 +317,9 @@ export const assignNumber = async (req) => {
         sid: num.sid, 
         phoneNumber: num.phoneNumber,
         assistantId: assistantId,
-        trunkSid: credentials.trunk_sid
+        trunkSid: credentials.trunk_sid,
+        inboundTrunkId: trunkResult.trunk?.id,
+        outboundTrunkId: trunkResult.outboundTrunk?.id
       } 
     };
   } catch (e) {
@@ -339,7 +382,7 @@ export const attachToTrunk = async (req) => {
 export const mapNumber = async (req) => {
   try {
     const userId = req.user.userId;
-    const { phoneSid, phoneNumber, assistantId, label } = req.body || {};
+    const { phoneSid, phoneNumber, assistantId, assistantName, label } = req.body || {};
     if (!assistantId || (!phoneSid && !phoneNumber)) {
       return {
         success: false,
@@ -358,6 +401,48 @@ export const mapNumber = async (req) => {
     }
     if (!e164) return { success: false, message: 'Could not resolve phone number' };
 
+    // Get assistant name if not provided
+    let finalAssistantName = assistantName;
+    if (!finalAssistantName) {
+      if (!supa) {
+        return { success: false, message: 'Database connection not configured' };
+      }
+      
+      const { data: assistant, error: assistantError } = await supa
+        .from('agents')
+        .select('name')
+        .eq('id', assistantId)
+        .single();
+      
+      if (assistantError || !assistant) {
+        return { success: false, message: 'Assistant not found' };
+      }
+      
+      finalAssistantName = assistant.name;
+    }
+
+    // Create both inbound and outbound trunks using the createAssistantTrunk function
+    const { createAssistantTrunk } = await import('./livekitSipService.js');
+    
+    console.log(`🚀 Creating assistant trunk for mapping: user=${userId}, assistant=${assistantId}, phone=${e164}`);
+    
+    const trunkResult = await createAssistantTrunk({
+      assistantId,
+      assistantName: finalAssistantName,
+      phoneNumber: e164,
+      userId
+    });
+
+    if (!trunkResult.success) {
+      console.error('Failed to create assistant trunk:', trunkResult.message);
+      return { success: false, message: `Failed to create assistant trunk: ${trunkResult.message}` };
+    }
+
+    console.log('✅ Assistant trunk created successfully:', {
+      inboundTrunkId: trunkResult.trunk?.id,
+      outboundTrunkId: trunkResult.outboundTrunk?.id
+    });
+
     // Use the new phone number service
     const { upsertPhoneNumber } = await import('./phoneNumberService.js');
     const phoneNumberData = {
@@ -365,6 +450,9 @@ export const mapNumber = async (req) => {
       number: e164,
       label: label || null,
       inbound_assistant_id: assistantId,
+      inbound_trunk_id: trunkResult.trunk?.id,
+      outbound_trunk_id: trunkResult.outboundTrunk?.id,
+      outbound_trunk_name: trunkResult.outboundTrunk?.name,
       webhook_status: 'configured',
       status: 'active',
     };
@@ -381,7 +469,9 @@ export const mapNumber = async (req) => {
         id: phoneResult.phoneNumber?.id,
         phoneSid: phoneSid || null, 
         number: e164, 
-        assistantId 
+        assistantId,
+        inboundTrunkId: trunkResult.trunk?.id,
+        outboundTrunkId: trunkResult.outboundTrunk?.id
       } 
     };
   } catch (e) {

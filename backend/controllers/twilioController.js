@@ -207,9 +207,43 @@ export const cleanupDispatchRulesController = async (req, res) => {
 
 // Create assistant trunk
 export const createAssistantTrunkController = async (req, res) => {
-  const result = await createAssistantTrunk(req.body);
-  const status = result.success ? 200 : 400;
-  res.status(status).json(result);
+  try {
+    const { assistantId, assistantName, phoneNumber } = req.body;
+    const userId = req.user?.userId; // Get userId from authenticated user
+
+    if (!assistantId || !assistantName || !phoneNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'assistantId, assistantName, and phoneNumber are required'
+      });
+    }
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User authentication required'
+      });
+    }
+
+    console.log(`🚀 Creating assistant trunk for user: ${userId}, assistant: ${assistantId}, phone: ${phoneNumber}`);
+
+    const result = await createAssistantTrunk({ 
+      assistantId, 
+      assistantName, 
+      phoneNumber, 
+      userId 
+    });
+
+    const status = result.success ? 200 : 400;
+    res.status(status).json(result);
+  } catch (error) {
+    console.error('Error creating assistant trunk:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create assistant trunk',
+      error: error.message
+    });
+  }
 };
 
 // ------------------- Recording Functions -------------------

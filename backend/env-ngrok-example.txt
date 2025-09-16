@@ -1,0 +1,34 @@
+# Ngrok Configuration for Development
+# Copy this to .env and configure your settings
+
+# Enable ngrok in development mode
+NODE_ENV=development
+ENABLE_NGROK=true
+
+# Ngrok Configuration
+NGROK_AUTH_TOKEN=your_ngrok_auth_token_here
+NGROK_REGION=us
+
+# Backend Configuration
+PORT=4000
+BACKEND_URL=http://localhost:4000
+
+# Frontend Configuration
+FRONTEND_URL=http://localhost:5173
+
+# Database Configuration
+SUPABASE_URL=your_supabase_url
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+
+# Twilio Configuration
+TWILIO_ACCOUNT_SID=your_twilio_account_sid
+TWILIO_AUTH_TOKEN=your_twilio_auth_token
+
+# LiveKit Configuration (optional)
+LIVEKIT_SIP_URI=sip:your-livekit-domain.com:5060
+
+# Instructions:
+# 1. Get your ngrok auth token from: https://dashboard.ngrok.com/get-started/your-authtoken
+# 2. Copy this file to .env
+# 3. Update the values above
+# 4. Run: npm run dev:ngrok

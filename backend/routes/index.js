@@ -7,6 +7,11 @@ import callRoute from "#routes/callRoute.js";
 import twilioRoute from "#routes/twilioRoute.js";
 import twilioCredentialsRoute from "#routes/twilioCredentialsRoute.js";
 import phoneNumberRoute from "#routes/phoneNumberRoute.js";
+import smsRoute from "#routes/smsRoute.js";
+import outboundRoute from "#routes/outboundRoute.js";
+import livekitOutboundRoute from "#routes/livekitOutboundRoute.js";
+import campaignRoute from "#routes/campaignRoute.js";
+import csvRoute from "#routes/csvRoute.js";
 import { recordingWebhookRouter } from "#services/recordingService.js";
 
 const router = express.Router();
@@ -19,6 +24,11 @@ router.use("/calls", callRoute);
 router.use("/twilio", twilioRoute);
 router.use("/twilio-credentials", twilioCredentialsRoute);
 router.use("/phone-numbers", phoneNumberRoute);
+router.use("/sms", smsRoute);
+router.use("/outbound-calls", outboundRoute);
+router.use("/livekit/outbound-calls", livekitOutboundRoute);
+router.use("/campaigns", campaignRoute);
+router.use("/csv", csvRoute);
 router.use("/recording", recordingWebhookRouter);
 
 export default router;

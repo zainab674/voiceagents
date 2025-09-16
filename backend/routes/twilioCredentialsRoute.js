@@ -7,7 +7,8 @@ import {
   deleteCredentials,
   getAllCredentials,
   setActiveCredentials,
-  testCredentials
+  testCredentials,
+  createMainTrunk
 } from "#controllers/twilioCredentialsController.js";
 
 const router = express.Router();
@@ -26,6 +27,9 @@ router.post("/", saveCredentials);
 
 // Test Twilio credentials format
 router.post("/test", testCredentials);
+
+// Create main trunk for user (auto-generated with SIP configuration)
+router.post("/create-main-trunk", createMainTrunk);
 
 // Update existing Twilio credentials
 router.put("/:id", updateCredentials);
