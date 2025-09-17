@@ -310,6 +310,25 @@ export const assignNumber = async (req) => {
       // Continue execution - the assignment will still work via LiveKit dispatch rules
     }
 
+    // Configure SMS webhook for the phone number
+    try {
+      // Prioritize ngrok for development, fallback to backend URL for production
+      const baseUrl = process.env.NGROK_URL || process.env.BACKEND_URL || 'http://localhost:4000';
+      const smsWebhookUrl = `${baseUrl}/api/v1/sms/webhook`;
+      
+      console.log(`Configuring SMS webhook for phone number ${num.phoneNumber}: ${smsWebhookUrl}`);
+      
+      await twilio.incomingPhoneNumbers(num.sid).update({
+        smsUrl: smsWebhookUrl,
+        smsMethod: 'POST'
+      });
+      
+      console.log(`✅ Configured SMS webhook for phone number ${num.phoneNumber}`);
+    } catch (webhookError) {
+      console.error('Warning: Failed to configure SMS webhook:', webhookError.message);
+      // Don't fail the entire operation if webhook setup fails
+    }
+
     return { 
       success: true, 
       number: { 
@@ -461,6 +480,27 @@ export const mapNumber = async (req) => {
     if (!phoneResult.success) {
       console.warn('Failed to save phone number mapping:', phoneResult.message);
       // Continue execution - the mapping will still work via LiveKit dispatch rules
+    }
+
+    // Configure SMS webhook for the phone number (if we have a Twilio phone SID)
+    if (phoneSid) {
+      try {
+        // Prioritize ngrok for development, fallback to backend URL for production
+        const baseUrl = process.env.NGROK_URL || process.env.BACKEND_URL || 'http://localhost:4000';
+        const smsWebhookUrl = `${baseUrl}/api/v1/sms/webhook`;
+        
+        console.log(`Configuring SMS webhook for phone number ${e164}: ${smsWebhookUrl}`);
+        
+        await twilio.incomingPhoneNumbers(phoneSid).update({
+          smsUrl: smsWebhookUrl,
+          smsMethod: 'POST'
+        });
+        
+        console.log(`✅ Configured SMS webhook for phone number ${e164}`);
+      } catch (webhookError) {
+        console.error('Warning: Failed to configure SMS webhook:', webhookError.message);
+        // Don't fail the entire operation if webhook setup fails
+      }
     }
 
     return { 

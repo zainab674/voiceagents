@@ -5,6 +5,8 @@ import { createClient } from '@supabase/supabase-js';
 import { SMSAssistantService } from '../services/sms-assistant-service.js';
 import { SMSDatabaseService } from '../services/sms-database-service.js';
 import { SMSAIService } from '../services/sms-ai-service.js';
+import { sendSMS, getSMSMessages, smsWebhook, smsStatusCallback, getSMSStats } from '../controllers/smsController.js';
+import { authenticateToken } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
@@ -23,34 +25,12 @@ const smsDatabaseService = new SMSDatabaseService(supabase);
 const smsAIService = new SMSAIService();
 const smsAssistantService = new SMSAssistantService(smsDatabaseService, smsAIService, twilioClient);
 
-// SMS Webhook Handler
-router.post('/webhook', async (req, res) => {
-  try {
-    console.log('Received SMS webhook:', req.body);
-    
-    const { From: fromNumber, To: toNumber, Body: messageBody, MessageSid: messageSid } = req.body;
-    
-    if (!fromNumber || !toNumber || !messageBody) {
-      console.error('Missing required SMS parameters');
-      return res.status(400).send('Missing required parameters');
-    }
-
-    // Process the SMS
-    await smsAssistantService.processIncomingSMS({
-      fromNumber,
-      toNumber,
-      messageBody,
-      messageSid
-    });
-
-    // Respond to Twilio with empty response (no further action needed)
-    res.status(200).send('SMS processed');
-    
-  } catch (error) {
-    console.error('Error processing SMS:', error);
-    res.status(500).send('Error processing SMS');
-  }
-});
+// SMS Routes
+router.post('/send', authenticateToken, sendSMS);
+router.get('/conversation/:conversationId', authenticateToken, getSMSMessages);
+router.get('/stats', authenticateToken, getSMSStats);
+router.post('/webhook', smsWebhook);
+router.post('/status-callback', smsStatusCallback);
 
 // Health check endpoint
 router.get('/webhook/health', (req, res) => {

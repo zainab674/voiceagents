@@ -1,100 +1,79 @@
 // test-ngrok-integration.js
-// Test script to verify ngrok integration
+// Test ngrok integration with NGROK_AUTHTOKEN
 
-import { ngrokService } from './services/ngrok-service.js';
 import 'dotenv/config';
 
 async function testNgrokIntegration() {
-  console.log('🧪 Testing Ngrok Integration...\n');
+  console.log('🧪 Testing ngrok integration...\n');
+
+  // Check if NGROK_AUTHTOKEN is set
+  if (!process.env.NGROK_AUTHTOKEN) {
+    console.error('❌ NGROK_AUTHTOKEN environment variable is not set');
+    console.log('💡 Please set NGROK_AUTHTOKEN in your .env file');
+    return;
+  }
+
+  console.log('✅ NGROK_AUTHTOKEN found');
+  console.log(`🔑 Auth Token: ${process.env.NGROK_AUTHTOKEN.substring(0, 8)}...`);
 
   try {
-    console.log('1. Testing ngrok service initialization...');
-    console.log('   ✅ NgrokService class loaded successfully');
-
-    console.log('\n2. Testing environment configuration...');
-    const authToken = process.env.NGROK_AUTH_TOKEN;
-    const region = process.env.NGROK_REGION || 'us';
+    // Import and connect to ngrok
+    const { connect } = await import('@ngrok/ngrok');
     
-    if (authToken) {
-      console.log('   ✅ NGROK_AUTH_TOKEN found');
-    } else {
-      console.log('   ⚠️  NGROK_AUTH_TOKEN not found');
-      console.log('   💡 Get your token from: https://dashboard.ngrok.com/get-started/your-authtoken');
-    }
+    console.log('\n🌐 Starting ngrok tunnel...');
+    const listener = await connect({
+      addr: 4000,
+      authtoken_from_env: true
+    });
 
-    console.log(`   📍 Ngrok region: ${region}`);
+    const ngrokUrl = listener.url();
+    console.log(`✅ ngrok tunnel established at: ${ngrokUrl}`);
+    console.log(`📱 SMS Webhook URL: ${ngrokUrl}/api/v1/sms/webhook`);
+    console.log(`📞 Status Callback URL: ${ngrokUrl}/api/v1/sms/status-callback`);
 
-    console.log('\n3. Testing URL caching...');
-    const cachedUrl = ngrokService.loadUrlFromFile();
-    if (cachedUrl) {
-      console.log(`   ✅ Cached URL found: ${cachedUrl}`);
-    } else {
-      console.log('   ℹ️  No cached URL found (normal for first run)');
-    }
-
-    console.log('\n4. Testing webhook URL generation...');
-    if (cachedUrl) {
-      const webhookUrls = ngrokService.getWebhookUrls();
-      if (webhookUrls) {
-        console.log('   ✅ Webhook URLs generated:');
-        console.log(`      SMS Webhook: ${webhookUrls.smsWebhook}`);
-        console.log(`      Voice Webhook: ${webhookUrls.voiceWebhook}`);
-        console.log(`      Status Callback: ${webhookUrls.statusCallback}`);
+    // Test the webhook URL
+    console.log('\n🧪 Testing webhook URL...');
+    try {
+      const response = await fetch(`${ngrokUrl}/api/v1/sms/webhook`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: 'test=1'
+      });
+      
+      if (response.ok) {
+        console.log('✅ Webhook URL is accessible');
+      } else {
+        console.log(`⚠️  Webhook URL responded with status: ${response.status}`);
       }
-    } else {
-      console.log('   ℹ️  No ngrok URL available for webhook generation');
+    } catch (error) {
+      console.log('❌ Webhook URL test failed:', error.message);
     }
 
-    console.log('\n5. Testing ngrok tunnel start (if auth token available)...');
-    if (authToken) {
-      try {
-        console.log('   🚀 Starting ngrok tunnel...');
-        const url = await ngrokService.start();
-        console.log(`   ✅ Ngrok tunnel started: ${url}`);
-        
-        // Display webhook instructions
-        ngrokService.displayWebhookInstructions();
-        
-        // Test webhook URLs
-        const webhookUrls = ngrokService.getWebhookUrls();
-        if (webhookUrls) {
-          console.log('\n6. Testing webhook endpoints...');
-          
-          // Test health check
-          try {
-            const healthResponse = await fetch(`${webhookUrls.base}/health`);
-            if (healthResponse.ok) {
-              console.log('   ✅ Health check endpoint working');
-            } else {
-              console.log('   ⚠️  Health check endpoint returned:', healthResponse.status);
-            }
-          } catch (error) {
-            console.log('   ⚠️  Health check failed:', error.message);
-          }
-        }
+    // Store the URL in environment
+    process.env.NGROK_URL = ngrokUrl;
+    console.log(`\n✅ NGROK_URL set to: ${ngrokUrl}`);
 
-        console.log('\n🛑 Stopping ngrok tunnel...');
-        await ngrokService.stop();
-        console.log('   ✅ Ngrok tunnel stopped');
-        
-      } catch (error) {
-        console.log('   ❌ Failed to start ngrok tunnel:', error.message);
-        console.log('   💡 Make sure your NGROK_AUTH_TOKEN is valid');
-      }
-    } else {
-      console.log('   ⚠️  Skipping tunnel test (no auth token)');
-    }
+    console.log('\n📋 Next Steps:');
+    console.log('1. Start your backend server: npm start');
+    console.log('2. Assign a phone number to an assistant');
+    console.log('3. Test SMS functionality');
+    console.log('\n💡 Keep this terminal open to maintain the ngrok tunnel');
 
-    console.log('\n✅ Ngrok integration test completed!');
-    console.log('\n📋 Next steps:');
-    console.log('1. Set NGROK_AUTH_TOKEN in your .env file');
-    console.log('2. Run: npm run dev:ngrok');
-    console.log('3. Configure Twilio webhooks with the ngrok URL');
-    console.log('4. Test SMS and voice functionality');
+    // Keep the process running
+    process.on('SIGINT', () => {
+      console.log('\n🛑 Stopping ngrok tunnel...');
+      listener.close();
+      process.exit(0);
+    });
 
   } catch (error) {
-    console.error('❌ Test failed:', error.message);
-    console.error('Stack trace:', error.stack);
+    console.error('❌ Failed to start ngrok tunnel:', error.message);
+    console.log('💡 Make sure:');
+    console.log('   - NGROK_AUTHTOKEN is valid');
+    console.log('   - Port 4000 is available');
+    console.log('   - @ngrok/ngrok package is installed');
   }
 }
 

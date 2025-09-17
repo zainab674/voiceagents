@@ -183,6 +183,35 @@ app.listen(PORT, async () => {
     console.log('\n🚀 Starting campaign execution engine...');
     campaignEngine.start();
     console.log('✅ Campaign execution engine started');
+
+    // Start ngrok tunnel for Twilio webhooks
+    if (process.env.NGROK_AUTHTOKEN) {
+      try {
+        const { connect } = await import('@ngrok/ngrok');
+        const listener = await connect({
+          addr: PORT,
+          authtoken_from_env: true
+        });
+
+        console.log(`🌐 ngrok tunnel established at: ${listener.url()}`);
+        console.log(`📱 Use this URL for Twilio SMS webhooks: ${listener.url()}/api/v1/sms/webhook`);
+        console.log(`📞 Use this URL for Twilio status callbacks: ${listener.url()}/api/v1/sms/status-callback`);
+
+        // Store the ngrok URL for use in SMS sending
+        process.env.NGROK_URL = listener.url();
+
+        // SMS webhooks are configured automatically when phone numbers are assigned to assistants
+        console.log('✅ SMS webhook URLs are ready for phone number assignment');
+
+      } catch (error) {
+        console.error('❌ Failed to start ngrok tunnel:', error.message);
+        console.log('💡 Make sure NGROK_AUTHTOKEN is set in your .env file');
+      }
+    } else {
+      console.log('⚠️  NGROK_AUTHTOKEN not set - webhooks will not work with localhost');
+      console.log('💡 Add NGROK_AUTHTOKEN to your .env file to enable ngrok tunnel');
+      console.log('   SMS webhooks are configured automatically when phone numbers are assigned to assistants');
+    }
 });
 
 

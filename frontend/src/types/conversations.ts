@@ -1,5 +1,6 @@
 // types/conversations.ts
 import { Call } from './calls';
+import { SMSMessage } from '@/lib/api/sms/smsService';
 
 export interface Conversation {
   id: string;
@@ -9,11 +10,13 @@ export interface Conversation {
   lastName?: string;
   displayName: string;
   totalCalls: number;
+  totalSMS?: number;
   lastActivityDate: string;
   lastActivityTime: string;
   lastActivityTimestamp: Date;
   lastCallOutcome?: string;
   calls: Call[];
+  smsMessages?: SMSMessage[];
   totalDuration: string;
   outcomes: {
     appointments: number;
@@ -30,7 +33,7 @@ export interface ConversationsData {
 
 export interface ConversationMessage {
   id: string;
-  type: 'call' | 'transcription';
+  type: 'call' | 'transcription' | 'sms';
   timestamp: Date;
   direction: string;
   duration: string;
@@ -45,6 +48,7 @@ export interface ConversationMessage {
   confidence?: number;
   call_sid?: string;
   recording_info?: any;
+  smsData?: SMSMessage;
 }
 
 export interface ConversationTranscript {

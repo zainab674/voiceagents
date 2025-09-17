@@ -96,7 +96,7 @@ export function ConversationsList({
                   
                   <div className="flex items-center justify-between mt-2">
                     <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {conversation.totalCalls} calls • {conversation.totalDuration}
+                      {conversation.totalCalls} calls • {conversation.totalSMS || 0} SMS • {conversation.totalDuration}
                     </span>
                   </div>
                 </div>

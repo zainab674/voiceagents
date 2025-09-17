@@ -3,6 +3,7 @@ import React from "react";
 import { Conversation, ConversationMessage } from "@/types/conversations";
 import { format } from "date-fns";
 import { CallRecordingDisplay } from "./CallRecordingDisplay";
+import { MessageSquare, Phone, Mic } from "lucide-react";
 
 interface MessageBubbleProps {
   message: ConversationMessage;
@@ -38,6 +39,7 @@ export function MessageBubble({ message, conversation, showAvatar = true }: Mess
 
   const isIncoming = message.direction === 'inbound';
   const isLiveTranscription = message.type === 'transcription' && message.isLive;
+  const isSMS = message.type === 'sms';
 
   return (
     <div className={`flex ${isIncoming ? 'justify-start' : 'justify-end'} space-x-2`}>
@@ -61,11 +63,11 @@ export function MessageBubble({ message, conversation, showAvatar = true }: Mess
               : 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
             }`}
         >
-          {/* Call Header */}
+          {/* Message Header */}
           <div className="flex items-center space-x-2 mb-1">
             {message.type === 'transcription' ? (
               <>
-                <span className="text-xs">🎤</span>
+                <Mic className="w-3 h-3 text-gray-500" />
                 <span className="text-xs font-medium text-gray-900 dark:text-gray-100">
                   Live Transcription
                 </span>
@@ -75,18 +77,31 @@ export function MessageBubble({ message, conversation, showAvatar = true }: Mess
                   </span>
                 )}
               </>
+            ) : isSMS ? (
+              <>
+                <MessageSquare className="w-3 h-3 text-gray-500" />
+                <span className="text-xs font-medium text-gray-900 dark:text-gray-100">
+                  {isIncoming ? 'Incoming' : 'Outgoing'} SMS
+                </span>
+                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ml-auto ${
+                  message.status === 'delivered' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                  message.status === 'failed' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                  'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'
+                }`}>
+                  {message.status}
+                </span>
+              </>
             ) : (
               <>
-                <span className="text-xs">📞</span>
+                <Phone className="w-3 h-3 text-gray-500" />
                 <span className="text-xs font-medium text-gray-900 dark:text-gray-100">
                   {isIncoming ? 'Incoming' : 'Outgoing'} Call
                 </span>
-
               </>
             )}
           </div>
 
-          {/* Call Details */}
+          {/* Message Details */}
           <div className="flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400 mb-2">
             {message.type === 'transcription' ? (
               <>
@@ -94,7 +109,25 @@ export function MessageBubble({ message, conversation, showAvatar = true }: Mess
                   <span>🕐</span>
                   <span>{message.time}</span>
                 </div>
-
+                {message.confidence && (
+                  <>
+                    <span>•</span>
+                    <span>Confidence: {Math.round(message.confidence * 100)}%</span>
+                  </>
+                )}
+              </>
+            ) : isSMS ? (
+              <>
+                <div className="flex items-center space-x-1">
+                  <span>🕐</span>
+                  <span>{message.time}</span>
+                </div>
+                {message.smsData?.numSegments && (
+                  <>
+                    <span>•</span>
+                    <span>{message.smsData.numSegments} segment{message.smsData.numSegments !== '1' ? 's' : ''}</span>
+                  </>
+                )}
               </>
             ) : (
               <>
@@ -109,6 +142,13 @@ export function MessageBubble({ message, conversation, showAvatar = true }: Mess
           </div>
 
 
+
+          {/* SMS Message Content */}
+          {isSMS && message.smsData && (
+            <div className="text-xs text-gray-700 dark:text-gray-300 mb-2 leading-relaxed">
+              <p className="whitespace-pre-wrap">{message.smsData.body}</p>
+            </div>
+          )}
 
           {/* Live Transcription Text */}
           {message.type === 'transcription' && message.transcript && (
@@ -167,7 +207,13 @@ export function MessageBubble({ message, conversation, showAvatar = true }: Mess
 
         {/* Timestamp */}
         <div className={`text-xs text-gray-500 dark:text-gray-400 mt-1 ${!isIncoming ? 'text-right' : ''}`}>
-          {format(message.timestamp, 'h:mm a')}
+          {(() => {
+            try {
+              return format(message.timestamp, 'h:mm a');
+            } catch (error) {
+              return message.time || 'Invalid time';
+            }
+          })()}
         </div>
       </div>
 

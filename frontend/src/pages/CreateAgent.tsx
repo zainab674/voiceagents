@@ -18,6 +18,7 @@ const CreateAgent = () => {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [smsPrompt, setSmsPrompt] = useState("");
   const [firstMessage, setFirstMessage] = useState("");
   const [calApiKey, setCalApiKey] = useState("");
   const [calEventTypeSlug, setCalEventTypeSlug] = useState("");
@@ -62,6 +63,7 @@ const CreateAgent = () => {
           name: title.trim(),
           description: description.trim(),
           prompt: prompt.trim(),
+          smsPrompt: smsPrompt.trim() || null,
           firstMessage: firstMessage.trim() || null,
           calApiKey: calApiKey.trim() || null,
           calEventTypeSlug: calEventTypeSlug.trim() || null,
@@ -179,18 +181,36 @@ const CreateAgent = () => {
               {/* Prompt Field */}
               <div className="space-y-2">
                 <Label htmlFor="prompt" className="text-base font-medium">
-                  AI Prompt <span className="text-red-500">*</span>
+                  Voice Call AI Prompt <span className="text-red-500">*</span>
                 </Label>
                 <Textarea
                   id="prompt"
-                  placeholder="Define your AI assistant's personality, role, and instructions. For example: 'You are a helpful customer service representative for a tech company. Be professional, friendly, and knowledgeable about our products. Your goal is to help customers with their inquiries and provide excellent service.'"
+                  placeholder="Define your AI assistant's personality, role, and instructions for voice calls. For example: 'You are a helpful customer service representative for a tech company. Be professional, friendly, and knowledgeable about our products. Your goal is to help customers with their inquiries and provide excellent service.'"
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   className="min-h-[150px] text-base"
                   disabled={isCreating}
                 />
                 <p className="text-sm text-muted-foreground">
-                  This is the core instruction that defines how your AI agent will behave during calls
+                  This is the core instruction that defines how your AI agent will behave during voice calls
+                </p>
+              </div>
+
+              {/* SMS Prompt Field */}
+              <div className="space-y-2">
+                <Label htmlFor="smsPrompt" className="text-base font-medium">
+                  SMS AI Prompt (Optional)
+                </Label>
+                <Textarea
+                  id="smsPrompt"
+                  placeholder="Define your AI assistant's personality and instructions specifically for SMS conversations. Keep it concise and SMS-friendly. For example: 'You are a helpful customer service rep. Keep responses short and clear. Be friendly but professional in text messages.'"
+                  value={smsPrompt}
+                  onChange={(e) => setSmsPrompt(e.target.value)}
+                  className="min-h-[120px] text-base"
+                  disabled={isCreating}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Optional: Custom prompt for SMS conversations. If left empty, the voice call prompt will be used for SMS as well.
                 </p>
               </div>
 

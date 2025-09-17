@@ -36,11 +36,11 @@ router.get("/test", authenticateToken, async (req, res) => {
 // Create a new agent
 router.post("/", authenticateToken, async (req, res) => {
   try {
-    const { name, description, prompt, firstMessage, calApiKey, calEventTypeSlug, calTimezone, calEventTypeId, calEventTitle, calEventLength } = req.body;
+    const { name, description, prompt, smsPrompt, firstMessage, calApiKey, calEventTypeSlug, calTimezone, calEventTypeId, calEventTitle, calEventLength } = req.body;
     const userId = req.user.userId;
 
     console.log('Creating agent for user:', userId);
-    console.log('Agent data:', { name, description, prompt, firstMessage, calApiKey: calApiKey ? '***' : null, calEventTypeSlug, calTimezone, calEventTypeId, calEventTitle, calEventLength });
+    console.log('Agent data:', { name, description, prompt, smsPrompt, firstMessage, calApiKey: calApiKey ? '***' : null, calEventTypeSlug, calTimezone, calEventTypeId, calEventTitle, calEventLength });
 
     if (!name || !description || !prompt) {
       return res.status(400).json({
@@ -84,6 +84,7 @@ router.post("/", authenticateToken, async (req, res) => {
           name: name.trim(),
           description: description.trim(),
           prompt: prompt.trim(),
+          sms_prompt: smsPrompt ? smsPrompt.trim() : null,
           first_message: firstMessage ? firstMessage.trim() : null,
           user_id: userId,
           cal_api_key: calApiKey || null,
@@ -132,7 +133,7 @@ router.get("/", authenticateToken, async (req, res) => {
 
     const { data, error } = await supabase
       .from('agents')
-      .select('*')
+      .select('id, name, description, created_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
@@ -207,7 +208,7 @@ router.get("/:agentId", authenticateToken, async (req, res) => {
 router.put("/:agentId", authenticateToken, async (req, res) => {
   try {
     const { agentId } = req.params;
-    const { name, description, prompt, firstMessage, calApiKey, calEventTypeSlug, calEventTypeId, calTimezone } = req.body;
+    const { name, description, prompt, smsPrompt, firstMessage, calApiKey, calEventTypeSlug, calEventTypeId, calTimezone } = req.body;
     const userId = req.user.userId;
 
     if (!name || !description || !prompt) {
@@ -251,6 +252,7 @@ router.put("/:agentId", authenticateToken, async (req, res) => {
         name: name.trim(),
         description: description.trim(),
         prompt: prompt.trim(),
+        sms_prompt: smsPrompt ? smsPrompt.trim() : null,
         first_message: firstMessage ? firstMessage.trim() : null,
         cal_api_key: calApiKey || null,
         cal_event_type_slug: finalEventTypeSlug || null,

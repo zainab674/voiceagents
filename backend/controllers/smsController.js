@@ -162,29 +162,32 @@ export const sendSMS = async (req, res) => {
 export const getSMSMessages = async (req, res) => {
   try {
     const { conversationId } = req.params;
-    const { accountSid, authToken } = req.query;
+    const userId = req.user.userId;
 
-    if (!accountSid || !authToken) {
-      return res.status(400).json({
-        success: false,
-        message: 'accountSid and authToken are required'
-      });
+    // Handle both conversation IDs and phone numbers
+    let phoneNumber = conversationId;
+    if (conversationId.startsWith('conv_')) {
+      phoneNumber = conversationId.replace('conv_', '');
+    } else if (conversationId.startsWith('phone-')) {
+      phoneNumber = conversationId.replace('phone-', '');
     }
 
-    // Initialize Twilio client
-    const client = twilio(accountSid, authToken);
+    console.log('Fetching SMS messages for phone:', phoneNumber);
 
     // Get messages from database for this phone number
     const { data: messages, error } = await supabase
       .from('sms_messages')
       .select('*')
-      .or(`to_number.eq.${conversationId.replace('conv_', '')},from_number.eq.${conversationId.replace('conv_', '')}`)
+      .or(`to_number.eq.${phoneNumber},from_number.eq.${phoneNumber}`)
+      .eq('user_id', userId)
       .order('date_created', { ascending: false })
       .limit(50);
 
     if (error) {
       throw new Error(`Database error: ${error.message}`);
     }
+
+    console.log('Found SMS messages:', messages.length, 'for phone:', phoneNumber);
 
     res.json({
       success: true,
@@ -247,8 +250,15 @@ export const smsWebhook = async (req, res) => {
 
     // Process the SMS using our SMS assistant service
     try {
-      const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-      const smsAssistantService = new SMSAssistantService(smsDatabaseService, smsAIService, twilioClient);
+      // Import the services
+      const { SMSAssistantService } = await import('../services/sms-assistant-service.js');
+      const { SMSDatabaseService } = await import('../services/sms-database-service.js');
+      const { SMSAIService } = await import('../services/sms-ai-service.js');
+      
+      // Create services with proper database connection
+      const smsDatabaseService = new SMSDatabaseService(supabase);
+      const smsAIService = new SMSAIService();
+      const smsAssistantService = new SMSAssistantService(smsDatabaseService, smsAIService, null); // We'll get credentials dynamically
       
       await smsAssistantService.processIncomingSMS({
         fromNumber: From,

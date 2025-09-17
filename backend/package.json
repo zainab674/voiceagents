@@ -26,6 +26,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@ngrok/ngrok": "^1.5.2",
     "@supabase/supabase-js": "^2.55.0",
     "axios": "^1.11.0",
     "bcrypt": "^6.0.0",

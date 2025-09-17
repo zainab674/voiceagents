@@ -126,7 +126,7 @@ export default function Conversations() {
                 </h1>
                 <div className="flex items-center space-x-2">
                   <button
-                    onClick={loadConversations}
+                    onClick={() => loadConversations()}
                     disabled={isLoading}
                     className="px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors disabled:opacity-50 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-300"
                   >
@@ -150,14 +150,16 @@ export default function Conversations() {
             </div>
 
             {/* Conversations Toolbar */}
-            <ConversationsToolbar
-              searchQuery={searchQuery}
-              onSearchChange={setSearchQuery}
-              resolutionFilter={resolutionFilter}
-              onResolutionChange={setResolutionFilter}
-              dateRange={dateRange}
-              onDateRangeChange={setDateRange}
-            />
+            <div className="flex items-center justify-between mb-4">
+              <ConversationsToolbar
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                resolutionFilter={resolutionFilter}
+                onResolutionChange={setResolutionFilter}
+                dateRange={dateRange}
+                onDateRangeChange={setDateRange}
+              />
+            </div>
 
             {/* Unified Three-Panel Layout */}
             {filteredConversations.length === 0 ? (
@@ -177,7 +179,7 @@ export default function Conversations() {
                   </p>
                   {conversations.length === 0 && (
                     <button
-                      onClick={loadConversations}
+                      onClick={() => loadConversations()}
                       className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                     >
                       Refresh
@@ -214,23 +216,7 @@ export default function Conversations() {
                   )}
                 </div>
 
-                {/* Right Panel - Contact Info */}
-                <div className="w-72 flex flex-col">
-                  {selectedConversation ? (
-                    <ContactInfoPanel conversation={selectedConversation} />
-                  ) : (
-                    <div className="h-full flex items-center justify-center">
-                      <div className="text-center text-gray-500 dark:text-gray-400">
-                        <div className="text-lg font-medium mb-2">
-                          Contact Details
-                        </div>
-                        <p className="text-sm">
-                          Select a conversation to view contact information
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
+             
               </div>
             )}
           </div>

@@ -158,29 +158,156 @@ export const endCall = async (req, res) => {
 export const getCallHistory = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { limit = 50, offset = 0 } = req.query;
+    const { limit = 50, offset = 0, agentId } = req.query;
 
-    const { data, error } = await supabase
+    // Build query with optional agent filter
+    let query = supabase
       .from('calls')
       .select(`
         *,
-        agents(name, description)
+        agents(name, description, id)
       `)
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
-    if (error) {
-      console.error('Error fetching call history:', error);
+    // Add agent filter if provided
+    if (agentId && agentId !== 'all') {
+      query = query.eq('agent_id', agentId);
+    }
+
+    const { data: calls, error: callsError } = await query;
+
+    if (callsError) {
+      console.error('Error fetching call history:', callsError);
       return res.status(500).json({
         success: false,
         message: "Failed to fetch call history"
       });
     }
 
+    // Get SMS messages for all phone numbers
+    const phoneNumbers = [...new Set((calls || []).map(call => call.contact_phone).filter(Boolean))];
+    let smsMessages = [];
+    
+    if (phoneNumbers.length > 0) {
+      const { data: smsData, error: smsError } = await supabase
+        .from('sms_messages')
+        .select('*')
+        .in('to_number', phoneNumbers)
+        .or(phoneNumbers.map(num => `from_number.eq.${num}`).join(','))
+        .eq('user_id', userId)
+        .order('date_created', { ascending: false });
+
+      if (smsError) {
+        console.error('Error fetching SMS messages:', smsError);
+      } else {
+        smsMessages = smsData || [];
+      }
+    }
+
+    // Group calls by phone number to create conversations
+    const conversationsMap = new Map();
+    
+    (calls || []).forEach(call => {
+      const phoneNumber = call.contact_phone || 'unknown';
+      const conversationId = phoneNumber;
+      
+      if (!conversationsMap.has(conversationId)) {
+        conversationsMap.set(conversationId, {
+          id: conversationId,
+          contactId: phoneNumber,
+          phoneNumber: phoneNumber,
+          firstName: call.contact_name?.split(' ')[0] || 'Unknown',
+          lastName: call.contact_name?.split(' ').slice(1).join(' ') || '',
+          displayName: call.contact_name || phoneNumber,
+          totalCalls: 0,
+          totalSMS: 0,
+          lastActivityDate: call.started_at ? new Date(call.started_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+          lastActivityTime: call.started_at ? new Date(call.started_at).toTimeString().split(' ')[0] : new Date().toTimeString().split(' ')[0],
+          lastActivityTimestamp: new Date(call.started_at || call.created_at),
+          lastCallOutcome: call.outcome,
+          calls: [],
+          smsMessages: [],
+          totalDuration: '0:00',
+          outcomes: {
+            appointments: 0,
+            qualified: 0,
+            notQualified: 0,
+            spam: 0
+          }
+        });
+      }
+      
+      const conversation = conversationsMap.get(conversationId);
+      conversation.totalCalls += 1;
+      conversation.calls.push(call);
+      
+      // Update last activity if this call is more recent
+      const callTime = new Date(call.started_at || call.created_at);
+      if (callTime > conversation.lastActivityTimestamp) {
+        conversation.lastActivityTimestamp = callTime;
+        conversation.lastActivityDate = callTime.toISOString().split('T')[0];
+        conversation.lastActivityTime = callTime.toTimeString().split(' ')[0];
+        conversation.lastCallOutcome = call.outcome;
+      }
+      
+      // Calculate total duration
+      const totalSeconds = conversation.calls.reduce((sum, c) => sum + (c.duration_seconds || 0), 0);
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      conversation.totalDuration = `${hours}:${minutes.toString().padStart(2, '0')}`;
+      
+      // Count outcomes
+      if (call.outcome) {
+        const outcome = call.outcome.toLowerCase();
+        if (outcome.includes('appointment') || outcome.includes('booked')) {
+          conversation.outcomes.appointments += 1;
+        } else if (outcome.includes('qualified') && !outcome.includes('not')) {
+          conversation.outcomes.qualified += 1;
+        } else if (outcome.includes('not qualified') || outcome.includes('not eligible')) {
+          conversation.outcomes.notQualified += 1;
+        } else if (outcome.includes('spam')) {
+          conversation.outcomes.spam += 1;
+        }
+      }
+    });
+
+    // Add SMS messages to conversations
+    smsMessages.forEach(sms => {
+      // Find which phone number from the SMS matches our call phone numbers
+      const matchingPhoneNumber = phoneNumbers.find(phoneNum => 
+        phoneNum === sms.to_number || phoneNum === sms.from_number
+      );
+      
+      if (matchingPhoneNumber) {
+        const conversationId = matchingPhoneNumber;
+        
+        if (conversationsMap.has(conversationId)) {
+          const conversation = conversationsMap.get(conversationId);
+          conversation.totalSMS += 1;
+          conversation.smsMessages.push(sms);
+          
+          // Update last activity if this SMS is more recent
+          const smsTime = new Date(sms.date_created);
+          if (smsTime > conversation.lastActivityTimestamp) {
+            conversation.lastActivityTimestamp = smsTime;
+            conversation.lastActivityDate = smsTime.toISOString().split('T')[0];
+            conversation.lastActivityTime = smsTime.toTimeString().split(' ')[0];
+            conversation.lastCallOutcome = null; // SMS doesn't have call outcome
+          }
+        }
+      }
+    });
+
+    // Convert map to array and sort by last activity
+    const conversations = Array.from(conversationsMap.values())
+      .sort((a, b) => b.lastActivityTimestamp - a.lastActivityTimestamp);
+
     res.json({
       success: true,
-      data: { calls: data || [] }
+      conversations: conversations,
+      total: conversations.length
     });
 
   } catch (error) {

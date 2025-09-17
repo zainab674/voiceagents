@@ -242,6 +242,30 @@ class SMSDatabaseService {
   }
 
   /**
+   * Get user's Twilio credentials
+   */
+  async getUserTwilioCredentials(userId) {
+    try {
+      const { data, error } = await this.supabase
+        .from('user_twilio_credentials')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .single();
+
+      if (error) {
+        console.error('Error fetching user Twilio credentials:', error);
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error getting user Twilio credentials:', error);
+      return null;
+    }
+  }
+
+  /**
    * Get SMS statistics for a user
    */
   async getSMSStats(userId, startDate = null, endDate = null) {

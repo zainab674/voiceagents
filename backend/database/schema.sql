@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS agents (
     name VARCHAR(255) NOT NULL,
     description TEXT NOT NULL,
     prompt TEXT NOT NULL,
+    sms_prompt TEXT,
     first_message TEXT,
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     -- Cal.com Integration Fields

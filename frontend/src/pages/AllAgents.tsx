@@ -39,6 +39,7 @@ const AllAgents = () => {
     name: "",
     description: "",
     prompt: "",
+    smsPrompt: "",
     firstMessage: "",
     calApiKey: "",
     calEventTypeSlug: "",
@@ -60,9 +61,9 @@ const AllAgents = () => {
       setFilteredAgents(agents);
     } else {
       const filtered = agents.filter(agent =>
-        agent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        agent.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        agent.prompt.toLowerCase().includes(searchTerm.toLowerCase())
+        agent.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        agent.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        agent.prompt?.toLowerCase().includes(searchTerm.toLowerCase())
       );
       setFilteredAgents(filtered);
     }
@@ -169,6 +170,7 @@ const AllAgents = () => {
       name: agent.name,
       description: agent.description,
       prompt: agent.prompt,
+      smsPrompt: agent.sms_prompt || "",
       firstMessage: agent.first_message || "",
       calApiKey: agent.cal_api_key || "",
       calEventTypeSlug: agent.cal_event_type_slug || "",
@@ -210,6 +212,7 @@ const AllAgents = () => {
           name: editForm.name.trim(),
           description: editForm.description.trim(),
           prompt: editForm.prompt.trim(),
+          smsPrompt: editForm.smsPrompt.trim() || null,
           firstMessage: editForm.firstMessage.trim() || null,
           calApiKey: editForm.calApiKey.trim() || null,
           calEventTypeSlug: editForm.calEventTypeSlug.trim() || null,
@@ -225,7 +228,7 @@ const AllAgents = () => {
         });
         setIsEditModalOpen(false);
         setEditingAgent(null);
-        setEditForm({ name: "", description: "", prompt: "", firstMessage: "", calApiKey: "", calEventTypeSlug: "", calEventTypeId: "", calTimezone: "UTC" });
+        setEditForm({ name: "", description: "", prompt: "", smsPrompt: "", firstMessage: "", calApiKey: "", calEventTypeSlug: "", calEventTypeId: "", calTimezone: "UTC" });
         fetchAgents(); // Refresh the list
       } else {
         throw new Error('Failed to update agent');
@@ -260,7 +263,8 @@ const AllAgents = () => {
     });
   };
 
-  const truncateText = (text: string, maxLength: number) => {
+  const truncateText = (text: string | undefined | null, maxLength: number) => {
+    if (!text) return '';
     if (text.length <= maxLength) return text;
     return text.substring(0, maxLength) + '...';
   };
@@ -459,28 +463,32 @@ const AllAgents = () => {
 
       {/* Edit Agent Modal */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>Edit AI Agent</DialogTitle>
             <DialogDescription>
               Update your AI agent's configuration. All fields are required.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 py-4">
+          <div className="flex-1 overflow-y-auto">
+            <div className="grid gap-4 py-4">
             {/* Agent Name */}
             <div className="grid gap-2">
               <Label htmlFor="edit-name" className="text-base font-medium">
-                Agent Name <span className="text-red-500">*</span>
+                Agent Title <span className="text-red-500">*</span>
               </Label>
               <Input
                 id="edit-name"
-                placeholder="Enter agent name"
+                placeholder="Enter a descriptive name for your agent (e.g., Customer Service Bot, Sales Assistant)"
                 value={editForm.name}
                 onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
                 className="text-base"
                 disabled={isUpdating}
               />
+              <p className="text-sm text-muted-foreground">
+                Choose a clear, descriptive name that reflects the agent's purpose
+              </p>
             </div>
 
             {/* Agent Description */}
@@ -490,27 +498,51 @@ const AllAgents = () => {
               </Label>
               <Textarea
                 id="edit-description"
-                placeholder="Describe what this agent does..."
+                placeholder="Briefly describe what this agent does and its main responsibilities"
                 value={editForm.description}
                 onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
                 className="min-h-[100px] text-base"
                 disabled={isUpdating}
               />
+              <p className="text-sm text-muted-foreground">
+                Provide a concise overview of the agent's role and capabilities
+              </p>
             </div>
 
             {/* Agent Prompt */}
             <div className="grid gap-2">
               <Label htmlFor="edit-prompt" className="text-base font-medium">
-                AI Prompt <span className="text-red-500">*</span>
+                Voice Call AI Prompt <span className="text-red-500">*</span>
               </Label>
               <Textarea
                 id="edit-prompt"
-                placeholder="Define your AI assistant's personality and instructions..."
+                placeholder="Define your AI assistant's personality, role, and instructions for voice calls. For example: 'You are a helpful customer service representative for a tech company. Be professional, friendly, and knowledgeable about our products. Your goal is to help customers with their inquiries and provide excellent service.'"
                 value={editForm.prompt}
                 onChange={(e) => setEditForm({ ...editForm, prompt: e.target.value })}
+                className="min-h-[150px] text-base"
+                disabled={isUpdating}
+              />
+              <p className="text-sm text-muted-foreground">
+                This is the core instruction that defines how your AI agent will behave during voice calls
+              </p>
+            </div>
+
+            {/* SMS Prompt */}
+            <div className="grid gap-2">
+              <Label htmlFor="edit-smsPrompt" className="text-base font-medium">
+                SMS AI Prompt (Optional)
+              </Label>
+              <Textarea
+                id="edit-smsPrompt"
+                placeholder="Define your AI assistant's personality and instructions specifically for SMS conversations. Keep it concise and SMS-friendly. For example: 'You are a helpful customer service rep. Keep responses short and clear. Be friendly but professional in text messages.'"
+                value={editForm.smsPrompt}
+                onChange={(e) => setEditForm({ ...editForm, smsPrompt: e.target.value })}
                 className="min-h-[120px] text-base"
                 disabled={isUpdating}
               />
+              <p className="text-sm text-muted-foreground">
+                Optional: Custom prompt for SMS conversations. If left empty, the voice call prompt will be used for SMS as well.
+              </p>
             </div>
 
             {/* First Message */}
@@ -520,14 +552,14 @@ const AllAgents = () => {
               </Label>
               <Input
                 id="edit-firstMessage"
-                placeholder="Enter the greeting message for your agent..."
+                placeholder="Enter the greeting message for your agent (e.g., 'Hi! You've reached ABC Company. How can I help you today?')"
                 value={editForm.firstMessage}
                 onChange={(e) => setEditForm({ ...editForm, firstMessage: e.target.value })}
                 className="text-base"
                 disabled={isUpdating}
               />
               <p className="text-sm text-muted-foreground">
-                Custom greeting message that will be spoken when the call starts.
+                Custom greeting message that will be spoken when the call starts. If left empty, a default greeting will be used.
               </p>
             </div>
 
@@ -601,9 +633,10 @@ const AllAgents = () => {
                 </p>
               </div>
             </div>
+            </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex-shrink-0">
             <Button
               variant="outline"
               onClick={() => setIsEditModalOpen(false)}

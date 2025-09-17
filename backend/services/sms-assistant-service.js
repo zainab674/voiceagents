@@ -31,7 +31,8 @@ class SMSAssistantService {
       console.log(`Found assistant: ${assistant.name} (${assistant.id})`);
       console.log('Assistant config:', {
         first_message: assistant.first_message,
-        prompt: assistant.prompt
+        prompt: assistant.prompt,
+        sms_prompt: assistant.sms_prompt
       });
 
       // 2. Get user ID for database operations
@@ -94,7 +95,7 @@ class SMSAssistantService {
           console.log('Generating AI response...');
           responseMessage = await this.aiService.generateSMSResponse(
             messageBody,
-            assistant.prompt,
+            assistant.sms_prompt,
             conversationHistory,
             assistant
           );
@@ -131,7 +132,17 @@ class SMSAssistantService {
     try {
       console.log(`Sending SMS response to ${toNumber}: ${message}`);
       
-      const twilioMessage = await this.twilioClient.messages.create({
+      // Get user's Twilio credentials
+      const credentials = await this.databaseService.getUserTwilioCredentials(userId);
+      if (!credentials) {
+        throw new Error('No Twilio credentials found for user');
+      }
+
+      // Create Twilio client with user's credentials
+      const twilio = (await import('twilio')).default;
+      const userTwilioClient = twilio(credentials.account_sid, credentials.auth_token);
+      
+      const twilioMessage = await userTwilioClient.messages.create({
         body: message,
         from: fromNumber,
         to: toNumber
@@ -231,7 +242,7 @@ class SMSAssistantService {
       // Generate test response
       const responseMessage = await this.aiService.generateSMSResponse(
         testMessage,
-        assistant.prompt,
+        assistant.sms_prompt,
         [],
         assistant
       );
