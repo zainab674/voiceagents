@@ -42,7 +42,7 @@ export interface GetSMSMessagesResponse {
 export class SMSService {
   private static getBackendUrl(): string {
     // Prioritize ngrok for development, fallback to backend URL for production
-    return import.meta.env.VITE_NGROK_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+    return import.meta.env.VITE_NGROK_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
   }
 
   /**
