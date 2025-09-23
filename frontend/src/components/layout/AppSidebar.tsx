@@ -17,7 +17,8 @@ import {
   Network,
   MessageCircle,
   Megaphone,
-  UserCheck
+  UserCheck,
+  Brain
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
@@ -39,6 +40,7 @@ const navigationItems = [
   { title: "Conversations", url: "/conversations", icon: MessageCircle },
   { title: "Campaigns", url: "/campaigns", icon: Megaphone },
   { title: "Contacts", url: "/contacts", icon: UserCheck },
+  { title: "Knowledge Base", url: "/knowledge-base", icon: Brain },
   { title: "Twilio Configuration", url: "/trunk-management", icon: Network },
   { title: "Communication Hub", url: "/communication", icon: MessageSquare },
   { title: "CRM Integration", url: "/crm", icon: Database },

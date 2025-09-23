@@ -138,7 +138,21 @@ app.use("*", (req, res) => {
             "GET /api/v1/analytics/calls",
             "POST /api/v1/calls/start",
             "POST /api/v1/calls/end",
-            "GET /api/v1/calls/history"
+            "GET /api/v1/calls/history",
+            "GET /api/v1/knowledge-base",
+            "POST /api/v1/knowledge-base/knowledge-bases",
+            "GET /api/v1/knowledge-base/knowledge-bases/:kbId",
+            "GET /api/v1/knowledge-base/knowledge-bases/company/:companyId",
+            "PUT /api/v1/knowledge-base/knowledge-bases/:kbId",
+            "DELETE /api/v1/knowledge-base/knowledge-bases/:kbId",
+            "POST /api/v1/knowledge-base/upload",
+            "GET /api/v1/knowledge-base/documents/:companyId",
+            "GET /api/v1/knowledge-base/documents/:docId/details",
+            "POST /api/v1/knowledge-base/knowledge-bases/:kbId/documents/:docId",
+            "POST /api/v1/knowledge-base/knowledge-bases/:kbId/context",
+            "POST /api/v1/knowledge-base/knowledge-bases/:kbId/context/enhanced",
+            "POST /api/v1/knowledge-base/knowledge-bases/:kbId/context/multi-search",
+            "POST /api/v1/knowledge-base/knowledge-bases/:kbId/context/filtered"
         ]
     });
 });

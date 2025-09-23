@@ -19,7 +19,8 @@ import {
   Calendar,
   Clock,
   User,
-  Save
+  Save,
+  Database
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { AGENTS_ENDPOINT } from "@/constants/URLConstant";
@@ -44,14 +45,21 @@ const AllAgents = () => {
     calApiKey: "",
     calEventTypeSlug: "",
     calEventTypeId: "",
-    calTimezone: "UTC"
+    calTimezone: "UTC",
+    enableRAG: false,
+    selectedKnowledgeBase: ""
   });
   const [isUpdating, setIsUpdating] = useState(false);
+
+  // Knowledge base state
+  const [knowledgeBases, setKnowledgeBases] = useState([]);
+  const [loadingKnowledgeBases, setLoadingKnowledgeBases] = useState(false);
 
   // Fetch agents on component mount
   useEffect(() => {
     if (user) {
       fetchAgents();
+      fetchKnowledgeBases();
     }
   }, [user]);
 
@@ -122,6 +130,37 @@ const AllAgents = () => {
     }
   };
 
+  const fetchKnowledgeBases = async () => {
+    if (!user) return;
+
+    setLoadingKnowledgeBases(true);
+    try {
+      const token = await getAuthToken();
+      if (!token) {
+        console.error('No auth token available');
+        return;
+      }
+
+      const companyId = user?.id; // Use user ID as company ID
+      const response = await fetch(`/api/v1/knowledge-base/knowledge-bases/company/${companyId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setKnowledgeBases(result.knowledgeBases || []);
+      } else {
+        console.error('Failed to fetch knowledge bases:', response.status);
+      }
+    } catch (error) {
+      console.error('Error fetching knowledge bases:', error);
+    } finally {
+      setLoadingKnowledgeBases(false);
+    }
+  };
+
   const handleDeleteAgent = async (agentId: string, agentName: string) => {
     if (!confirm(`Are you sure you want to delete "${agentName}"? This action cannot be undone.`)) {
       return;
@@ -175,7 +214,9 @@ const AllAgents = () => {
       calApiKey: agent.cal_api_key || "",
       calEventTypeSlug: agent.cal_event_type_slug || "",
       calEventTypeId: agent.cal_event_type_id || "",
-      calTimezone: agent.cal_timezone || "UTC"
+      calTimezone: agent.cal_timezone || "UTC",
+      enableRAG: !!agent.knowledge_base_id,
+      selectedKnowledgeBase: agent.knowledge_base_id || ""
     });
     setIsEditModalOpen(true);
   };
@@ -218,6 +259,7 @@ const AllAgents = () => {
           calEventTypeSlug: editForm.calEventTypeSlug.trim() || null,
           calEventTypeId: editForm.calEventTypeId.trim() || null,
           calTimezone: editForm.calTimezone,
+          knowledgeBaseId: editForm.enableRAG && editForm.selectedKnowledgeBase ? editForm.selectedKnowledgeBase : null,
         })
       });
 
@@ -228,7 +270,7 @@ const AllAgents = () => {
         });
         setIsEditModalOpen(false);
         setEditingAgent(null);
-        setEditForm({ name: "", description: "", prompt: "", smsPrompt: "", firstMessage: "", calApiKey: "", calEventTypeSlug: "", calEventTypeId: "", calTimezone: "UTC" });
+        setEditForm({ name: "", description: "", prompt: "", smsPrompt: "", firstMessage: "", calApiKey: "", calEventTypeSlug: "", calEventTypeId: "", calTimezone: "UTC", enableRAG: false, selectedKnowledgeBase: "" });
         fetchAgents(); // Refresh the list
       } else {
         throw new Error('Failed to update agent');
@@ -631,6 +673,68 @@ const AllAgents = () => {
                 <p className="text-xs text-muted-foreground">
                   Timezone for appointment scheduling
                 </p>
+              </div>
+            </div>
+
+            {/* Knowledge Base Integration Section */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Database className="w-5 h-5 text-primary" />
+                <Label className="text-base font-medium">Knowledge Base Integration (Optional)</Label>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Enable your agent to access knowledge base information for enhanced responses
+              </p>
+
+              <div className="space-y-4">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="edit-enableRAG"
+                    checked={editForm.enableRAG}
+                    onChange={(e) => setEditForm({ ...editForm, enableRAG: e.target.checked, selectedKnowledgeBase: e.target.checked ? editForm.selectedKnowledgeBase : "" })}
+                    disabled={isUpdating}
+                    className="rounded border-gray-300"
+                  />
+                  <Label htmlFor="edit-enableRAG" className="text-sm font-medium">
+                    Enable RAG (Retrieval-Augmented Generation)
+                  </Label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  When enabled, the agent can search and reference your knowledge base during conversations
+                </p>
+
+                {editForm.enableRAG && (
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-knowledgeBase" className="text-sm font-medium">
+                      Select Knowledge Base
+                    </Label>
+                    <Select 
+                      value={editForm.selectedKnowledgeBase} 
+                      onValueChange={(value) => setEditForm({ ...editForm, selectedKnowledgeBase: value })}
+                      disabled={isUpdating || loadingKnowledgeBases}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose a knowledge base..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {knowledgeBases.map((kb) => (
+                          <SelectItem key={kb.id} value={kb.id}>
+                            {kb.name} - {kb.description}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {loadingKnowledgeBases && (
+                      <p className="text-xs text-muted-foreground">Loading knowledge bases...</p>
+                    )}
+                    {!loadingKnowledgeBases && knowledgeBases.length === 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        No knowledge bases found. <a href="/knowledge-base" className="text-primary hover:underline">Create one first</a>
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             </div>

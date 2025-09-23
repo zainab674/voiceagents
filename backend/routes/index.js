@@ -12,6 +12,7 @@ import outboundRoute from "#routes/outboundRoute.js";
 import livekitOutboundRoute from "#routes/livekitOutboundRoute.js";
 import campaignRoute from "#routes/campaignRoute.js";
 import csvRoute from "#routes/csvRoute.js";
+import knowledgeBaseRoute from "#routes/knowledgeBaseRoute.js";
 import { recordingWebhookRouter } from "#services/recordingService.js";
 
 const router = express.Router();
@@ -29,6 +30,7 @@ router.use("/outbound-calls", outboundRoute);
 router.use("/livekit/outbound-calls", livekitOutboundRoute);
 router.use("/campaigns", campaignRoute);
 router.use("/csv", csvRoute);
+router.use("/knowledge-base", knowledgeBaseRoute);
 router.use("/recording", recordingWebhookRouter);
 
 export default router;

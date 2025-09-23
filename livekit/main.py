@@ -38,6 +38,7 @@ from cal_calendar_api import Calendar, CalComCalendar, AvailableSlot, SlotUnavai
 
 # Assistant service (used for INBOUND only)
 from services.assistant import Assistant
+from services.rag_assistant import RAGAssistant
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -605,10 +606,11 @@ async def entrypoint(ctx: agents.JobContext):
             try:
                 sb: Client = create_client(supabase_url, supabase_key)  # type: ignore
                 resp = sb.table("agents").select(
-                    "id, name, prompt, first_message, cal_api_key, cal_event_type_id, cal_timezone, user_id"
+                    "id, name, prompt, first_message, cal_api_key, cal_event_type_id, cal_timezone, user_id, knowledge_base_id"
                 ).eq("id", assistant_id).single().execute()
                 row = resp.data
                 print("row", row)
+                print("knowledge_base_id from row:", row.get("knowledge_base_id") if row else "No row data")
                 if row:
                     resolver_meta = {
                         "assistant": {
@@ -621,9 +623,11 @@ async def entrypoint(ctx: agents.JobContext):
                         "cal_event_type_id": row.get("cal_event_type_id"),
                         "cal_timezone": row.get("cal_timezone") or "UTC",
                         "user_id": row.get("user_id"),
+                        "knowledge_base_id": row.get("knowledge_base_id"),
                     }
                     resolver_label = "resolver.supabase"
                     used_supabase = True
+                    print("resolver_meta knowledge_base_id:", resolver_meta.get("knowledge_base_id"))
             except Exception:
                 logging.exception("SUPABASE_ERROR | agent fetch failed")
 
@@ -721,6 +725,12 @@ GUIDED CALL POLICY (be natural, not rigid):
         except Exception:
             logging.exception("Failed to initialize Cal.com calendar")
 
+    # Add RAG tools if knowledge base is available
+    knowledge_base_id = resolver_meta.get("knowledge_base_id")
+    if knowledge_base_id:
+        instructions += " Additional tools available: search_knowledge, get_detailed_info (for knowledge base queries)."
+        logging.info("RAG_TOOLS | Knowledge base tools added to instructions")
+
     # First message (INBOUND greets)
     force_first = (os.getenv("FORCE_FIRST_MESSAGE", "true").lower() != "false")
     if force_first and first_message:
@@ -766,9 +776,26 @@ GUIDED CALL POLICY (be natural, not rigid):
     logging.info("STARTING_SESSION (INBOUND) | instructions_length=%d | has_calendar=%s",
                  len(instructions), calendar is not None)
 
+    # Choose between RAG-enabled assistant or regular assistant
+    knowledge_base_id = resolver_meta.get("knowledge_base_id")
+    print("Final knowledge_base_id for RAG decision:", knowledge_base_id)
+    
+    if knowledge_base_id:
+        logging.info(f"RAG_ASSISTANT | Using RAG-enabled assistant with KB: {knowledge_base_id}")
+        # company_id will be retrieved from knowledge base in RAG service
+        agent = RAGAssistant(
+            instructions=instructions, 
+            calendar=calendar,
+            knowledge_base_id=knowledge_base_id,
+            company_id=None  # Will be retrieved from knowledge base
+        )
+    else:
+        logging.info("RAG_ASSISTANT | Using regular assistant (no knowledge base)")
+        agent = Assistant(instructions=instructions, calendar=calendar)
+
     await session.start(
         room=ctx.room,
-        agent=Assistant(instructions=instructions, calendar=calendar),
+        agent=agent,
     )
 
     logging.info("SESSION_STARTED (INBOUND) | session_active=%s", session is not None)

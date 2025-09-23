@@ -1,0 +1,25 @@
+# Enhanced LiveKit Voice Agent Requirements
+# Core LiveKit dependencies
+livekit-agents[groq,deepgram]~=1.0
+livekit-agents[openai]>=1.2,<2
+
+# Environment and configuration
+python-dotenv
+aiohttp
+
+# Database and integrations
+supabase>=2.4.0
+
+# RAG and knowledge base (optional)
+pinecone-client>=3.0.0
+
+# Additional utilities
+requests>=2.31.0
+python-dateutil>=2.8.0
+pydantic>=2.0.0
+
+# Development and testing (optional)
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+black>=23.0.0
+flake8>=6.0.0

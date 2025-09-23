@@ -1,1 +1,1 @@
-# Services package for LiveKit assistant
+# Enhanced LiveKit Voice Agent Services

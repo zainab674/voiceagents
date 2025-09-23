@@ -1,16 +1,25 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
-import { Bot, ArrowLeft, Save, Calendar } from "lucide-react";
+import { Bot, ArrowLeft, Save, Calendar, Database } from "lucide-react";
 import { AGENTS_ENDPOINT } from "@/constants/URLConstant";
+
+interface KnowledgeBase {
+  id: string;
+  name: string;
+  description: string;
+  pinecone_index_status: string;
+}
 
 const CreateAgent = () => {
   const { user } = useAuth();
@@ -24,6 +33,46 @@ const CreateAgent = () => {
   const [calEventTypeSlug, setCalEventTypeSlug] = useState("");
   const [calTimezone, setCalTimezone] = useState("UTC");
   const [isCreating, setIsCreating] = useState(false);
+
+  // Knowledge Base states
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
+  const [selectedKnowledgeBase, setSelectedKnowledgeBase] = useState<string>("");
+  const [enableRAG, setEnableRAG] = useState(false);
+
+  // Load knowledge bases on mount
+  useEffect(() => {
+    if (user) {
+      fetchKnowledgeBases();
+    }
+  }, [user]);
+
+  const fetchKnowledgeBases = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (!token) {
+        throw new Error('No authentication token available');
+      }
+
+      const companyId = user?.id; // Use user ID as company ID
+      const response = await fetch(`/api/v1/knowledge-base/knowledge-bases/company/${companyId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch knowledge bases');
+      }
+
+      const result = await response.json();
+      setKnowledgeBases(result.knowledgeBases || []);
+    } catch (error) {
+      console.error('Error fetching knowledge bases:', error);
+    }
+  };
+
 
   const handleCreateAgent = async () => {
     if (!title.trim() || !description.trim() || !prompt.trim()) {
@@ -68,6 +117,7 @@ const CreateAgent = () => {
           calApiKey: calApiKey.trim() || null,
           calEventTypeSlug: calEventTypeSlug.trim() || null,
           calTimezone: calTimezone,
+          knowledgeBaseId: enableRAG && selectedKnowledgeBase ? selectedKnowledgeBase : null
         })
       });
 
@@ -141,7 +191,15 @@ const CreateAgent = () => {
                 Agent Configuration
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent>
+              <Tabs defaultValue="basic" className="space-y-6">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="basic">Basic Info</TabsTrigger>
+                  <TabsTrigger value="knowledge">Knowledge Base</TabsTrigger>
+                  <TabsTrigger value="calendar">Calendar</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="basic" className="space-y-6">
               {/* Title Field */}
               <div className="space-y-2">
                 <Label htmlFor="title" className="text-base font-medium">
@@ -302,6 +360,131 @@ const CreateAgent = () => {
                   </p>
                 </div>
               </div>
+                </TabsContent>
+
+                <TabsContent value="knowledge" className="space-y-6">
+                  {/* Knowledge Base Section */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Database className="w-5 h-5" />
+                      <h3 className="text-lg font-semibold">Knowledge Base Integration</h3>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Enable RAG (Retrieval-Augmented Generation) for context-aware responses
+                    </p>
+
+                    <div className="space-y-4">
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          id="enable-rag"
+                          checked={enableRAG}
+                          onCheckedChange={setEnableRAG}
+                        />
+                        <Label htmlFor="enable-rag">Enable Knowledge Base Integration</Label>
+                      </div>
+
+                      {enableRAG && (
+                        <div className="space-y-4">
+                          <div>
+                            <Label htmlFor="knowledge-base">Select Knowledge Base</Label>
+                            <Select value={selectedKnowledgeBase} onValueChange={setSelectedKnowledgeBase}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Choose a knowledge base" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {knowledgeBases.map((kb) => (
+                                  <SelectItem key={kb.id} value={kb.id}>
+                                    {kb.name} - {kb.description}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {knowledgeBases.length === 0 && (
+                              <p className="text-sm text-muted-foreground mt-2">
+                                No knowledge bases available. Create one in the Knowledge Base section.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </TabsContent>
+
+
+                <TabsContent value="calendar" className="space-y-6">
+                  {/* Calendar Integration Section */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-5 h-5" />
+                      <h3 className="text-lg font-semibold">Calendar Integration (Optional)</h3>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Connect your agent to Cal.com for automatic appointment booking
+                    </p>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="calApiKey" className="text-sm font-medium">
+                          Cal.com API Key
+                        </Label>
+                        <Input
+                          id="calApiKey"
+                          type="password"
+                          placeholder="cal_live_..."
+                          value={calApiKey}
+                          onChange={(e) => setCalApiKey(e.target.value)}
+                          disabled={isCreating}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Get this from your Cal.com account settings
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="calEventTypeSlug" className="text-sm font-medium">
+                          Event Type Slug
+                        </Label>
+                        <Input
+                          id="calEventTypeSlug"
+                          placeholder="e.g., consultation, meeting"
+                          value={calEventTypeSlug}
+                          onChange={(e) => setCalEventTypeSlug(e.target.value)}
+                          disabled={isCreating}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          The slug of your Cal.com event type
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="calTimezone" className="text-sm font-medium">
+                        Timezone
+                      </Label>
+                      <Select value={calTimezone} onValueChange={setCalTimezone} disabled={isCreating}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="UTC">UTC</SelectItem>
+                          <SelectItem value="America/New_York">Eastern Time</SelectItem>
+                          <SelectItem value="America/Chicago">Central Time</SelectItem>
+                          <SelectItem value="America/Denver">Mountain Time</SelectItem>
+                          <SelectItem value="America/Los_Angeles">Pacific Time</SelectItem>
+                          <SelectItem value="Europe/London">London</SelectItem>
+                          <SelectItem value="Europe/Paris">Paris</SelectItem>
+                          <SelectItem value="Asia/Tokyo">Tokyo</SelectItem>
+                          <SelectItem value="Asia/Shanghai">Shanghai</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Timezone for appointment scheduling
+                      </p>
+                    </div>
+                  </div>
+                </TabsContent>
+              </Tabs>
 
               {/* Action Buttons */}
               <div className="flex gap-4 pt-4">

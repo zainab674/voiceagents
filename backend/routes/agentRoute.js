@@ -36,11 +36,11 @@ router.get("/test", authenticateToken, async (req, res) => {
 // Create a new agent
 router.post("/", authenticateToken, async (req, res) => {
   try {
-    const { name, description, prompt, smsPrompt, firstMessage, calApiKey, calEventTypeSlug, calTimezone, calEventTypeId, calEventTitle, calEventLength } = req.body;
+    const { name, description, prompt, smsPrompt, firstMessage, calApiKey, calEventTypeSlug, calTimezone, calEventTypeId, calEventTitle, calEventLength, knowledgeBaseId } = req.body;
     const userId = req.user.userId;
 
     console.log('Creating agent for user:', userId);
-    console.log('Agent data:', { name, description, prompt, smsPrompt, firstMessage, calApiKey: calApiKey ? '***' : null, calEventTypeSlug, calTimezone, calEventTypeId, calEventTitle, calEventLength });
+    console.log('Agent data:', { name, description, prompt, smsPrompt, firstMessage, calApiKey: calApiKey ? '***' : null, calEventTypeSlug, calTimezone, calEventTypeId, calEventTitle, calEventLength, knowledgeBaseId });
 
     if (!name || !description || !prompt) {
       return res.status(400).json({
@@ -92,6 +92,7 @@ router.post("/", authenticateToken, async (req, res) => {
           cal_event_type_id: finalEventTypeId || null,
           cal_timezone: finalTimezone,
           cal_enabled: !!calApiKey,
+          knowledge_base_id: knowledgeBaseId || null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }
@@ -133,7 +134,7 @@ router.get("/", authenticateToken, async (req, res) => {
 
     const { data, error } = await supabase
       .from('agents')
-      .select('id, name, description, created_at')
+      .select('id, name, description, created_at, knowledge_base_id')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
@@ -208,7 +209,7 @@ router.get("/:agentId", authenticateToken, async (req, res) => {
 router.put("/:agentId", authenticateToken, async (req, res) => {
   try {
     const { agentId } = req.params;
-    const { name, description, prompt, smsPrompt, firstMessage, calApiKey, calEventTypeSlug, calEventTypeId, calTimezone } = req.body;
+    const { name, description, prompt, smsPrompt, firstMessage, calApiKey, calEventTypeSlug, calEventTypeId, calTimezone, knowledgeBaseId } = req.body;
     const userId = req.user.userId;
 
     if (!name || !description || !prompt) {
@@ -259,6 +260,7 @@ router.put("/:agentId", authenticateToken, async (req, res) => {
         cal_event_type_id: finalEventTypeId || null,
         cal_timezone: finalTimezone,
         cal_enabled: !!(calApiKey && finalEventTypeSlug),
+        knowledge_base_id: knowledgeBaseId || null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', agentId)
