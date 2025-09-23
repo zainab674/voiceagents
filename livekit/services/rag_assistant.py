@@ -77,7 +77,14 @@ class RAGAssistant(Agent):
         RAG integration: Retrieve relevant context from knowledge base
         when user completes a turn
         """
-        if not self.rag_enabled or not self.knowledge_base_id:
+        logging.info(f"RAG_ASSISTANT | on_user_turn_completed called - RAG enabled: {self.rag_enabled}, KB ID: {self.knowledge_base_id}")
+        
+        if not self.rag_enabled:
+            logging.warning("RAG_ASSISTANT | RAG is disabled, skipping knowledge base lookup")
+            return
+            
+        if not self.knowledge_base_id:
+            logging.warning("RAG_ASSISTANT | No knowledge_base_id provided, skipping knowledge base lookup")
             return
         
         try:
@@ -90,38 +97,55 @@ class RAGAssistant(Agent):
                     user_text = str(new_message.content)
             else:
                 user_text = str(new_message)
+                
+            logging.info(f"RAG_ASSISTANT | Extracted user text: '{user_text[:200]}...' (length: {len(user_text)})")
+            
             if not user_text or len(user_text.strip()) < 3:
+                logging.info("RAG_ASSISTANT | User text too short, skipping RAG lookup")
                 return
             
             # Check if we should perform RAG lookup
-            if self._should_perform_rag_lookup(user_text):
+            should_lookup = self._should_perform_rag_lookup(user_text)
+            logging.info(f"RAG_ASSISTANT | Should perform RAG lookup: {should_lookup}")
+            
+            if should_lookup:
                 logging.info(f"RAG_ASSISTANT | Performing RAG lookup for query: '{user_text[:100]}...'")
                 
                 # Get context from knowledge base
                 context = await self._get_rag_context(user_text)
                 if context:
-                    # Add context to the chat context
+                    # Add context as a system message to guide the agent's response
                     turn_ctx.add_message(
-                        role="assistant",
-                        content=f"Additional information relevant to your query: {context}"
+                        role="system",
+                        content=f"IMPORTANT: The user asked about '{user_text}'. Here is relevant information from the knowledge base:\n\n{context}\n\nUse this information to provide a helpful and accurate response to the user. Speak naturally and conversationally."
                     )
                     logging.info(f"RAG_ASSISTANT | Added context to chat: {len(context)} characters")
+                    logging.info(f"RAG_ASSISTANT | Context added as system message to guide agent response")
+                    
+                    # Also trigger the knowledge search to ensure the agent responds
+                    logging.info(f"RAG_ASSISTANT | Triggering knowledge search for automatic response")
                 else:
-                    logging.info("RAG_ASSISTANT | No relevant context found")
+                    logging.warning("RAG_ASSISTANT | No relevant context found from knowledge base")
+            else:
+                logging.info("RAG_ASSISTANT | RAG lookup skipped based on query filters")
                     
         except Exception as e:
-            logging.error(f"RAG_ASSISTANT | Error in on_user_turn_completed: {e}")
+            logging.error(f"RAG_ASSISTANT | Error in on_user_turn_completed: {e}", exc_info=True)
     
     def _should_perform_rag_lookup(self, user_text: str) -> bool:
         """
         Determine if we should perform RAG lookup based on user input
         """
+        logging.info(f"RAG_ASSISTANT | Evaluating query for RAG lookup: '{user_text[:100]}...'")
+        
         # Skip very short inputs
         if len(user_text.strip()) < 5:
+            logging.info("RAG_ASSISTANT | Query too short (< 5 chars), skipping RAG lookup")
             return False
         
         # Skip if it's the same query as last time (avoid redundant lookups)
         if user_text.strip().lower() == self._last_rag_query:
+            logging.info("RAG_ASSISTANT | Duplicate query detected, skipping RAG lookup")
             return False
         
         # Skip booking-related queries (they don't need knowledge base context)
@@ -130,7 +154,9 @@ class RAGAssistant(Agent):
             "confirm", "name", "email", "phone", "details"
         ]
         user_lower = user_text.lower()
-        if any(keyword in user_lower for keyword in booking_keywords):
+        matched_keywords = [keyword for keyword in booking_keywords if keyword in user_lower]
+        if matched_keywords:
+            logging.info(f"RAG_ASSISTANT | Booking keywords detected: {matched_keywords}, skipping RAG lookup")
             return False
         
         # Skip simple greetings
@@ -141,8 +167,10 @@ class RAGAssistant(Agent):
         ]
         for pattern in greeting_patterns:
             if re.match(pattern, user_text.strip(), re.IGNORECASE):
+                logging.info(f"RAG_ASSISTANT | Greeting pattern matched: {pattern}, skipping RAG lookup")
                 return False
         
+        logging.info("RAG_ASSISTANT | Query passed all filters, proceeding with RAG lookup")
         return True
     
     async def _get_rag_context(self, query: str) -> Optional[str]:
@@ -157,7 +185,7 @@ class RAGAssistant(Agent):
                 return self._rag_cache[cache_key]
             
             # Get context from knowledge base
-            logging.info(f"RAG_ASSISTANT | Requesting context for query: '{query}'")
+            logging.info(f"RAG_ASSISTANT | Requesting context from RAG service for KB: {self.knowledge_base_id}")
             context = await rag_service.get_enhanced_context(
                 knowledge_base_id=self.knowledge_base_id,
                 query=query,
@@ -166,6 +194,7 @@ class RAGAssistant(Agent):
             
             if context:
                 logging.info(f"RAG_ASSISTANT | Received context: {len(context)} characters")
+                logging.debug(f"RAG_ASSISTANT | Context preview: {context[:500]}...")
                 # Cache the result
                 self._rag_cache[cache_key] = context
                 self._last_rag_query = query.strip().lower()
@@ -177,12 +206,12 @@ class RAGAssistant(Agent):
                     oldest_key = next(iter(self._rag_cache))
                     del self._rag_cache[oldest_key]
             else:
-                logging.warning(f"RAG_ASSISTANT | No context returned for query: '{query}'")
+                logging.warning(f"RAG_ASSISTANT | No context returned from RAG service for query: '{query}'")
             
             return context
             
         except Exception as e:
-            logging.error(f"RAG_ASSISTANT | Error getting RAG context: {e}")
+            logging.error(f"RAG_ASSISTANT | Error getting RAG context: {e}", exc_info=True)
             return None
     
     async def search_knowledge_base(self, query: str) -> Optional[RAGContext]:
@@ -291,7 +320,7 @@ class RAGAssistant(Agent):
     @function_tool
     async def search_knowledge(self, ctx: RunContext, query: str) -> str:
         """
-        Search the knowledge base for information related to the query
+        Search the knowledge base for information related to the query. Use this when users ask questions about topics, services, or need information.
         """
         gate = self._turn_gate(ctx)
         if gate: return gate
@@ -312,12 +341,14 @@ class RAGAssistant(Agent):
             # Get context from knowledge base
             context = await self._get_rag_context(query)
             if context:
+                logging.info(f"RAG_ASSISTANT | Found knowledge base context: {len(context)} characters")
                 return f"Based on our knowledge base: {context}"
             else:
+                logging.warning(f"RAG_ASSISTANT | No context found for query: '{query}'")
                 return "I couldn't find specific information about that in our knowledge base. Is there anything else I can help you with?"
                 
         except Exception as e:
-            logging.error(f"RAG_ASSISTANT | Error in search_knowledge: {e}")
+            logging.error(f"RAG_ASSISTANT | Error in search_knowledge: {e}", exc_info=True)
             return "I had trouble searching our knowledge base. Let me try to help you in another way."
 
     @function_tool
@@ -332,6 +363,8 @@ class RAGAssistant(Agent):
             return "I don't have access to detailed information right now."
         
         try:
+            logging.info(f"RAG_ASSISTANT | Detailed info requested for topic: '{topic}'")
+            
             # Use multiple related queries for better coverage
             queries = [
                 topic,
@@ -348,12 +381,14 @@ class RAGAssistant(Agent):
             )
             
             if context:
+                logging.info(f"RAG_ASSISTANT | Found detailed context for '{topic}': {len(context)} characters")
                 return f"Here's detailed information about {topic}: {context}"
             else:
+                logging.warning(f"RAG_ASSISTANT | No detailed context found for topic: '{topic}'")
                 return f"I couldn't find detailed information about {topic} in our knowledge base. Would you like me to help you with something else?"
                 
         except Exception as e:
-            logging.error(f"RAG_ASSISTANT | Error in get_detailed_info: {e}")
+            logging.error(f"RAG_ASSISTANT | Error in get_detailed_info: {e}", exc_info=True)
             return "I had trouble retrieving detailed information. Let me try to help you in another way."
 
     # ---------- Inherited booking functions from original Assistant ----------

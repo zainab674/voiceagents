@@ -42,38 +42,51 @@ class RAGService:
     
     def _initialize_clients(self):
         """Initialize Supabase and Pinecone clients"""
+        logging.info("RAG_SERVICE | Initializing RAG service clients...")
+        
         # Initialize Supabase
         if create_client:
             supabase_url = os.getenv("SUPABASE_URL", "").strip()
             supabase_key = (
-                os.getenv("SUPABASE_SERVICE_ROLE", "").strip()
-                or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+                os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+                or os.getenv("SUPABASE_SERVICE_ROLE", "").strip()
             )
+            
+            logging.info(f"RAG_SERVICE | Supabase URL: {'SET' if supabase_url else 'NOT SET'}")
+            logging.info(f"RAG_SERVICE | Supabase Key: {'SET' if supabase_key else 'NOT SET'}")
             
             if supabase_url and supabase_key:
                 try:
                     self.supabase = create_client(supabase_url, supabase_key)
-                    logging.info("RAG_SERVICE | Supabase client initialized")
+                    logging.info("RAG_SERVICE | Supabase client initialized successfully")
                 except Exception as e:
-                    logging.error(f"RAG_SERVICE | Failed to initialize Supabase: {e}")
+                    logging.error(f"RAG_SERVICE | Failed to initialize Supabase: {e}", exc_info=True)
             else:
-                logging.warning("RAG_SERVICE | Supabase credentials not found")
+                logging.warning("RAG_SERVICE | Supabase credentials not found - RAG will be disabled")
+        else:
+            logging.warning("RAG_SERVICE | Supabase library not available - RAG will be disabled")
         
         # Initialize Pinecone
         if Pinecone:
             pinecone_api_key = os.getenv("PINECONE_API_KEY", "").strip()
-            pinecone_environment = os.getenv("PINECONE_ENVIRONMENT", "").strip()
+            logging.info(f"RAG_SERVICE | Pinecone API Key: {'SET' if pinecone_api_key else 'NOT SET'}")
             
             if pinecone_api_key:
                 try:
                     self.pinecone = Pinecone(api_key=pinecone_api_key)
-                    logging.info("RAG_SERVICE | Pinecone client initialized")
+                    logging.info("RAG_SERVICE | Pinecone client initialized successfully")
                 except Exception as e:
-                    logging.error(f"RAG_SERVICE | Failed to initialize Pinecone: {e}")
+                    logging.error(f"RAG_SERVICE | Failed to initialize Pinecone: {e}", exc_info=True)
             else:
-                logging.warning("RAG_SERVICE | Pinecone API key not found")
+                logging.warning("RAG_SERVICE | Pinecone API key not found - RAG will be disabled")
         else:
-            logging.warning("RAG_SERVICE | Pinecone library not available")
+            logging.warning("RAG_SERVICE | Pinecone library not available - RAG will be disabled")
+        
+        # Log final status
+        if self.supabase and self.pinecone:
+            logging.info("RAG_SERVICE | RAG service fully initialized and ready")
+        else:
+            logging.warning("RAG_SERVICE | RAG service partially initialized - some features may be disabled")
     
     async def get_enhanced_context(
         self, 
@@ -85,16 +98,21 @@ class RAGService:
         """
         Get enhanced context from knowledge base using Pinecone Assistants
         """
+        logging.info(f"RAG_SERVICE | get_enhanced_context called - KB: {knowledge_base_id}, Query: '{query[:100]}...'")
+        
         if not self.pinecone or not self.supabase:
-            logging.warning("RAG_SERVICE | Pinecone or Supabase not available")
+            logging.warning("RAG_SERVICE | Pinecone or Supabase not available - cannot perform RAG lookup")
             return None
         
         try:
             # Get knowledge base info from Supabase
+            logging.info(f"RAG_SERVICE | Fetching knowledge base info for: {knowledge_base_id}")
             kb_info = await self._get_knowledge_base_info(knowledge_base_id)
             if not kb_info:
-                logging.warning(f"RAG_SERVICE | Knowledge base {knowledge_base_id} not found")
+                logging.warning(f"RAG_SERVICE | Knowledge base {knowledge_base_id} not found in Supabase")
                 return None
+            
+            logging.info(f"RAG_SERVICE | Knowledge base info retrieved: {list(kb_info.keys())}")
             
             company_id = kb_info.get("company_id")
             if not company_id:
@@ -103,12 +121,14 @@ class RAGService:
             
             # Generate assistant name from company_id and knowledge_base_id
             assistant_name = self._generate_assistant_name(company_id, knowledge_base_id)
-            logging.info(f"RAG_SERVICE | Using assistant '{assistant_name}' for query: '{query}'")
+            logging.info(f"RAG_SERVICE | Generated assistant name: '{assistant_name}' for query: '{query}'")
             
             # Get assistant instance using Pinecone Assistants API
+            logging.info(f"RAG_SERVICE | Creating Pinecone assistant instance: {assistant_name}")
             assistant = self.pinecone.assistant.Assistant(assistant_name)
             
             # Search for context snippets using Pinecone Assistants
+            logging.info(f"RAG_SERVICE | Searching Pinecone assistant with top_k={top_k}, snippet_size=2048")
             response = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: assistant.context(
@@ -119,10 +139,10 @@ class RAGService:
             )
             
             snippets = response.snippets or []
-            logging.info(f"RAG_SERVICE | Retrieved {len(snippets)} context snippets")
+            logging.info(f"RAG_SERVICE | Retrieved {len(snippets)} context snippets from Pinecone")
             
             if not snippets:
-                logging.info(f"RAG_SERVICE | No context found for query: {query}")
+                logging.warning(f"RAG_SERVICE | No context snippets found for query: '{query}' in assistant: {assistant_name}")
                 return None
             
             # Format snippets for LLM consumption
@@ -251,7 +271,7 @@ class RAGService:
             )
             
         except Exception as e:
-            logging.error(f"RAG_SERVICE | Error searching knowledge base {knowledge_base_id}: {e}")
+            logging.error(f"RAG_SERVICE | Error searching knowledge base {knowledge_base_id}: {e}", exc_info=True)
             return None
     
     async def search_multiple_queries(
@@ -327,13 +347,21 @@ class RAGService:
     async def _get_knowledge_base_info(self, knowledge_base_id: str) -> Optional[Dict[str, Any]]:
         """Get knowledge base information from Supabase"""
         if not self.supabase:
+            logging.warning("RAG_SERVICE | Supabase client not available for knowledge base lookup")
             return None
         
         try:
+            logging.info(f"RAG_SERVICE | Querying Supabase for knowledge base: {knowledge_base_id}")
             result = self.supabase.table("knowledge_bases").select("*").eq("id", knowledge_base_id).single().execute()
-            return result.data if result.data else None
+            
+            if result.data:
+                logging.info(f"RAG_SERVICE | Knowledge base found: {list(result.data.keys())}")
+                return result.data
+            else:
+                logging.warning(f"RAG_SERVICE | Knowledge base {knowledge_base_id} not found in Supabase")
+                return None
         except Exception as e:
-            logging.error(f"RAG_SERVICE | Error getting knowledge base info: {e}")
+            logging.error(f"RAG_SERVICE | Error getting knowledge base info: {e}", exc_info=True)
             return None
     
     def _generate_assistant_name(self, company_id: str, knowledge_base_id: str) -> str:

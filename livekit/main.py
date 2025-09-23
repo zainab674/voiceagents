@@ -40,6 +40,9 @@ from cal_calendar_api import Calendar, CalComCalendar, AvailableSlot, SlotUnavai
 from services.assistant import Assistant
 from services.rag_assistant import RAGAssistant
 
+# Track publication fix - auto-applies when imported
+import quick_track_fix
+
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
@@ -728,8 +731,16 @@ GUIDED CALL POLICY (be natural, not rigid):
     # Add RAG tools if knowledge base is available
     knowledge_base_id = resolver_meta.get("knowledge_base_id")
     if knowledge_base_id:
-        instructions += " Additional tools available: search_knowledge, get_detailed_info (for knowledge base queries)."
-        logging.info("RAG_TOOLS | Knowledge base tools added to instructions")
+        instructions += """
+        
+KNOWLEDGE BASE INTEGRATION:
+- You have access to a knowledge base with detailed information
+- When users ask questions about topics, services, or information, ALWAYS use the search_knowledge or get_detailed_info tools
+- Use search_knowledge(query) for general information searches
+- Use get_detailed_info(topic) for specific topic details
+- Always provide the information you find from the knowledge base in your response
+- If you find relevant information, share it naturally in conversation"""
+        logging.info("RAG_TOOLS | Knowledge base tools and instructions added")
 
     # First message (INBOUND greets)
     force_first = (os.getenv("FORCE_FIRST_MESSAGE", "true").lower() != "false")
@@ -789,6 +800,7 @@ GUIDED CALL POLICY (be natural, not rigid):
             knowledge_base_id=knowledge_base_id,
             company_id=None  # Will be retrieved from knowledge base
         )
+        logging.info(f"RAG_ASSISTANT | RAGAssistant created successfully with KB: {knowledge_base_id}")
     else:
         logging.info("RAG_ASSISTANT | Using regular assistant (no knowledge base)")
         agent = Assistant(instructions=instructions, calendar=calendar)
