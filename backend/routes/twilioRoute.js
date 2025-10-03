@@ -36,10 +36,10 @@ import {
 const router = express.Router();
 
 // ------------------- Basic Twilio Functions -------------------
-router.get("/web-token", generateWebCallAccessToken);
+router.get("/web-token", authenticateToken, generateWebCallAccessToken);
 router.post("/voice", express.urlencoded({ extended: false }), twilioVoiceWebhook);
 router.post("/respond", express.urlencoded({ extended: false }), twilioVoiceRespond);
-router.post("/outbound", makeOutboundCall);
+router.post("/outbound", authenticateToken, makeOutboundCall);
 
 // ------------------- Enhanced Twilio Admin Functions (require auth) -------------------
 router.get("/phone-numbers", authenticateToken, getPhoneNumbersController);

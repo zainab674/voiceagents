@@ -20,6 +20,7 @@ router.post('/initiate', authenticateToken, async (req, res) => {
       assistantId,
       fromNumber
     } = req.body;
+    const userId = req.user?.userId;
 
     if (!campaignId || !phoneNumber || !assistantId) {
       return res.status(400).json({
@@ -28,12 +29,20 @@ router.post('/initiate', authenticateToken, async (req, res) => {
       });
     }
 
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User authentication required'
+      });
+    }
+
     const result = await outboundCallsService.initiateOutboundCall({
       campaignId,
       phoneNumber,
       contactName,
       assistantId,
-      fromNumber
+      fromNumber,
+      userId
     });
 
     res.json(result);

@@ -22,38 +22,65 @@ import {
   cleanupDispatchRules,
   createAssistantTrunk
 } from "#services/livekitSipService.js";
+import { TwilioCredentialsService } from "#services/twilioCredentialsService.js";
 
-// Web call Access Token
-export const generateWebCallAccessToken = (req, res) => {
-  const accountSid = process.env.TWILIO_API_KEY; // Account SID
-  const apiKey = process.env.TWILIO_WEB_CALL_API_KEY; // API Key SID
-  const apiKeySecret = process.env.TWILIO_WEB_CALL_API_SECRET; // API Key Secret
-  const twimlAppSid = process.env.TWILIO_WEB_CALL_SID; // TwiML App SID (must be created in Twilio)
+// Web call Access Token using user-specific credentials
+export const generateWebCallAccessToken = async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "User authentication required"
+      });
+    }
 
-  if (!accountSid || !apiKey || !apiKeySecret || !twimlAppSid) {
-    return res.status(400).json({
+    // Get user's Twilio credentials
+    const credentials = await TwilioCredentialsService.getActiveCredentials(userId);
+    if (!credentials) {
+      return res.status(400).json({
+        success: false,
+        message: "No active Twilio credentials found for user"
+      });
+    }
+
+    // For web calls, we still need API keys and TwiML app SID
+    // These should be stored per user or configured per user
+    const apiKey = process.env.TWILIO_WEB_CALL_API_KEY; // API Key SID
+    const apiKeySecret = process.env.TWILIO_WEB_CALL_API_SECRET; // API Key Secret
+    const twimlAppSid = process.env.TWILIO_WEB_CALL_SID; // TwiML App SID
+
+    if (!apiKey || !apiKeySecret || !twimlAppSid) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing Twilio web call configuration: TWILIO_WEB_CALL_API_KEY, TWILIO_WEB_CALL_API_SECRET, TWILIO_WEB_CALL_SID"
+      });
+    }
+
+    const AccessToken = twilio.jwt.AccessToken;
+    const VoiceGrant = AccessToken.VoiceGrant;
+
+    const identity = req.query.identity || `identity-${Math.random().toString(36).slice(2, 8)}`;
+
+    const accessToken = new AccessToken(credentials.account_sid, apiKey, apiKeySecret, {
+      identity,
+      ttl: 3600,
+    });
+    const voiceGrant = new VoiceGrant({
+      outgoingApplicationSid: twimlAppSid,
+      incomingAllow: true,
+    });
+    accessToken.addGrant(voiceGrant);
+
+    return res.json({ success: true, token: accessToken.toJwt(), identity });
+  } catch (error) {
+    console.error("Error generating web call access token:", error);
+    return res.status(500).json({
       success: false,
-      message:
-        "Missing Twilio env: TWILIO_API_KEY, TWILIO_WEB_CALL_API_KEY, TWILIO_WEB_CALL_API_SECRET, TWILIO_WEB_CALL_SID",
+      message: "Failed to generate access token"
     });
   }
-
-  const AccessToken = twilio.jwt.AccessToken;
-  const VoiceGrant = AccessToken.VoiceGrant;
-
-  const identity = req.query.identity || `identity-${Math.random().toString(36).slice(2, 8)}`;
-
-  const accessToken = new AccessToken(accountSid, apiKey, apiKeySecret, {
-    identity,
-    ttl: 3600,
-  });
-  const voiceGrant = new VoiceGrant({
-    outgoingApplicationSid: twimlAppSid,
-    incomingAllow: true,
-  });
-  accessToken.addGrant(voiceGrant);
-
-  return res.json({ success: true, token: accessToken.toJwt(), identity });
 };
 
 // Inbound Voice Webhook (TwiML)
@@ -88,12 +115,28 @@ export const twilioVoiceRespond = (req, res) => {
   return res.send(response.toString());
 };
 
-// Optional: initiate an outbound call (disabled by default unless env set)
+// Optional: initiate an outbound call using user-specific credentials
 export const makeOutboundCall = async (req, res) => {
   try {
-    const accountSid = process.env.TWILIO_API_KEY;
-    const authToken = process.env.TWILIO_SECRET_KEY;
-    const client = twilio(accountSid, authToken);
+    const userId = req.user?.userId;
+    
+    if (!userId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "User authentication required" 
+      });
+    }
+
+    // Get user's Twilio credentials
+    const credentials = await TwilioCredentialsService.getActiveCredentials(userId);
+    if (!credentials) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "No active Twilio credentials found for user" 
+      });
+    }
+
+    const client = twilio(credentials.account_sid, credentials.auth_token);
 
     const { from, to } = req.body;
     if (!from || !to) {

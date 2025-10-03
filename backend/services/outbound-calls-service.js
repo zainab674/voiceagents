@@ -1,6 +1,7 @@
 // services/outbound-calls-service.js
 import Twilio from 'twilio';
 import { createClient } from '@supabase/supabase-js';
+import { TwilioCredentialsService } from './twilioCredentialsService.js';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -13,17 +14,18 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 class OutboundCallsService {
   constructor() {
-    this.twilio = null;
-    this.initializeTwilio();
+    // No longer initialize Twilio with env vars - use user-specific credentials
   }
 
-  initializeTwilio() {
-    const accountSid = process.env.TWILIO_ACCOUNT_SID;
-    const authToken = process.env.TWILIO_AUTH_TOKEN;
-    
-    if (accountSid && authToken) {
-      this.twilio = Twilio(accountSid, authToken);
+  /**
+   * Get Twilio client using user-specific credentials
+   */
+  async getTwilioClient(userId) {
+    const credentials = await TwilioCredentialsService.getActiveCredentials(userId);
+    if (!credentials) {
+      throw new Error('No active Twilio credentials found for user');
     }
+    return Twilio(credentials.account_sid, credentials.auth_token);
   }
 
   /**
@@ -34,7 +36,8 @@ class OutboundCallsService {
     phoneNumber,
     contactName,
     assistantId,
-    fromNumber
+    fromNumber,
+    userId
   }) {
     try {
       console.log('Initiating outbound call:', {
@@ -42,8 +45,12 @@ class OutboundCallsService {
         phoneNumber,
         contactName,
         assistantId,
-        fromNumber
+        fromNumber,
+        userId
       });
+
+      // Get user's Twilio client
+      const twilio = await this.getTwilioClient(userId);
 
       // Get campaign details
       const { data: campaign, error: campaignError } = await supabase
@@ -107,14 +114,25 @@ class OutboundCallsService {
           }
         }
         
-        // Fallback to environment variable if no assistant phone found
+        // Get user's Twilio credentials to find their phone numbers
         if (!fromPhoneNumber) {
-          fromPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
+          const credentials = await TwilioCredentialsService.getActiveCredentials(userId);
+          if (credentials) {
+            // Try to get a phone number from user's Twilio account
+            try {
+              const phoneNumbers = await twilio.incomingPhoneNumbers.list({ limit: 1 });
+              if (phoneNumbers.length > 0) {
+                fromPhoneNumber = phoneNumbers[0].phoneNumber;
+              }
+            } catch (phoneError) {
+              console.warn('Could not fetch phone numbers from Twilio:', phoneError.message);
+            }
+          }
         }
       }
       
       if (!fromPhoneNumber) {
-        throw new Error('No phone number configured for outbound calls. Please assign a phone number to the assistant or set TWILIO_PHONE_NUMBER in your environment variables.');
+        throw new Error('No phone number configured for outbound calls. Please assign a phone number to the assistant or ensure your Twilio account has phone numbers.');
       }
 
       // Create LiveKit room URL for the call
@@ -122,7 +140,7 @@ class OutboundCallsService {
       const livekitRoomUrl = `${baseUrl}/api/v1/livekit/room/${roomName}`;
 
       // Initiate Twilio call
-      const call = await this.twilio.calls.create({
+      const call = await twilio.calls.create({
         to: phoneNumber,
         from: fromPhoneNumber,
         url: livekitRoomUrl,

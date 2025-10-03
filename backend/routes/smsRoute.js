@@ -1,6 +1,5 @@
 // routes/smsRoute.js
 import express from 'express';
-import twilio from 'twilio';
 import { createClient } from '@supabase/supabase-js';
 import { SMSAssistantService } from '../services/sms-assistant-service.js';
 import { SMSDatabaseService } from '../services/sms-database-service.js';
@@ -16,14 +15,10 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
-
 const smsDatabaseService = new SMSDatabaseService(supabase);
 const smsAIService = new SMSAIService();
-const smsAssistantService = new SMSAssistantService(smsDatabaseService, smsAIService, twilioClient);
+// SMSAssistantService now uses user-specific credentials dynamically
+const smsAssistantService = new SMSAssistantService(smsDatabaseService, smsAIService, null);
 
 // SMS Routes
 router.post('/send', authenticateToken, sendSMS);
