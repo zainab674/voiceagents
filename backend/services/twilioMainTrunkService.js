@@ -154,7 +154,7 @@ export async function attachPhoneToMainTrunk({ twilio, phoneSid, e164Number, use
     .eq('is_active', true)
     .single();
 
-  if (!credentials?.trunk_sid) {
+  if (!credentials.trunk_sid) {
     throw new Error('No main trunk found for user. Please create Twilio credentials first.');
   }
 
