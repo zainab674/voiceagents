@@ -1,1 +1,1 @@
-# Enhanced LiveKit Voice Agent Configuration
+# Configuration modules

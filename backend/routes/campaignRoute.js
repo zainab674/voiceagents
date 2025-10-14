@@ -142,8 +142,8 @@ router.post('/', authenticateToken, async (req, res) => {
         csv_file_id: csvFileId || null,
         daily_cap: dailyCap || 100,
         calling_days: callingDays || ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
-        start_hour: startHour || 9,
-        end_hour: endHour || 17,
+        start_hour: startHour !== undefined ? startHour : 9,
+        end_hour: endHour !== undefined ? endHour : 17,
         campaign_prompt: campaignPrompt || null
       })
       .select()

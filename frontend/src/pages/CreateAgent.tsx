@@ -31,6 +31,7 @@ const CreateAgent = () => {
   const [firstMessage, setFirstMessage] = useState("");
   const [calApiKey, setCalApiKey] = useState("");
   const [calEventTypeSlug, setCalEventTypeSlug] = useState("");
+  const [calEventTypeId, setCalEventTypeId] = useState("");
   const [calTimezone, setCalTimezone] = useState("UTC");
   const [isCreating, setIsCreating] = useState(false);
 
@@ -116,6 +117,7 @@ const CreateAgent = () => {
           firstMessage: firstMessage.trim() || null,
           calApiKey: calApiKey.trim() || null,
           calEventTypeSlug: calEventTypeSlug.trim() || null,
+          calEventTypeId: calEventTypeId.trim() || null,
           calTimezone: calTimezone,
           knowledgeBaseId: enableRAG && selectedKnowledgeBase ? selectedKnowledgeBase : null
         })
@@ -454,6 +456,22 @@ const CreateAgent = () => {
                         />
                         <p className="text-xs text-muted-foreground">
                           The slug of your Cal.com event type
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="calEventTypeId" className="text-sm font-medium">
+                          Event Type ID
+                        </Label>
+                        <Input
+                          id="calEventTypeId"
+                          placeholder="e.g., 12345678-1234-1234-1234-123456789012"
+                          value={calEventTypeId}
+                          onChange={(e) => setCalEventTypeId(e.target.value)}
+                          disabled={isCreating}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          The unique ID of your Cal.com event type
                         </p>
                       </div>
                     </div>

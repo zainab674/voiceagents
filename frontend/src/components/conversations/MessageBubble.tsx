@@ -182,14 +182,16 @@ export function MessageBubble({ message, conversation, showAvatar = true }: Mess
           )}
 
           {/* Transcript */}
-          {message.transcript && message.type === 'call' && (
+          {message.transcript && message.type === 'call' && message.transcript.length > 0 && (
             <div className="mt-2">
               <details className="text-xs">
                 <summary className="cursor-pointer text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">
                   View Transcript
                 </summary>
                 <div className="mt-2 space-y-1">
-                  {message.transcript.map((entry, idx) => (
+                  {message.transcript
+                    .filter(entry => entry.text && entry.text.trim()) // Filter out empty entries
+                    .map((entry, idx) => (
                     <div key={idx} className="text-xs">
                       <span className="font-medium text-gray-900 dark:text-gray-100">
                         {entry.speaker}:

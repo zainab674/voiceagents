@@ -46,7 +46,6 @@ const AICallInterface = () => {
   const [isCallActive, setIsCallActive] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
-  const [calComLink, setCalComLink] = useState("");
   const [callStatus, setCallStatus] = useState<"idle" | "connecting" | "connected" | "ended">("idle");
   const [agents, setAgents] = useState([]);
   const [selectedAgentId, setSelectedAgentId] = useState("");
@@ -286,29 +285,6 @@ const AICallInterface = () => {
                 </div>
               )}
 
-              {/* Manual Cal.com Link (Legacy) */}
-              <div>
-                <Label htmlFor="calcom" className="text-base font-medium">
-                  Manual Cal.com Link (Optional)
-                </Label>
-                <div className="flex gap-2 mt-2">
-                  <Input
-                    id="calcom"
-                    placeholder="Enter your Cal.com booking link"
-                    value={calComLink}
-                    onChange={(e) => setCalComLink(e.target.value)}
-                    disabled={isCallActive}
-                  />
-                  <Button variant="outline" size="icon" disabled={isCallActive}>
-                    <Calendar className="w-4 h-4" />
-                  </Button>
-                </div>
-                {calComLink && (
-                  <Badge variant="secondary" className="mt-2">
-                    Manual calendar link active
-                  </Badge>
-                )}
-              </div>
             </CardContent>
           </Card>
 

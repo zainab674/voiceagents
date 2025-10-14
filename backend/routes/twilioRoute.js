@@ -71,6 +71,12 @@ router.get("/sms/stats", authenticateToken, getSMSStats);
 router.post("/sms/webhook", express.urlencoded({ extended: false }), smsWebhook);
 router.post("/sms/status-callback", express.urlencoded({ extended: false }), smsStatusCallback);
 
+// ------------------- Recording Webhook (no auth required) -------------------
+router.post("/recording/webhook", express.urlencoded({ extended: false }), (req, res) => {
+  console.log('📹 Recording webhook received:', req.body);
+  res.status(200).send('OK');
+});
+
 export default router;
 
 

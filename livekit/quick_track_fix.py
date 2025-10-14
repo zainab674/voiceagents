@@ -44,10 +44,10 @@ def apply_quick_track_fix():
         # Mark as applied
         apply_quick_track_fix._applied = True
         
-        logging.info("✅ LiveKit track publication fix applied successfully")
+        logging.info("LiveKit track publication fix applied successfully")
         
     except Exception as e:
-        logging.error(f"❌ Failed to apply track publication fix: {e}")
+        logging.error(f"Failed to apply track publication fix: {e}")
 
 
 # Auto-apply the fix when this module is imported

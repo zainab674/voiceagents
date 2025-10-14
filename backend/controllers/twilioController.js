@@ -83,18 +83,70 @@ export const generateWebCallAccessToken = async (req, res) => {
   }
 };
 
-// Inbound Voice Webhook (TwiML)
-export const twilioVoiceWebhook = (req, res) => {
-  const { twiml } = twilio;
-  const response = new twiml.VoiceResponse();
-
-  // Minimal prompt; replace with your agent logic later
-  const sayText = "Thanks for calling. Please say something after the beep.";
-  response.say({ voice: "alice" }, sayText);
-  response.gather({ input: ["speech"], speechTimeout: "auto", action: "/api/v1/twilio/respond" });
-
-  res.set("Content-Type", "application/xml");
-  return res.send(response.toString());
+// Inbound Voice Webhook (TwiML) - Connects to LiveKit SIP
+export const twilioVoiceWebhook = async (req, res) => {
+  try {
+    const { twiml } = twilio;
+    const response = new twiml.VoiceResponse();
+    
+    // Get phone number from Twilio request
+    const toNumber = req.body.To || req.query.To;
+    const fromNumber = req.body.From || req.query.From;
+    
+    console.log(`📞 Incoming call: From ${fromNumber} to ${toNumber}`);
+    
+    if (!toNumber) {
+      console.error('❌ No phone number found in webhook request');
+      response.say({ voice: "alice" }, "I'm sorry, there was an error processing your call. Please try again later.");
+      response.hangup();
+      res.set("Content-Type", "application/xml");
+      return res.send(response.toString());
+    }
+    
+    // Get LiveKit SIP configuration from environment
+    const livekitSipDomain = process.env.LIVEKIT_SIP_DOMAIN || process.env.LIVEKIT_HOST?.replace('wss://', '').replace('ws://', '');
+    
+    if (!livekitSipDomain) {
+      console.error('❌ LiveKit SIP domain not configured');
+      response.say({ voice: "alice" }, "I'm sorry, there was a configuration error. Please try again later.");
+      response.hangup();
+      res.set("Content-Type", "application/xml");
+      return res.send(response.toString());
+    }
+    
+    console.log(`🔗 Connecting call to LiveKit SIP for number: ${toNumber}`);
+    console.log(`🌐 Using LiveKit SIP domain: ${livekitSipDomain}`);
+    
+    // Use TwiML to connect to LiveKit SIP
+    // The phone number should already be configured with LiveKit SIP dispatch rules
+    const dial = response.dial({
+      timeout: 30,
+      hangupOnStar: false,
+      record: 'record-from-ringing-dual',
+      recordingStatusCallback: `${process.env.NGROK_URL || process.env.BACKEND_URL || 'http://localhost:4000'}/api/v1/recording/webhook`
+    });
+    
+    // Connect to LiveKit SIP trunk using the phone number
+    // LiveKit will route this to the appropriate room based on dispatch rules
+    const sipUri = `sip:${toNumber}@${livekitSipDomain}`;
+    dial.sip(sipUri);
+    
+    console.log(`✅ Call connected to LiveKit SIP: ${sipUri}`);
+    
+    res.set("Content-Type", "application/xml");
+    return res.send(response.toString());
+    
+  } catch (error) {
+    console.error('❌ Error in Twilio voice webhook:', error);
+    
+    const { twiml } = twilio;
+    const response = new twiml.VoiceResponse();
+    response.say({ voice: "alice" }, "I'm sorry, there was a technical error. Please try calling again later.");
+    response.hangup();
+    
+    res.set("Content-Type", "application/xml");
+    return res.send(response.toString());
+  }
 };
 
 // Respond to Gather (TwiML) – echoes back speech for now

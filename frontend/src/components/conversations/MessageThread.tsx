@@ -99,7 +99,11 @@ export function MessageThread({ conversation }: MessageThreadProps) {
         resolution: call.outcome,
         summary: call.notes,
         recording: call.call_sid,
-        transcript: call.transcription || [],
+        transcript: call.transcription ? call.transcription.map((item: any) => ({
+          speaker: item.role === 'assistant' ? 'Assistant' : 'Customer',
+          time: '12:00', // Default time since we don't have timestamp in transcript
+          text: Array.isArray(item.content) ? item.content.join(' ') : item.content
+        })) : [],
         date: timestamp.toISOString().split('T')[0],
         time: timestamp.toTimeString().split(' ')[0].substring(0, 5),
         call_sid: call.call_sid,

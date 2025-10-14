@@ -1,6 +1,6 @@
 import express from "express";
 import { authenticateToken } from "#middlewares/authMiddleware.js";
-import { startCall, endCall, getCallHistory, logAppointment, saveTranscription, getCallRecordingInfo, getRecordingAudio } from "#controllers/callController.js";
+import { startCall, endCall, getCallHistory, logAppointment, saveTranscription, getCallRecordingInfo, getRecordingAudio, saveCallHistory } from "#controllers/callController.js";
 
 const router = express.Router();
 
@@ -15,6 +15,9 @@ router.post("/end", endCall);
 
 // Save transcription data during a call
 router.post("/transcription", saveTranscription);
+
+// Save call history (using existing table structure)
+router.post("/save-history", saveCallHistory);
 
 // Get call history for the authenticated user
 router.get("/history", getCallHistory);

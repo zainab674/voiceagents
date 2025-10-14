@@ -12,12 +12,12 @@ interface AppLayoutProps {
 export function AppLayout({ children }: AppLayoutProps) {
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full bg-background">
+      <div className="h-screen flex w-full bg-background overflow-hidden">
         <AppSidebar />
         
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col min-w-0">
           {/* Header */}
-          <header className="h-16 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-40">
+          <header className="h-16 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 flex-shrink-0 z-40">
             <div className="flex items-center justify-between h-full px-4">
               <div className="flex items-center gap-4">
                 <SidebarTrigger />
@@ -45,8 +45,10 @@ export function AppLayout({ children }: AppLayoutProps) {
           </header>
 
           {/* Main Content */}
-          <main className="flex-1 overflow-auto">
-            {children}
+          <main className="flex-1 overflow-y-auto overflow-x-hidden">
+            <div className="h-full">
+              {children}
+            </div>
           </main>
         </div>
       </div>

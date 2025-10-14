@@ -197,10 +197,10 @@ export default function Campaigns() {
 
   if (campaigns.length === 0) {
     return (
-      <div className="min-h-screen">
+      <div className="h-full flex items-center justify-center">
         <div className="container mx-auto px-6">
           <div className="max-w-5xl mx-auto">
-            <div className="flex flex-col items-center justify-center min-h-[70vh] text-center">
+            <div className="flex flex-col items-center justify-center text-center">
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -245,8 +245,8 @@ export default function Campaigns() {
   }
 
   return (
-    <div className="min-h-screen">
-      <div className="container mx-auto px-6">
+    <div className="h-full">
+      <div className="container mx-auto px-6 py-6">
         <div className="max-w-7xl mx-auto">
           <div className="space-y-6">
             <div className="flex flex-row items-center justify-between">
@@ -265,22 +265,22 @@ export default function Campaigns() {
               </Button>
             </div>
 
-            <div className="border rounded-lg overflow-hidden">
-              <div className="overflow-x-auto">
-                <Table>
+            <div className="border rounded-lg overflow-hidden bg-white">
+              <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+                <Table className="min-w-full">
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[100px]">Status</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Daily Cap</TableHead>
-                      <TableHead>Assistant</TableHead>
-                      <TableHead>Contact Source</TableHead>
-                      <TableHead className="text-right">Dials</TableHead>
-                      <TableHead className="text-right">Pickups</TableHead>
-                      <TableHead className="text-right">Do Not Call</TableHead>
-                      <TableHead className="text-right">Outcomes</TableHead>
-                      <TableHead className="text-right">Total Usage</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead className="min-w-[120px]">Status</TableHead>
+                      <TableHead className="min-w-[150px]">Name</TableHead>
+                      <TableHead className="min-w-[100px]">Daily Cap</TableHead>
+                      <TableHead className="min-w-[150px]">Assistant</TableHead>
+                      <TableHead className="min-w-[150px]">Contact Source</TableHead>
+                      <TableHead className="min-w-[80px] text-right">Dials</TableHead>
+                      <TableHead className="min-w-[80px] text-right">Pickups</TableHead>
+                      <TableHead className="min-w-[100px] text-right">Do Not Call</TableHead>
+                      <TableHead className="min-w-[100px] text-right">Outcomes</TableHead>
+                      <TableHead className="min-w-[100px] text-right">Total Usage</TableHead>
+                      <TableHead className="min-w-[120px] text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -298,57 +298,57 @@ export default function Campaigns() {
                       </TableRow>
                     ) : (
                       campaigns.map((campaign) => (
-                      <TableRow key={campaign.id}>
-                        <TableCell>
+                      <TableRow key={campaign.id} className="hover:bg-gray-50">
+                        <TableCell className="px-4 py-3">
                           {getStatusBadge(campaign.execution_status)}
                         </TableCell>
-                        <TableCell className="font-medium">
+                        <TableCell className="px-4 py-3 font-medium">
                           <Button
                             variant="link"
-                            className="p-0 h-auto font-medium text-left"
+                            className="p-0 h-auto font-medium text-left text-primary hover:text-primary/80"
                             onClick={() => openCampaignDetails(campaign.id, campaign.name)}
                           >
                             {campaign.name}
                           </Button>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="px-4 py-3">
                           {campaign.daily_cap}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="px-4 py-3">
                           {campaign.assistant_name || 'Unknown'}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="px-4 py-3">
                           {campaign.contact_source === 'contact_list' 
                             ? (campaign.contact_list_name || 'Unknown List')
                             : (campaign.csv_file_name || 'Unknown CSV')
                           }
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="px-4 py-3 text-right font-mono">
                           {campaign.dials}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="px-4 py-3 text-right font-mono">
                           {campaign.pickups}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="px-4 py-3 text-right font-mono">
                           {campaign.do_not_call}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="px-4 py-3 text-right">
                           <div className="flex flex-col text-xs space-y-1">
-                            <span className="text-success">I: {campaign.interested}</span>
-                            <span className="text-destructive">NI: {campaign.not_interested}</span>
-                            <span className="text-warning">CB: {campaign.callback}</span>
+                            <span className="text-green-600 font-medium">I: {campaign.interested}</span>
+                            <span className="text-red-600 font-medium">NI: {campaign.not_interested}</span>
+                            <span className="text-yellow-600 font-medium">CB: {campaign.callback}</span>
                           </div>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="px-4 py-3 text-right font-mono">
                           {campaign.total_usage}
                         </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-2">
+                        <TableCell className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
                             <Button
                               variant="ghost"
                               size="sm"
                               onClick={() => openCampaignDetails(campaign.id, campaign.name)}
-                              className="text-muted-foreground hover:text-foreground"
+                              className="text-muted-foreground hover:text-foreground h-8 w-8 p-0"
                             >
                               <Eye className="w-4 h-4" />
                             </Button>
@@ -356,7 +356,7 @@ export default function Campaigns() {
                               variant="ghost"
                               size="sm"
                               onClick={() => toggleCampaignStatus(campaign.id)}
-                              className="text-muted-foreground hover:text-foreground"
+                              className="text-muted-foreground hover:text-foreground h-8 w-8 p-0"
                             >
                               {campaign.execution_status === 'running' ? (
                                 <Pause className="w-4 h-4" />
@@ -368,7 +368,7 @@ export default function Campaigns() {
                               variant="ghost"
                               size="sm"
                               onClick={() => handleDeleteCampaign(campaign.id, campaign.name)}
-                              className="text-destructive hover:text-destructive/80"
+                              className="text-destructive hover:text-destructive/80 h-8 w-8 p-0"
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>

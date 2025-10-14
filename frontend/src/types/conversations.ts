@@ -18,6 +18,7 @@ export interface Conversation {
   calls: Call[];
   smsMessages?: SMSMessage[];
   totalDuration: string;
+  hasNewMessages?: boolean;
   outcomes: {
     appointments: number;
     qualified: number;

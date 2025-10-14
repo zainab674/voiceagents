@@ -71,9 +71,14 @@ export function ConversationsList({
                 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between mb-1">
-                    <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                      {conversation.displayName}
-                    </h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                        {conversation.displayName}
+                      </h3>
+                      {conversation.hasNewMessages && (
+                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                      )}
+                    </div>
                     <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap ml-2">
                       {conversation.lastActivityTime}
                     </span>

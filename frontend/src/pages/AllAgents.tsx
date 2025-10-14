@@ -505,7 +505,7 @@ const AllAgents = () => {
 
       {/* Edit Agent Modal */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col">
+        <DialogContent className="sm:max-w-[900px] max-h-[95vh] flex flex-col">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>Edit AI Agent</DialogTitle>
             <DialogDescription>
@@ -515,110 +515,121 @@ const AllAgents = () => {
 
           <div className="flex-1 overflow-y-auto">
             <div className="grid gap-4 py-4">
-            {/* Agent Name */}
-            <div className="grid gap-2">
-              <Label htmlFor="edit-name" className="text-base font-medium">
-                Agent Title <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="edit-name"
-                placeholder="Enter a descriptive name for your agent (e.g., Customer Service Bot, Sales Assistant)"
-                value={editForm.name}
-                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                className="text-base"
-                disabled={isUpdating}
-              />
-              <p className="text-sm text-muted-foreground">
-                Choose a clear, descriptive name that reflects the agent's purpose
-              </p>
+            {/* Basic Information Section */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold border-b pb-2">Basic Information</h3>
+              
+              {/* Agent Name */}
+              <div className="grid gap-2">
+                <Label htmlFor="edit-name" className="text-base font-medium">
+                  Agent Title <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="edit-name"
+                  placeholder="Enter a descriptive name for your agent (e.g., Customer Service Bot, Sales Assistant)"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  className="text-base"
+                  disabled={isUpdating}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Choose a clear, descriptive name that reflects the agent's purpose
+                </p>
+              </div>
+
+              {/* Agent Description */}
+              <div className="grid gap-2">
+                <Label htmlFor="edit-description" className="text-base font-medium">
+                  Description <span className="text-red-500">*</span>
+                </Label>
+                <Textarea
+                  id="edit-description"
+                  placeholder="Briefly describe what this agent does and its main responsibilities"
+                  value={editForm.description}
+                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                  className="min-h-[80px] text-base"
+                  disabled={isUpdating}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Provide a concise overview of the agent's role and capabilities
+                </p>
+              </div>
             </div>
 
-            {/* Agent Description */}
-            <div className="grid gap-2">
-              <Label htmlFor="edit-description" className="text-base font-medium">
-                Description <span className="text-red-500">*</span>
-              </Label>
-              <Textarea
-                id="edit-description"
-                placeholder="Briefly describe what this agent does and its main responsibilities"
-                value={editForm.description}
-                onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                className="min-h-[100px] text-base"
-                disabled={isUpdating}
-              />
-              <p className="text-sm text-muted-foreground">
-                Provide a concise overview of the agent's role and capabilities
-              </p>
-            </div>
+            {/* AI Prompts Section */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold border-b pb-2">AI Prompts</h3>
+              
+              {/* Agent Prompt */}
+              <div className="grid gap-2">
+                <Label htmlFor="edit-prompt" className="text-base font-medium">
+                  Voice Call AI Prompt <span className="text-red-500">*</span>
+                </Label>
+                <Textarea
+                  id="edit-prompt"
+                  placeholder="Define your AI assistant's personality, role, and instructions for voice calls..."
+                  value={editForm.prompt}
+                  onChange={(e) => setEditForm({ ...editForm, prompt: e.target.value })}
+                  className="min-h-[100px] text-base"
+                  disabled={isUpdating}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Core instruction that defines how your AI agent will behave during voice calls
+                </p>
+              </div>
 
-            {/* Agent Prompt */}
-            <div className="grid gap-2">
-              <Label htmlFor="edit-prompt" className="text-base font-medium">
-                Voice Call AI Prompt <span className="text-red-500">*</span>
-              </Label>
-              <Textarea
-                id="edit-prompt"
-                placeholder="Define your AI assistant's personality, role, and instructions for voice calls. For example: 'You are a helpful customer service representative for a tech company. Be professional, friendly, and knowledgeable about our products. Your goal is to help customers with their inquiries and provide excellent service.'"
-                value={editForm.prompt}
-                onChange={(e) => setEditForm({ ...editForm, prompt: e.target.value })}
-                className="min-h-[150px] text-base"
-                disabled={isUpdating}
-              />
-              <p className="text-sm text-muted-foreground">
-                This is the core instruction that defines how your AI agent will behave during voice calls
-              </p>
-            </div>
+              {/* SMS Prompt and First Message in a grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-smsPrompt" className="text-base font-medium">
+                    SMS AI Prompt (Optional)
+                  </Label>
+                  <Textarea
+                    id="edit-smsPrompt"
+                    placeholder="Define SMS-specific instructions..."
+                    value={editForm.smsPrompt}
+                    onChange={(e) => setEditForm({ ...editForm, smsPrompt: e.target.value })}
+                    className="min-h-[80px] text-base"
+                    disabled={isUpdating}
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Custom prompt for SMS conversations
+                  </p>
+                </div>
 
-            {/* SMS Prompt */}
-            <div className="grid gap-2">
-              <Label htmlFor="edit-smsPrompt" className="text-base font-medium">
-                SMS AI Prompt (Optional)
-              </Label>
-              <Textarea
-                id="edit-smsPrompt"
-                placeholder="Define your AI assistant's personality and instructions specifically for SMS conversations. Keep it concise and SMS-friendly. For example: 'You are a helpful customer service rep. Keep responses short and clear. Be friendly but professional in text messages.'"
-                value={editForm.smsPrompt}
-                onChange={(e) => setEditForm({ ...editForm, smsPrompt: e.target.value })}
-                className="min-h-[120px] text-base"
-                disabled={isUpdating}
-              />
-              <p className="text-sm text-muted-foreground">
-                Optional: Custom prompt for SMS conversations. If left empty, the voice call prompt will be used for SMS as well.
-              </p>
-            </div>
-
-            {/* First Message */}
-            <div className="grid gap-2">
-              <Label htmlFor="edit-firstMessage" className="text-base font-medium">
-                First Message (Optional)
-              </Label>
-              <Input
-                id="edit-firstMessage"
-                placeholder="Enter the greeting message for your agent (e.g., 'Hi! You've reached ABC Company. How can I help you today?')"
-                value={editForm.firstMessage}
-                onChange={(e) => setEditForm({ ...editForm, firstMessage: e.target.value })}
-                className="text-base"
-                disabled={isUpdating}
-              />
-              <p className="text-sm text-muted-foreground">
-                Custom greeting message that will be spoken when the call starts. If left empty, a default greeting will be used.
-              </p>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-firstMessage" className="text-base font-medium">
+                    First Message (Optional)
+                  </Label>
+                  <Input
+                    id="edit-firstMessage"
+                    placeholder="Enter greeting message..."
+                    value={editForm.firstMessage}
+                    onChange={(e) => setEditForm({ ...editForm, firstMessage: e.target.value })}
+                    className="text-base"
+                    disabled={isUpdating}
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Custom greeting when call starts
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/* Cal.com Integration Section */}
             <div className="space-y-4">
-              <div className="flex items-center gap-2">
+              <h3 className="text-lg font-semibold border-b pb-2 flex items-center gap-2">
                 <Calendar className="w-5 h-5 text-primary" />
-                <Label className="text-base font-medium">Cal.com Integration (Optional)</Label>
-              </div>
+                Cal.com Integration (Optional)
+              </h3>
               <p className="text-sm text-muted-foreground">
                 Enable your agent to schedule appointments using Cal.com
               </p>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-calApiKey" className="text-sm font-medium">
-                    Cal.com API Key
+                    API Key
                   </Label>
                   <Input
                     id="edit-calApiKey"
@@ -628,62 +639,69 @@ const AllAgents = () => {
                     onChange={(e) => setEditForm({ ...editForm, calApiKey: e.target.value })}
                     disabled={isUpdating}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Get this from your Cal.com account settings
-                  </p>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="edit-calEventTypeSlug" className="text-sm font-medium">
-                    Event Type Slug
+                    Event Slug
                   </Label>
                   <Input
                     id="edit-calEventTypeSlug"
-                    placeholder="e.g., consultation, meeting"
+                    placeholder="consultation"
                     value={editForm.calEventTypeSlug}
                     onChange={(e) => setEditForm({ ...editForm, calEventTypeSlug: e.target.value })}
                     disabled={isUpdating}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    The slug of your Cal.com event type
-                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-calEventTypeId" className="text-sm font-medium">
+                    Event ID
+                  </Label>
+                  <Input
+                    id="edit-calEventTypeId"
+                    placeholder="12345678-1234..."
+                    value={editForm.calEventTypeId}
+                    onChange={(e) => setEditForm({ ...editForm, calEventTypeId: e.target.value })}
+                    disabled={isUpdating}
+                  />
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="edit-calTimezone" className="text-sm font-medium">
-                  Timezone
-                </Label>
-                <Select value={editForm.calTimezone} onValueChange={(value) => setEditForm({ ...editForm, calTimezone: value })} disabled={isUpdating}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="UTC">UTC</SelectItem>
-                    <SelectItem value="America/New_York">Eastern Time</SelectItem>
-                    <SelectItem value="America/Chicago">Central Time</SelectItem>
-                    <SelectItem value="America/Denver">Mountain Time</SelectItem>
-                    <SelectItem value="America/Los_Angeles">Pacific Time</SelectItem>
-                    <SelectItem value="Europe/London">London</SelectItem>
-                    <SelectItem value="Europe/Paris">Paris</SelectItem>
-                    <SelectItem value="Asia/Tokyo">Tokyo</SelectItem>
-                    <SelectItem value="Asia/Shanghai">Shanghai</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Timezone for appointment scheduling
-                </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-calTimezone" className="text-sm font-medium">
+                    Timezone
+                  </Label>
+                  <Select value={editForm.calTimezone} onValueChange={(value) => setEditForm({ ...editForm, calTimezone: value })} disabled={isUpdating}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="UTC">UTC</SelectItem>
+                      <SelectItem value="America/New_York">Eastern Time</SelectItem>
+                      <SelectItem value="America/Chicago">Central Time</SelectItem>
+                      <SelectItem value="America/Denver">Mountain Time</SelectItem>
+                      <SelectItem value="America/Los_Angeles">Pacific Time</SelectItem>
+                      <SelectItem value="Europe/London">London</SelectItem>
+                      <SelectItem value="Europe/Paris">Paris</SelectItem>
+                      <SelectItem value="Asia/Tokyo">Tokyo</SelectItem>
+                      <SelectItem value="Asia/Shanghai">Shanghai</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div></div> {/* Empty div for grid alignment */}
               </div>
             </div>
 
             {/* Knowledge Base Integration Section */}
             <div className="space-y-4">
-              <div className="flex items-center gap-2">
+              <h3 className="text-lg font-semibold border-b pb-2 flex items-center gap-2">
                 <Database className="w-5 h-5 text-primary" />
-                <Label className="text-base font-medium">Knowledge Base Integration (Optional)</Label>
-              </div>
+                Knowledge Base Integration (Optional)
+              </h3>
               <p className="text-sm text-muted-foreground">
-                Enable your agent to access knowledge base information for enhanced responses
+                Enable RAG for context-aware responses
               </p>
 
               <div className="space-y-4">
@@ -700,9 +718,6 @@ const AllAgents = () => {
                     Enable RAG (Retrieval-Augmented Generation)
                   </Label>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  When enabled, the agent can search and reference your knowledge base during conversations
-                </p>
 
                 {editForm.enableRAG && (
                   <div className="space-y-2">

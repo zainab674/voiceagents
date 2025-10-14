@@ -134,7 +134,7 @@ router.get("/", authenticateToken, async (req, res) => {
 
     const { data, error } = await supabase
       .from('agents')
-      .select('id, name, description, created_at, knowledge_base_id')
+      .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 

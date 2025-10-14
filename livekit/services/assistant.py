@@ -11,7 +11,32 @@ from cal_calendar_api import Calendar, AvailableSlot, SlotUnavailableError
 
 class Assistant(Agent):
     def __init__(self, instructions: str, calendar: Calendar | None = None) -> None:
-        super().__init__(instructions=instructions)
+        # Enhanced instructions for step-by-step booking
+        # Add current date context to instructions
+        current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+        current_year = datetime.datetime.now().year
+        
+        enhanced_instructions = instructions
+        if calendar:
+            enhanced_instructions += f"""
+
+CURRENT DATE CONTEXT:
+Today's date is {current_date} (year {current_year}). Always use the current year {current_year} when discussing dates or booking appointments.
+
+BOOKING APPOINTMENTS:
+When a user expresses interest in booking an appointment (says things like "I want to book", "schedule an appointment", "book a meeting", etc.), FIRST call detect_booking_intent to set the booking intent, THEN use the step-by-step booking functions in this order:
+1. detect_booking_intent - Detect if user wants to book (call this first)
+2. set_notes - Ask for the reason for the appointment
+3. list_slots_on_day - Show available times for their preferred day
+4. choose_slot - Let them select a time slot
+5. provide_name - Ask for their full name
+6. provide_email - Ask for their email address
+7. provide_phone - Ask for their phone number
+8. confirm_details - Confirm and book the appointment
+
+IMPORTANT: Only start the booking process when the user explicitly expresses booking intent. Do NOT automatically start booking after the first message. Wait for the user to say they want to book an appointment. Always use the current year {current_year} for any date references."""
+        
+        super().__init__(instructions=enhanced_instructions)
         self.calendar = calendar
 
         # ----- Booking state (FSM) -----
@@ -109,6 +134,9 @@ class Assistant(Agent):
             a, b, y = m.group(1), m.group(2), m.group(3)
             d, mo = int(a), int(b)
             year = int(y) if y else today.year
+            # If the year is in the past (older than current year), assume current year
+            if year < today.year:
+                year = today.year
             try:
                 return datetime.date(year, mo, d)
             except Exception:
@@ -193,18 +221,31 @@ class Assistant(Agent):
         self._confirmed = False
 
     # ---------- Step 0: consent ----------
-    @function_tool
-    async def confirm_wants_to_book_yes(self, ctx: RunContext) -> str:
-        gate = self._turn_gate(ctx)
-        if gate: return gate
-        self._reset_booking_state()
-        self._booking_intent = True
-        self._booked = False
-        self._appointment_id = None
-        self._appointment_url = None
-        return "Great—what's the reason for the visit? I'll add it to the notes."
 
     # ---------- Step 1: notes ----------
+    @function_tool
+    async def detect_booking_intent(
+        self, 
+        context: RunContext, 
+        user_message: str
+    ) -> str:
+        """Detect if the user wants to book an appointment based on their message."""
+        booking_keywords = [
+            "book", "booking", "schedule", "appointment", "meeting", 
+            "reserve", "reservation", "set up", "arrange", "plan",
+            "I want to", "I need to", "can I", "would like to"
+        ]
+        
+        message_lower = user_message.lower()
+        
+        # Check if user is expressing booking intent
+        for keyword in booking_keywords:
+            if keyword in message_lower:
+                self._booking_intent = True
+                return "I understand you'd like to book an appointment. Let me help you with that. What's the reason for your visit?"
+        
+        return "I'm here to help. How can I assist you today?"
+
     @function_tool
     async def set_notes(self, ctx: RunContext, notes: str) -> str:
         gate = self._turn_gate(ctx)

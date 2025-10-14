@@ -210,7 +210,6 @@ class EnhancedVoiceAgent:
             llm=lk_openai.LLM(
                 model="gpt-4o-mini",
                 temperature=0.1,
-                max_tokens=250,
             ),
         )
         

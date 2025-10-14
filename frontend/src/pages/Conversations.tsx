@@ -1,32 +1,127 @@
 // pages/Conversations.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Conversation } from "@/types/conversations";
 import { fetchConversations } from "@/lib/api/conversations/fetchConversations";
 import { ConversationsList } from "@/components/conversations/ConversationsList";
 import { MessageThread } from "@/components/conversations/MessageThread";
 import { ContactInfoPanel } from "@/components/conversations/ContactInfoPanel";
-import ConversationsToolbar from "@/components/conversations/ConversationsToolbar";
-import { useConversationsFilter } from "@/components/conversations/hooks/useConversationsFilter";
 
 export default function Conversations() {
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isPolling, setIsPolling] = useState(false);
+  const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isPageVisibleRef = useRef(true);
+  const [lastMessageTimestamps, setLastMessageTimestamps] = useState<Record<string, string>>({});
+
+  // Check for new messages since last timestamp
+  const checkForNewMessages = async (phoneNumber: string) => {
+    const lastTimestamp = lastMessageTimestamps[phoneNumber];
+    if (!lastTimestamp) {
+      console.log(`No previous timestamp for ${phoneNumber}, skipping new message check`);
+      return;
+    }
+
+    try {
+      console.log(`🔄 Checking for new messages for ${phoneNumber} since ${lastTimestamp}`);
+      const response = await fetchConversations();
+      const conversation = response.conversations.find(conv => conv.phoneNumber === phoneNumber);
+      
+      if (conversation) {
+        // Check if there are new messages by comparing timestamps
+        const allMessages = [
+          ...(conversation.smsMessages || []).map(sms => ({ timestamp: sms.dateCreated, type: 'sms' })),
+          ...conversation.calls.map(call => ({ timestamp: call.created_at, type: 'call' }))
+        ];
+        
+        const newMessages = allMessages.filter(msg => 
+          new Date(msg.timestamp).getTime() > new Date(lastTimestamp).getTime()
+        );
+        
+        if (newMessages.length > 0) {
+          console.log(`📨 Found ${newMessages.length} new messages for ${phoneNumber}`);
+          
+          // Update the conversation with new messages
+          setConversations(prevConversations => 
+            prevConversations.map(conv => {
+              if (conv.phoneNumber === phoneNumber) {
+                return { ...conversation, hasNewMessages: true };
+              }
+              return conv;
+            })
+          );
+
+          // Update the selected conversation if it's the one being updated
+          if (selectedConversation?.phoneNumber === phoneNumber) {
+            setSelectedConversation(prev => prev ? { ...conversation, hasNewMessages: true } : prev);
+          }
+
+          // Update the last timestamp
+          const latestMessage = newMessages.sort((a, b) => 
+            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+          )[newMessages.length - 1];
+          
+          setLastMessageTimestamps(prev => ({
+            ...prev,
+            [phoneNumber]: latestMessage.timestamp
+          }));
+        }
+      }
+    } catch (error) {
+      console.error('Error checking for new messages:', error);
+    }
+  };
 
   // Fetch real conversations data
-  const loadConversations = async () => {
+  const loadConversations = async (isPolling = false) => {
     try {
-      setIsLoading(true);
+      if (!isPolling) {
+        setIsLoading(true);
+      }
       setError(null);
       const response = await fetchConversations();
-      setConversations(response.conversations);
+      
+      if (!isPolling) {
+        setConversations(response.conversations);
+        
+        // Set initial timestamps for all conversations
+        const timestamps: Record<string, string> = {};
+        response.conversations.forEach(conv => {
+          const allMessages = [
+            ...(conv.smsMessages || []).map(sms => ({ timestamp: sms.dateCreated, type: 'sms' })),
+            ...conv.calls.map(call => ({ timestamp: call.created_at, type: 'call' }))
+          ];
+          
+          if (allMessages.length > 0) {
+            const latestMessage = allMessages.sort((a, b) => 
+              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+            )[allMessages.length - 1];
+            
+            timestamps[conv.phoneNumber] = latestMessage.timestamp;
+          }
+        });
+        
+        setLastMessageTimestamps(timestamps);
+        setLastUpdateTime(new Date());
+      } else {
+        // For polling, check for new messages in selected conversation
+        if (selectedConversation) {
+          await checkForNewMessages(selectedConversation.phoneNumber);
+        }
+      }
     } catch (err) {
       console.error('Error loading conversations:', err);
-      setError('Failed to load conversations');
-      setConversations([]);
+      if (!isPolling) {
+        setError('Failed to load conversations');
+        setConversations([]);
+      }
     } finally {
-      setIsLoading(false);
+      if (!isPolling) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -34,34 +129,82 @@ export default function Conversations() {
     loadConversations();
   }, []);
 
-  // Use conversations filter hook with real data
-  const {
-    searchQuery,
-    setSearchQuery,
-    resolutionFilter,
-    setResolutionFilter,
-    dateRange,
-    setDateRange,
-    conversations: filteredConversations,
-    filteredCount
-  } = useConversationsFilter(conversations);
+  // Start/stop polling based on page visibility
+  useEffect(() => {
+    // Start polling every 30 seconds to check for new messages
+    setIsPolling(true);
+    pollingIntervalRef.current = setInterval(async () => {
+      console.log('🔄 Polling: Checking for new messages...', new Date().toLocaleTimeString());
+      
+      // Check for new messages in currently selected conversation
+      if (selectedConversation) {
+        await checkForNewMessages(selectedConversation.phoneNumber);
+      }
+      
+      // Also refresh conversations list (lightweight)
+      await loadConversations(true);
+    }, 30000); // Poll every 30 seconds
+
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      setIsPolling(false);
+    };
+  }, [selectedConversation]);
+
+  // Handle page visibility changes
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      isPageVisibleRef.current = !document.hidden;
+
+      // If page becomes visible and we haven't updated in a while, check for new messages
+      if (!document.hidden && lastUpdateTime) {
+        const timeSinceLastUpdate = Date.now() - lastUpdateTime.getTime();
+        if (timeSinceLastUpdate > 30000) { // If more than 30 seconds since last update
+          // Check for new messages in currently selected conversation
+          if (selectedConversation) {
+            await checkForNewMessages(selectedConversation.phoneNumber);
+          }
+          // Also refresh conversations list
+          await loadConversations(true);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [lastUpdateTime, selectedConversation]);
+
 
   // Auto-select first conversation on load
   useEffect(() => {
-    if (filteredConversations.length > 0 && !selectedConversation) {
-      setSelectedConversation(filteredConversations[0]);
+    if (conversations.length > 0 && !selectedConversation) {
+      setSelectedConversation(conversations[0]);
     }
-  }, [filteredConversations, selectedConversation]);
+  }, [conversations, selectedConversation]);
 
-  // Reset selected conversation if it's no longer in filtered results
+  // Reset selected conversation if it's no longer in conversations
   useEffect(() => {
-    if (selectedConversation && !filteredConversations.find(c => c.id === selectedConversation.id)) {
-      setSelectedConversation(filteredConversations.length > 0 ? filteredConversations[0] : null);
+    if (selectedConversation && !conversations.find(c => c.id === selectedConversation.id)) {
+      setSelectedConversation(conversations.length > 0 ? conversations[0] : null);
     }
-  }, [filteredConversations, selectedConversation]);
+  }, [conversations, selectedConversation]);
 
   const handleSelectConversation = (conversation: Conversation) => {
     setSelectedConversation(conversation);
+    
+    // Clear new message flags for the selected conversation
+    setConversations(prevConversations =>
+      prevConversations.map(conv =>
+        conv.id === conversation.id
+          ? { ...conv, hasNewMessages: false }
+          : conv
+      )
+    );
   };
 
   if (isLoading) {
@@ -125,6 +268,12 @@ export default function Conversations() {
                   Conversations
                 </h1>
                 <div className="flex items-center space-x-2">
+                  {isPolling && (
+                    <div className="flex items-center space-x-1 text-xs text-green-600 dark:text-green-400">
+                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                      <span>Live</span>
+                    </div>
+                  )}
                   <button
                     onClick={() => loadConversations()}
                     disabled={isLoading}
@@ -149,20 +298,9 @@ export default function Conversations() {
 
             </div>
 
-            {/* Conversations Toolbar */}
-            <div className="flex items-center justify-between mb-4">
-              <ConversationsToolbar
-                searchQuery={searchQuery}
-                onSearchChange={setSearchQuery}
-                resolutionFilter={resolutionFilter}
-                onResolutionChange={setResolutionFilter}
-                dateRange={dateRange}
-                onDateRangeChange={setDateRange}
-              />
-            </div>
 
             {/* Unified Three-Panel Layout */}
-            {filteredConversations.length === 0 ? (
+            {conversations.length === 0 ? (
               <div className="h-[calc(100vh-8rem)] flex items-center justify-center rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
                 <div className="text-center text-gray-500 dark:text-gray-400">
                   <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
@@ -172,19 +310,14 @@ export default function Conversations() {
                   </div>
                   <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Conversations Found</h3>
                   <p className="mb-4">
-                    {conversations.length === 0
-                      ? "No conversations have been recorded yet. Conversations will appear here when calls are made."
-                      : "No conversations match your current filters. Try adjusting your search or date range."
-                    }
+                    No conversations have been recorded yet. Conversations will appear here when calls are made.
                   </p>
-                  {conversations.length === 0 && (
-                    <button
-                      onClick={() => loadConversations()}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                    >
-                      Refresh
-                    </button>
-                  )}
+                  <button
+                    onClick={() => loadConversations()}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Refresh
+                  </button>
                 </div>
               </div>
             ) : (
@@ -192,7 +325,7 @@ export default function Conversations() {
                 {/* Left Panel - Conversations List */}
                 <div className="w-72 flex flex-col border-r border-gray-200 dark:border-gray-700">
                   <ConversationsList
-                    conversations={filteredConversations}
+                    conversations={conversations}
                     selectedConversationId={selectedConversation?.id}
                     onSelectConversation={handleSelectConversation}
                   />

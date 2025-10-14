@@ -571,8 +571,9 @@ export const createAssistantTrunk = async ({ assistantId, assistantName, phoneNu
     });
 
     // One catch-all rule per trunk: inboundNumbers empty ⇒ applies to all numbers on that trunk
+    // Use 'did-' prefix to match what the LiveKit agent expects
     const rule = await lk.createSipDispatchRule(
-      { type: 'individual', roomPrefix: 'assistant-' },
+      { type: 'individual', roomPrefix: 'did-' },
       {
         name: `assistant:${assistantId}:${Date.now()}`,
         trunkIds: [trunkId],

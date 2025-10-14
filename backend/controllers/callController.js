@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import { getCallRecordingInfo as getTwilioRecordingInfo } from '#services/twilioMainTrunkService.js';
+import CallHistoryService from '../services/call-history-service.js';
 
 dotenv.config();
 
@@ -12,6 +13,9 @@ if (!supabaseUrl || !supabaseServiceKey) {
 }
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+// Initialize call history service
+const callHistoryService = new CallHistoryService();
 
 // Start a new call
 export const startCall = async (req, res) => {
@@ -574,6 +578,80 @@ export const getRecordingAudio = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message
+    });
+  }
+};
+
+// Save call history using existing table structure
+export const saveCallHistory = async (req, res) => {
+  try {
+    const {
+      call_id,
+      assistant_id,
+      user_id,
+      phone_number,
+      start_time,
+      end_time,
+      call_duration,
+      call_status,
+      transcription,
+      call_sid,
+      outcome,
+      success,
+      notes
+    } = req.body;
+
+    console.log('Saving call history:', {
+      call_id,
+      assistant_id,
+      call_duration,
+      transcriptionItems: transcription?.length || 0,
+      outcome: outcome
+    });
+
+    // Prepare call data using existing table structure
+    const callData = {
+      call_id,
+      assistant_id,
+      user_id,
+      phone_number,
+      start_time,
+      end_time,
+      call_duration,
+      call_status,
+      transcription: transcription || [],
+      call_sid,
+      outcome,
+      success,
+      notes
+    };
+
+    // Use call history service to save
+    const result = await callHistoryService.saveCallHistory(callData);
+
+    if (!result.success) {
+      console.error('Failed to save call history:', result.error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to save call history",
+        error: result.error
+      });
+    }
+
+    console.log('Call history saved successfully:', result.data.id);
+
+    res.json({
+      success: true,
+      data: result.data,
+      message: "Call history saved successfully"
+    });
+
+  } catch (error) {
+    console.error('Save call history error:', error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message
     });
   }
 };
