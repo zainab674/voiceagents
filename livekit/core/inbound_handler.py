@@ -355,89 +355,6 @@ class InboundCallHandler:
             self.logger.error(f"CALENDAR_CREATION_ERROR | error={str(e)}", exc_info=True)
             return None
     
-    async def _start_session_safe(self, ctx: JobContext, agent: RAGAssistant) -> None:
-        """
-        Safely start agent session using official LiveKit patterns.
-        
-        Args:
-            ctx: LiveKit job context
-            agent: Agent instance
-        """
-        try:
-            self.logger.info("STARTING_AGENT_SESSION")
-            
-            # Create session with proper configuration
-            session = AgentSession(
-                vad=silero.VAD.load(),
-                stt=openai.STT(model="whisper-1"),
-                llm=openai.LLM(model="gpt-4o-mini", temperature=0.1),
-                tts=openai.TTS(model="tts-1", voice="alloy"),
-                allow_interruptions=True,
-                preemptive_generation=True,
-                resume_false_interruption=True,
-            )
-            
-            # Start the session
-            await session.start(
-                agent=agent,
-                room=ctx.room,
-                room_input_options=RoomInputOptions(close_on_disconnect=True),
-                room_output_options=RoomOutputOptions(transcription_enabled=True)
-            )
-            
-            self.logger.info("AGENT_SESSION_COMPLETED")
-            
-            # Save call history after session completion
-            await self._save_call_history_safe(ctx, agent, session)
-            
-        except Exception as e:
-            self.logger.error(f"SESSION_START_ERROR | error={str(e)}", exc_info=True)
-            raise
-    
-    async def _save_call_history_safe(self, ctx: JobContext, agent: RAGAssistant, session: AgentSession) -> None:
-        """
-        Safely save call history to database after session completion.
-        
-        Args:
-            ctx: LiveKit job context
-            agent: Agent instance
-            session: Completed session
-        """
-        try:
-            self.logger.info("SAVING_CALL_HISTORY")
-            
-            # Check if we have valid agent and user IDs
-            agent_id = agent.assistant_id
-            user_id = agent.user_id
-            
-            if not agent_id:
-                self.logger.warning(f"CALL_HISTORY_SKIPPED | missing_agent_id | agent_id={agent_id} | user_id={user_id}")
-                return
-            
-            # Extract call data from session and room
-            call_data = {
-                'agent_id': agent_id,
-                'user_id': user_id,
-                'contact_name': None,  # Not available from LiveKit session
-                'contact_phone': self._extract_phone_from_room(ctx.room.name),
-                'status': 'completed',
-                'duration_seconds': self._calculate_call_duration(ctx.room.creation_time if hasattr(ctx.room, 'creation_time') else None, session.end_time if hasattr(session, 'end_time') else None),
-                'outcome': 'completed',
-                'notes': None,
-                'call_sid': self._extract_call_sid(ctx),
-                'started_at': ctx.room.creation_time.isoformat() if hasattr(ctx.room, 'creation_time') and ctx.room.creation_time else None,
-                'ended_at': session.end_time.isoformat() if hasattr(session, 'end_time') and session.end_time else None,
-                'success': True,
-                'transcription': self._extract_transcription(session)
-            }
-            
-            # Save to database via backend API
-            await self._save_to_backend(call_data)
-            
-            self.logger.info("CALL_HISTORY_SAVED_SUCCESSFULLY")
-            
-        except Exception as e:
-            self.logger.error(f"CALL_HISTORY_SAVE_ERROR | error={str(e)}", exc_info=True)
     
     def _extract_phone_from_room(self, room_name: str) -> str:
         """Extract phone number from room name."""
@@ -449,28 +366,58 @@ class InboundCallHandler:
         phone_match = re.search(r'(\+?\d{10,15})', room_name)
         return phone_match.group(1) if phone_match else None
     
-    def _extract_call_sid(self, ctx: JobContext) -> str:
-        """Extract call SID from room metadata or participants."""
+    def _extract_call_sid(self, ctx: JobContext, participant) -> Optional[str]:
+        """Extract call_sid from various sources like in sass-livekit implementation."""
+        call_sid = None
+        
         try:
-            # Try room metadata first
-            if ctx.room.metadata:
-                import json
-                try:
-                    metadata = json.loads(ctx.room.metadata)
-                    return metadata.get('call_sid') or metadata.get('CallSid') or metadata.get('provider_id')
-                except json.JSONDecodeError:
-                    pass
-            
-            # Try participants
-            for participant in ctx.room.remote_participants.values():
-                if participant.attributes:
+            # Try to get call_sid from participant attributes
+            if hasattr(participant, 'attributes') and participant.attributes:
+                if hasattr(participant.attributes, 'get'):
                     call_sid = participant.attributes.get('sip.twilio.callSid')
                     if call_sid:
+                        self.logger.info(f"CALL_SID_FROM_PARTICIPANT_ATTRIBUTES | call_sid={call_sid}")
                         return call_sid
-            
-            return None
-        except Exception:
-            return None
+                
+                # Try SIP attributes if not found
+                if not call_sid and hasattr(participant.attributes, 'sip'):
+                    sip_attrs = participant.attributes.sip
+                    if hasattr(sip_attrs, 'twilio') and hasattr(sip_attrs.twilio, 'callSid'):
+                        call_sid = sip_attrs.twilio.callSid
+                        if call_sid:
+                            self.logger.info(f"CALL_SID_FROM_SIP_ATTRIBUTES | call_sid={call_sid}")
+                            return call_sid
+        except Exception as e:
+            self.logger.warning(f"Failed to get call_sid from participant attributes: {str(e)}")
+
+        # Try room metadata if not found
+        if not call_sid and hasattr(ctx.room, 'metadata') and ctx.room.metadata:
+            try:
+                import json
+                room_meta = json.loads(ctx.room.metadata) if isinstance(ctx.room.metadata, str) else ctx.room.metadata
+                call_sid = room_meta.get('call_sid') or room_meta.get('CallSid') or room_meta.get('provider_id')
+                if call_sid:
+                    self.logger.info(f"CALL_SID_FROM_ROOM_METADATA | call_sid={call_sid}")
+                    return call_sid
+            except Exception as e:
+                self.logger.warning(f"Failed to parse room metadata for call_sid: {str(e)}")
+
+        # Try participant metadata if not found
+        if not call_sid and hasattr(participant, 'metadata') and participant.metadata:
+            try:
+                import json
+                participant_meta = json.loads(participant.metadata) if isinstance(participant.metadata, str) else participant.metadata
+                call_sid = participant_meta.get('call_sid') or participant_meta.get('CallSid') or participant_meta.get('provider_id')
+                if call_sid:
+                    self.logger.info(f"CALL_SID_FROM_PARTICIPANT_METADATA | call_sid={call_sid}")
+                    return call_sid
+            except Exception as e:
+                self.logger.warning(f"Failed to parse participant metadata for call_sid: {str(e)}")
+
+        if not call_sid:
+            self.logger.warning("CALL_SID_NOT_FOUND | no call_sid available from any source")
+        
+        return call_sid
     
     def _extract_transcription(self, session: AgentSession) -> list:
         """Extract transcription from session."""
@@ -667,7 +614,7 @@ class InboundCallHandler:
                 'duration_seconds': self._calculate_call_duration(ctx.room.creation_time if hasattr(ctx.room, 'creation_time') else None, session.end_time if hasattr(session, 'end_time') else None),
                 'outcome': 'completed',
                 'notes': None,
-                'call_sid': self._extract_call_sid(ctx),
+                'call_sid': self._extract_call_sid(ctx, participant),
                 'started_at': ctx.room.creation_time.isoformat() if hasattr(ctx.room, 'creation_time') and ctx.room.creation_time else None,
                 'ended_at': session.end_time.isoformat() if hasattr(session, 'end_time') and session.end_time else None,
                 'success': True,
@@ -682,97 +629,6 @@ class InboundCallHandler:
         except Exception as e:
             self.logger.error(f"CALL_HISTORY_SAVE_ERROR | error={str(e)}", exc_info=True)
 
-    def _extract_call_sid(self, ctx: JobContext, participant) -> Optional[str]:
-        """Extract call SID from LiveKit context."""
-        try:
-            # Try to get call SID from job metadata first
-            if hasattr(ctx, 'job') and hasattr(ctx.job, 'metadata') and ctx.job.metadata:
-                # Handle both string and dict metadata like sass-livekit
-                import json
-                job_meta = json.loads(ctx.job.metadata) if isinstance(ctx.job.metadata, str) else ctx.job.metadata
-                call_sid = job_meta.get('call_sid')
-                if call_sid:
-                    self.logger.info(f"CALL_SID_FROM_METADATA | call_sid={call_sid}")
-                    return call_sid
-            
-            # Try room metadata if not found
-            if hasattr(ctx.room, 'metadata') and ctx.room.metadata:
-                try:
-                    room_meta = json.loads(ctx.room.metadata) if isinstance(ctx.room.metadata, str) else ctx.room.metadata
-                    call_sid = room_meta.get('call_sid') or room_meta.get('CallSid') or room_meta.get('provider_id')
-                    if call_sid:
-                        self.logger.info(f"CALL_SID_FROM_ROOM_METADATA | call_sid={call_sid}")
-                        return call_sid
-                except Exception as e:
-                    self.logger.warning(f"Failed to parse room metadata for call_sid: {str(e)}")
-            
-            # Try participant attributes and metadata if not found (if we have participants)
-            if participant:
-                try:
-                    # First try participant attributes (like sass-livekit)
-                    if hasattr(participant, 'attributes') and participant.attributes:
-                        # Debug: Log the attributes structure
-                        self.logger.info(f"PARTICIPANT_ATTRIBUTES_DEBUG | type={type(participant.attributes)} | keys={list(participant.attributes.keys()) if hasattr(participant.attributes, 'keys') else 'no_keys'}")
-                        
-                        # Try different ways to access the Call SID
-                        call_sid = None
-                        
-                        # Method 1: Direct dictionary access
-                        if hasattr(participant.attributes, 'get'):
-                            call_sid = participant.attributes.get('sip.twilio.callSid')
-                            if call_sid:
-                                self.logger.info(f"CALL_SID_FROM_PARTICIPANT_ATTRIBUTES_DICT | call_sid={call_sid}")
-                                return call_sid
-                        
-                        # Method 2: Direct key access
-                        if not call_sid and hasattr(participant.attributes, '__getitem__'):
-                            try:
-                                call_sid = participant.attributes['sip.twilio.callSid']
-                                if call_sid:
-                                    self.logger.info(f"CALL_SID_FROM_PARTICIPANT_ATTRIBUTES_KEY | call_sid={call_sid}")
-                                    return call_sid
-                            except (KeyError, TypeError):
-                                pass
-                        
-                        # Method 3: Nested attribute access
-                        if not call_sid and hasattr(participant.attributes, 'sip'):
-                            sip_attrs = participant.attributes.sip
-                            if hasattr(sip_attrs, 'twilio') and hasattr(sip_attrs.twilio, 'callSid'):
-                                call_sid = sip_attrs.twilio.callSid
-                                if call_sid:
-                                    self.logger.info(f"CALL_SID_FROM_SIP_ATTRIBUTES | call_sid={call_sid}")
-                                    return call_sid
-                    
-                    # Then try participant metadata
-                    if not call_sid and hasattr(participant, 'metadata') and participant.metadata:
-                        participant_meta = json.loads(participant.metadata) if isinstance(participant.metadata, str) else participant.metadata
-                        call_sid = participant_meta.get('call_sid') or participant_meta.get('CallSid') or participant_meta.get('provider_id')
-                        if call_sid:
-                            self.logger.info(f"CALL_SID_FROM_PARTICIPANT_METADATA | call_sid={call_sid}")
-                            return call_sid
-                except Exception as e:
-                    self.logger.warning(f"Failed to parse participant attributes/metadata for call_sid: {str(e)}")
-            
-            # Try to extract from room name pattern (Twilio format)
-            room_name = ctx.room.name
-            if room_name:
-                # Twilio room names often contain call SID in format: did-{call_sid}_{other_info}
-                # or similar patterns
-                parts = room_name.split('_')
-                if len(parts) > 1:
-                    # Look for Twilio call SID pattern (starts with CA...)
-                    for part in parts:
-                        if part.startswith('CA') and len(part) == 34:
-                            self.logger.info(f"CALL_SID_FROM_ROOM_NAME | call_sid={part}")
-                            return part
-            
-            # No call SID found - return None instead of fallback values
-            self.logger.warning("NO_CALL_SID_FOUND | no call_sid available from any source")
-            return None
-            
-        except Exception as e:
-            self.logger.error(f"CALL_SID_EXTRACTION_ERROR | error={str(e)}")
-            return None
 
     def _extract_transcription_from_history(self, session_history: list) -> list:
         """Extract transcription from session history."""
