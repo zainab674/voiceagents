@@ -58,6 +58,8 @@ class Settings:
         self.debug: bool = os.getenv("DEBUG", "false").lower() == "true"
         self.log_level: str = os.getenv("LOG_LEVEL", "INFO")
         self.backend_url: str = os.getenv("BACKEND_URL", "http://localhost:3001")
+        self.enable_rag: bool = os.getenv("ENABLE_RAG", "true").lower() == "true"
+        self.enable_recording: bool = os.getenv("ENABLE_RECORDING", "true").lower() == "true"
 
 
 # Global settings instance

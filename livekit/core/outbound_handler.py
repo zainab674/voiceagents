@@ -502,25 +502,55 @@ class OutboundCallHandler:
     
     def _extract_call_sid(self, ctx: JobContext) -> str:
         """Extract call SID from room metadata or participants."""
+        call_sid = None
+        
         try:
             # Try room metadata first
             if ctx.room.metadata:
                 import json
                 try:
                     metadata = json.loads(ctx.room.metadata)
-                    return metadata.get('call_sid') or metadata.get('CallSid') or metadata.get('provider_id')
+                    call_sid = (metadata.get('call_sid') or 
+                               metadata.get('CallSid') or 
+                               metadata.get('provider_id') or
+                               metadata.get('twilio_call_sid') or
+                               metadata.get('twilioCallSid'))
+                    if call_sid:
+                        self.logger.info(f"OUTBOUND_CALL_SID_FROM_ROOM_METADATA | call_sid={call_sid}")
+                        return call_sid
                 except json.JSONDecodeError:
                     pass
             
             # Try participants
             for participant in ctx.room.remote_participants.values():
                 if participant.attributes:
-                    call_sid = participant.attributes.get('sip.twilio.callSid')
+                    # Try multiple attribute keys
+                    call_sid = (participant.attributes.get('sip.twilio.callSid') or 
+                               participant.attributes.get('sip.twilio.call_sid') or
+                               participant.attributes.get('twilio.callSid') or
+                               participant.attributes.get('twilio.call_sid') or
+                               participant.attributes.get('callSid') or
+                               participant.attributes.get('call_sid'))
                     if call_sid:
+                        self.logger.info(f"OUTBOUND_CALL_SID_FROM_PARTICIPANT | call_sid={call_sid}")
                         return call_sid
             
-            return None
-        except Exception:
+            # Try to extract from room name as last resort
+            if not call_sid and hasattr(ctx.room, 'name') and ctx.room.name:
+                import re
+                # Look for Twilio call SID pattern (CA followed by 32 hex characters)
+                call_sid_match = re.search(r'CA[a-fA-F0-9]{32}', ctx.room.name)
+                if call_sid_match:
+                    call_sid = call_sid_match.group(0)
+                    self.logger.info(f"OUTBOUND_CALL_SID_FROM_ROOM_NAME | call_sid={call_sid}")
+                    return call_sid
+            
+            if not call_sid:
+                self.logger.warning("OUTBOUND_CALL_SID_NOT_FOUND | no call_sid available from any source")
+            
+            return call_sid
+        except Exception as e:
+            self.logger.warning(f"OUTBOUND_CALL_SID_EXTRACTION_ERROR | error={str(e)}")
             return None
     
     def _extract_transcription(self, session: AgentSession) -> list:

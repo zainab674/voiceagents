@@ -21,10 +21,18 @@ class AssistantConfig:
     """Assistant configuration."""
     name: str
     instructions: str
+    assistant_id: Optional[str] = None  # UUID of the assistant from database
+    user_id: Optional[str] = None  # UUID of the user who owns the assistant
     knowledge_base_id: Optional[str] = None
     enable_rag: bool = True
     enable_recording: bool = True
+    first_message: Optional[str] = None
     custom_fields: Optional[Dict[str, Any]] = None
+    # Calendar settings from agent database
+    cal_api_key: Optional[str] = None
+    cal_event_type_id: Optional[str] = None
+    cal_timezone: Optional[str] = None
+    cal_event_type_slug: Optional[str] = None
 
 
 @dataclass

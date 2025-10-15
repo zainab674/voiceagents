@@ -7,6 +7,7 @@ import json
 import asyncio
 from typing import Optional, Dict, Any
 from livekit.agents import JobContext, AgentSession, AutoSubscribe, RoomInputOptions, RoomOutputOptions
+from livekit import api
 
 from config.settings import Settings
 from services.rag_assistant import RAGAssistant
@@ -335,14 +336,16 @@ class InboundCallHandler:
         try:
             cal_api_key = assistant_config.get('cal_api_key')
             cal_event_type_id = assistant_config.get('cal_event_type_id')
+            cal_timezone = assistant_config.get('cal_timezone', 'UTC')
             
             if cal_api_key and cal_event_type_id:
                 self.logger.info("CREATING_CALENDAR_INTEGRATION")
+                self.logger.info(f"CALENDAR_CONFIG | api_key={'***' if cal_api_key else None} | event_type_id={cal_event_type_id} | timezone={cal_timezone}")
                 
                 calendar = CalComCalendar(
                     api_key=cal_api_key,
                     event_type_id=cal_event_type_id,
-                    timezone=self.settings.calendar.timezone
+                    timezone=cal_timezone
                 )
                 
                 self.logger.info("CALENDAR_INTEGRATION_CREATED")
@@ -374,7 +377,13 @@ class InboundCallHandler:
             # Try to get call_sid from participant attributes
             if hasattr(participant, 'attributes') and participant.attributes:
                 if hasattr(participant.attributes, 'get'):
-                    call_sid = participant.attributes.get('sip.twilio.callSid')
+                    # Try multiple attribute keys
+                    call_sid = (participant.attributes.get('sip.twilio.callSid') or 
+                               participant.attributes.get('sip.twilio.call_sid') or
+                               participant.attributes.get('twilio.callSid') or
+                               participant.attributes.get('twilio.call_sid') or
+                               participant.attributes.get('callSid') or
+                               participant.attributes.get('call_sid'))
                     if call_sid:
                         self.logger.info(f"CALL_SID_FROM_PARTICIPANT_ATTRIBUTES | call_sid={call_sid}")
                         return call_sid
@@ -382,8 +391,10 @@ class InboundCallHandler:
                 # Try SIP attributes if not found
                 if not call_sid and hasattr(participant.attributes, 'sip'):
                     sip_attrs = participant.attributes.sip
-                    if hasattr(sip_attrs, 'twilio') and hasattr(sip_attrs.twilio, 'callSid'):
-                        call_sid = sip_attrs.twilio.callSid
+                    if hasattr(sip_attrs, 'twilio'):
+                        twilio_attrs = sip_attrs.twilio
+                        call_sid = (getattr(twilio_attrs, 'callSid', None) or 
+                                   getattr(twilio_attrs, 'call_sid', None))
                         if call_sid:
                             self.logger.info(f"CALL_SID_FROM_SIP_ATTRIBUTES | call_sid={call_sid}")
                             return call_sid
@@ -395,7 +406,11 @@ class InboundCallHandler:
             try:
                 import json
                 room_meta = json.loads(ctx.room.metadata) if isinstance(ctx.room.metadata, str) else ctx.room.metadata
-                call_sid = room_meta.get('call_sid') or room_meta.get('CallSid') or room_meta.get('provider_id')
+                call_sid = (room_meta.get('call_sid') or 
+                           room_meta.get('CallSid') or 
+                           room_meta.get('provider_id') or
+                           room_meta.get('twilio_call_sid') or
+                           room_meta.get('twilioCallSid'))
                 if call_sid:
                     self.logger.info(f"CALL_SID_FROM_ROOM_METADATA | call_sid={call_sid}")
                     return call_sid
@@ -407,12 +422,29 @@ class InboundCallHandler:
             try:
                 import json
                 participant_meta = json.loads(participant.metadata) if isinstance(participant.metadata, str) else participant.metadata
-                call_sid = participant_meta.get('call_sid') or participant_meta.get('CallSid') or participant_meta.get('provider_id')
+                call_sid = (participant_meta.get('call_sid') or 
+                           participant_meta.get('CallSid') or 
+                           participant_meta.get('provider_id') or
+                           participant_meta.get('twilio_call_sid') or
+                           participant_meta.get('twilioCallSid'))
                 if call_sid:
                     self.logger.info(f"CALL_SID_FROM_PARTICIPANT_METADATA | call_sid={call_sid}")
                     return call_sid
             except Exception as e:
                 self.logger.warning(f"Failed to parse participant metadata for call_sid: {str(e)}")
+
+        # Try to extract from room name as last resort
+        if not call_sid and hasattr(ctx.room, 'name') and ctx.room.name:
+            try:
+                import re
+                # Look for Twilio call SID pattern (CA followed by 32 hex characters)
+                call_sid_match = re.search(r'CA[a-fA-F0-9]{32}', ctx.room.name)
+                if call_sid_match:
+                    call_sid = call_sid_match.group(0)
+                    self.logger.info(f"CALL_SID_FROM_ROOM_NAME | call_sid={call_sid}")
+                    return call_sid
+            except Exception as e:
+                self.logger.warning(f"Failed to extract call_sid from room name: {str(e)}")
 
         if not call_sid:
             self.logger.warning("CALL_SID_NOT_FOUND | no call_sid available from any source")
@@ -464,16 +496,20 @@ class InboundCallHandler:
             # Create Supabase client
             supabase: Client = create_client(supabase_url, supabase_key)
             
+            # Log the call data being saved
+            self.logger.info(f"SAVING_CALL_DATA_TO_DB | agent_id={call_data.get('agent_id')} | user_id={call_data.get('user_id')} | contact_phone={call_data.get('contact_phone')} | call_sid={call_data.get('call_sid')}")
+            
             # Save to calls table
             result = supabase.table('calls').insert(call_data).execute()
             
             if result.data:
-                self.logger.info(f"CALL_HISTORY_SAVED_TO_DB | agent_id={call_data['agent_id']} | db_id={result.data[0].get('id')}")
+                db_id = result.data[0].get('id')
+                self.logger.info(f"CALL_HISTORY_SAVED_TO_DB | agent_id={call_data['agent_id']} | db_id={db_id}")
             else:
-                self.logger.error(f"CALL_HISTORY_DB_SAVE_FAILED | agent_id={call_data['agent_id']}")
+                self.logger.error(f"CALL_HISTORY_DB_SAVE_FAILED | agent_id={call_data['agent_id']} | result={result}")
                         
         except Exception as e:
-            self.logger.error(f"CALL_HISTORY_DB_SAVE_ERROR | error={str(e)}")
+            self.logger.error(f"CALL_HISTORY_DB_SAVE_ERROR | error={str(e)}", exc_info=True)
     
     async def _start_session_with_history_saving(self, ctx: JobContext, agent) -> None:
         """
@@ -525,49 +561,68 @@ class InboundCallHandler:
             
             self.logger.info("AGENT_SESSION_STARTED")
             
-            # Set up call history saving on session shutdown
+            # Set up call history saving on session shutdown (primary method like sass-livekit)
+            call_saved = False
+            
             async def save_call_history_on_shutdown():
+                nonlocal call_saved
                 try:
                     self.logger.info("AGENT_SESSION_COMPLETED")
-                    self.logger.info("SAVING_CALL_HISTORY")
+                    self.logger.info("SAVING_CALL_HISTORY_VIA_SHUTDOWN_CALLBACK")
                     
-                    # Extract session history
-                    session_history = []
-                    try:
-                        if hasattr(session, 'transcript') and session.transcript:
-                            transcript_dict = session.transcript.to_dict()
-                            session_history = transcript_dict.get("items", [])
-                            self.logger.info(f"TRANSCRIPT_FROM_SESSION | items={len(session_history)}")
-                        elif hasattr(session, 'history') and session.history:
-                            history_dict = session.history.to_dict()
-                            session_history = history_dict.get("items", [])
-                            self.logger.info(f"HISTORY_FROM_SESSION | items={len(session_history)}")
-                        else:
-                            self.logger.warning("NO_SESSION_TRANSCRIPT_AVAILABLE")
-                    except Exception as e:
-                        self.logger.error(f"SESSION_HISTORY_READ_FAILED | error={str(e)}")
+                    if not call_saved:
+                        # Extract session history
                         session_history = []
-                    
-                    # Save call history
-                    await self._save_call_history_safe(ctx, agent, session, session_history, participant)
+                        try:
+                            if hasattr(session, 'transcript') and session.transcript:
+                                transcript_dict = session.transcript.to_dict()
+                                session_history = transcript_dict.get("items", [])
+                                self.logger.info(f"SHUTDOWN_TRANSCRIPT_FROM_SESSION | items={len(session_history)}")
+                            elif hasattr(session, 'history') and session.history:
+                                history_dict = session.history.to_dict()
+                                session_history = history_dict.get("items", [])
+                                self.logger.info(f"SHUTDOWN_HISTORY_FROM_SESSION | items={len(session_history)}")
+                            else:
+                                self.logger.warning("NO_SHUTDOWN_SESSION_TRANSCRIPT_AVAILABLE")
+                        except Exception as e:
+                            self.logger.error(f"SHUTDOWN_SESSION_HISTORY_READ_FAILED | error={str(e)}")
+                            session_history = []
+                        
+                        # Save call history
+                        await self._save_call_history_safe(ctx, agent, session, session_history, participant)
+                        call_saved = True
+                    else:
+                        self.logger.info("CALL_HISTORY_ALREADY_SAVED | skipping shutdown callback")
                     
                 except Exception as e:
-                    self.logger.error(f"CALL_HISTORY_SAVE_ERROR | error={str(e)}", exc_info=True)
+                    self.logger.error(f"SHUTDOWN_CALL_HISTORY_SAVE_ERROR | error={str(e)}", exc_info=True)
             
             # Register shutdown callback
             ctx.add_shutdown_callback(save_call_history_on_shutdown)
+            self.logger.info("SHUTDOWN_CALLBACK_REGISTERED")
             
-            # Wait for participant to disconnect
+            # Wait for participant to disconnect with call duration timeout
             try:
+                # Wait for the session to complete with call duration timeout
+                # This will automatically end the call if it exceeds the maximum duration
                 await asyncio.wait_for(
                     self._wait_for_session_completion(session, ctx),
                     timeout=1800.0  # 30 minutes max
                 )
-                self.logger.info("PARTICIPANT_DISCONNECTED")
+                self.logger.info(f"PARTICIPANT_DISCONNECTED | room={ctx.room.name}")
             except asyncio.TimeoutError:
-                self.logger.warning("SESSION_TIMEOUT | ending session after 30 minutes")
+                self.logger.warning(f"CALL_DURATION_EXCEEDED | room={ctx.room.name} | duration=1800s")
+                # End the call by deleting the room
+                try:
+                    await ctx.api.room.delete_room(api.DeleteRoomRequest(room=ctx.room.name))
+                    self.logger.info(f"CALL_FORCE_ENDED | room={ctx.room.name} | reason=duration_exceeded")
+                except Exception as e:
+                    self.logger.error(f"FAILED_TO_END_CALL | room={ctx.room.name} | error={str(e)}")
             except Exception as e:
-                self.logger.warning(f"SESSION_WAIT_ERROR | error={str(e)}")
+                self.logger.warning(f"DISCONNECT_WAIT_FAILED | room={ctx.room.name} | error={str(e)}")
+                # Continue - shutdown callback will handle cleanup
+
+            self.logger.info(f"SESSION_COMPLETE | room={ctx.room.name}")
             
         except Exception as e:
             self.logger.error(f"SESSION_START_ERROR | error={str(e)}", exc_info=True)
@@ -577,6 +632,7 @@ class InboundCallHandler:
         """Wait for the session to complete naturally."""
         try:
             # Wait for the participant to disconnect using room events
+            # RemoteParticipant doesn't have wait_for_disconnect, so we use room events
             await asyncio.sleep(1)  # Give a moment for any final processing
         except Exception as e:
             self.logger.warning(f"SESSION_COMPLETION_WAIT_FAILED | room={ctx.room.name} | error={str(e)}")
@@ -605,21 +661,31 @@ class InboundCallHandler:
                 return
             
             # Extract call data from session and room
+            contact_phone = self._extract_phone_from_room(ctx.room.name)
+            call_sid = self._extract_call_sid(ctx, participant)
+            duration_seconds = self._calculate_call_duration(ctx.room.creation_time if hasattr(ctx.room, 'creation_time') else None, session.end_time if hasattr(session, 'end_time') else None)
+            started_at = ctx.room.creation_time.isoformat() if hasattr(ctx.room, 'creation_time') and ctx.room.creation_time else None
+            ended_at = session.end_time.isoformat() if hasattr(session, 'end_time') and session.end_time else None
+            transcription = self._extract_transcription_from_history(session_history)
+            
             call_data = {
                 'agent_id': agent_id,
                 'user_id': user_id,
                 'contact_name': None,  # Not available from LiveKit session
-                'contact_phone': self._extract_phone_from_room(ctx.room.name),
+                'contact_phone': contact_phone,
                 'status': 'completed',
-                'duration_seconds': self._calculate_call_duration(ctx.room.creation_time if hasattr(ctx.room, 'creation_time') else None, session.end_time if hasattr(session, 'end_time') else None),
+                'duration_seconds': duration_seconds,
                 'outcome': 'completed',
                 'notes': None,
-                'call_sid': self._extract_call_sid(ctx, participant),
-                'started_at': ctx.room.creation_time.isoformat() if hasattr(ctx.room, 'creation_time') and ctx.room.creation_time else None,
-                'ended_at': session.end_time.isoformat() if hasattr(session, 'end_time') and session.end_time else None,
+                'call_sid': call_sid,
+                'started_at': started_at,
+                'ended_at': ended_at,
                 'success': True,
-                'transcription': self._extract_transcription_from_history(session_history)
+                'transcription': transcription
             }
+            
+            # Log call data for debugging
+            self.logger.info(f"CALL_DATA_EXTRACTED | agent_id={agent_id} | user_id={user_id} | contact_phone={contact_phone} | call_sid={call_sid} | duration={duration_seconds} | started_at={started_at} | ended_at={ended_at} | transcription_items={len(transcription) if transcription else 0}")
             
             # Save to database via backend API
             await self._save_to_backend(call_data)
