@@ -1,19 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
-import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 
 dotenv.config();
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const jwtSecret = process.env.JWT_SECRET;
+const jwtSecret = process.env.JWT_SECRET || 'your-secret-key';
 
-if (!supabaseUrl || !supabaseServiceKey || !jwtSecret) {
+if (!supabaseUrl || !supabaseServiceKey) {
   console.error('❌ Missing required environment variables:', {
     SUPABASE_URL: !!supabaseUrl,
-    SUPABASE_SERVICE_ROLE_KEY: !!supabaseServiceKey,
-    JWT_SECRET: !!jwtSecret
+    SUPABASE_SERVICE_ROLE_KEY: !!supabaseServiceKey
   });
 }
 
@@ -99,6 +98,8 @@ export const registerUser = async (req, res) => {
           first_name: firstName,
           last_name: lastName,
           phone: phone || null,
+          role: 'user', // Default role for new users
+          status: 'Active',
           created_at: new Date().toISOString()
         }
       ])
@@ -151,7 +152,9 @@ export const registerUser = async (req, res) => {
           email: userData.email,
           firstName: userData.first_name,
           lastName: userData.last_name,
-          phone: userData.phone
+          phone: userData.phone,
+          role: userData.role,
+          status: userData.status
         },
         token
       }
@@ -215,13 +218,6 @@ export const loginUser = async (req, res) => {
       });
     }
 
-    // Generate JWT token
-    const token = jwt.sign(
-      { userId: authData.user.id, email },
-      jwtSecret,
-      { expiresIn: '7d' }
-    );
-
     console.log('🎉 Login completed successfully');
 
     res.status(200).json({
@@ -233,9 +229,11 @@ export const loginUser = async (req, res) => {
           email: userData.email,
           firstName: userData.first_name,
           lastName: userData.last_name,
-          phone: userData.phone
+          phone: userData.phone,
+          role: userData.role,
+          status: userData.status
         },
-        token
+        token: authData.session.access_token
       }
     });
 
@@ -281,6 +279,8 @@ export const getCurrentUser = async (req, res) => {
           firstName: userData.first_name,
           lastName: userData.last_name,
           phone: userData.phone,
+          role: userData.role,
+          status: userData.status,
           createdAt: userData.created_at
         }
       }

@@ -11,7 +11,8 @@
     "#utils/*": "./utils/*",
     "#middlewares/*": "./middlewares/*",
     "#services/*": "./services/*",
-    "#constants/*": "./constants/*"
+    "#constants/*": "./constants/*",
+    "#lib/*": "./lib/*"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",

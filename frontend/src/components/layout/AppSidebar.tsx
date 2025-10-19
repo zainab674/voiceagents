@@ -18,9 +18,11 @@ import {
   MessageCircle,
   Megaphone,
   UserCheck,
-  Brain
+  Brain,
+  Bot
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Sidebar,
   SidebarContent,
@@ -36,13 +38,13 @@ import {
 
 const navigationItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
+  { title: "All Agents", url: "/all-agents", icon: Bot },
   { title: "Voice AI Calls", url: "/voice-calls", icon: Phone },
   { title: "Conversations", url: "/conversations", icon: MessageCircle },
   { title: "Campaigns", url: "/campaigns", icon: Megaphone },
   { title: "Contacts", url: "/contacts", icon: UserCheck },
   { title: "Knowledge Base", url: "/knowledge-base", icon: Brain },
-  { title: "Twilio Configuration", url: "/trunk-management", icon: Network },
-  { title: "Communication Hub", url: "/communication", icon: MessageSquare },
+  { title: "Phone Management", url: "/trunk-management", icon: Network },
   { title: "CRM Integration", url: "/crm", icon: Database },
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
   { title: "Bookings", url: "/bookings", icon: Calendar },
@@ -66,10 +68,14 @@ export function AppSidebar() {
   const collapsed = state === "collapsed";
   const location = useLocation();
   const currentPath = location.pathname;
+  const { user } = useAuth();
 
   const isActive = (path: string) => currentPath === path;
   const getNavCls = ({ isActive }: { isActive: boolean }) =>
     isActive ? "bg-gradient-to-r from-primary/20 to-accent/20 text-primary font-medium border-r-2 border-primary" : "hover:bg-muted/50";
+
+  // Check if user is admin
+  const isAdmin = user?.role === 'admin';
 
   return (
     <Sidebar className={collapsed ? "w-16" : "w-64"}>
@@ -103,24 +109,26 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Admin Section */}
-        <SidebarGroup>
-          <SidebarGroupLabel>Administration</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {adminItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild>
-                    <NavLink to={item.url} end className={getNavCls}>
-                      <item.icon className="mr-2 h-4 w-4" />
-                      {!collapsed && <span>{item.title}</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {/* Admin Section - Only show for admin users */}
+        {isAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Administration</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {adminItems.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton asChild>
+                      <NavLink to={item.url} end className={getNavCls}>
+                        <item.icon className="mr-2 h-4 w-4" />
+                        {!collapsed && <span>{item.title}</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         {/* Resources */}
         <SidebarGroup>

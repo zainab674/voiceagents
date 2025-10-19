@@ -366,3 +366,40 @@ export const getSMSStats = async (req, res) => {
     });
   }
 };
+
+/**
+ * Get distinct phone numbers that have SMS for the authenticated user
+ * GET /api/v1/sms/numbers
+ */
+export const getSMSNumbers = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    // Fetch distinct numbers from both to_number and from_number
+    const { data: toNumbers, error: toErr } = await supabase
+      .from('sms_messages')
+      .select('to_number')
+      .eq('user_id', userId)
+      .not('to_number', 'is', null);
+
+    const { data: fromNumbers, error: fromErr } = await supabase
+      .from('sms_messages')
+      .select('from_number')
+      .eq('user_id', userId)
+      .not('from_number', 'is', null);
+
+    if (toErr || fromErr) {
+      throw new Error((toErr || fromErr).message || 'Failed to fetch numbers');
+    }
+
+    const nums = new Set([
+      ...((toNumbers || []).map(r => r.to_number).filter(Boolean)),
+      ...((fromNumbers || []).map(r => r.from_number).filter(Boolean)),
+    ]);
+
+    res.json({ success: true, data: Array.from(nums) });
+  } catch (error) {
+    console.error('Error fetching SMS numbers:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to fetch SMS numbers' });
+  }
+};

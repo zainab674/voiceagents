@@ -8,6 +8,8 @@ interface User {
   firstName: string;
   lastName: string;
   phone?: string;
+  role: 'admin' | 'user';
+  status: 'Active' | 'Inactive' | 'Suspended';
 }
 
 interface AuthContextType {

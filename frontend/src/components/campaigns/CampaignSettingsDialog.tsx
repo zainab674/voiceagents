@@ -10,7 +10,6 @@ import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { Settings } from "lucide-react";
 import { fetchAssistants, Assistant } from "@/lib/api/assistants/fetchAssistants";
-import { fetchContactLists, ContactList } from "@/lib/api/contacts/fetchContactLists";
 import { fetchCsvFiles, CsvFile } from "@/lib/api/csv/csvService";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -23,9 +22,7 @@ interface CampaignSettingsDialogProps {
 interface CampaignSettingsData {
   name: string;
   assistantId: string;
-  contactSource: 'contact_list' | 'csv_file';
-  contactListId?: string;
-  csvFileId?: string;
+  csvFileId: string;
   dailyCap: number;
   callingDays: string[];
   startHour: number;
@@ -46,15 +43,12 @@ const daysOfWeek = [
 export function CampaignSettingsDialog({ open, onOpenChange, onSave }: CampaignSettingsDialogProps) {
   const { user } = useAuth();
   const [assistants, setAssistants] = useState<Assistant[]>([]);
-  const [contactLists, setContactLists] = useState<ContactList[]>([]);
   const [csvFiles, setCsvFiles] = useState<CsvFile[]>([]);
   const [loading, setLoading] = useState(false);
   
   const [formData, setFormData] = useState<CampaignSettingsData>({
     name: '',
     assistantId: '',
-    contactSource: 'contact_list',
-    contactListId: '',
     csvFileId: '',
     dailyCap: 100,
     callingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
@@ -69,16 +63,13 @@ export function CampaignSettingsDialog({ open, onOpenChange, onSave }: CampaignS
       const fetchData = async () => {
         setLoading(true);
         try {
-          const [assistantsRes, contactListsRes, csvFilesRes] = await Promise.all([
+          const [assistantsRes, csvFilesRes] = await Promise.all([
             fetchAssistants(),
-            fetchContactLists(),
             fetchCsvFiles()
           ]);
           
           // fetchAssistants returns Assistant[] directly
           setAssistants(assistantsRes || []);
-          // fetchContactLists returns ContactList[] directly  
-          setContactLists(contactListsRes || []);
           // fetchCsvFiles returns { success: boolean, csvFiles: CsvFile[] }
           if (csvFilesRes.success) {
             setCsvFiles(csvFilesRes.csvFiles || []);
@@ -90,7 +81,6 @@ export function CampaignSettingsDialog({ open, onOpenChange, onSave }: CampaignS
           console.error('Error fetching campaign data:', error);
           // Set empty arrays on error to prevent undefined errors
           setAssistants([]);
-          setContactLists([]);
           setCsvFiles([]);
         } finally {
           setLoading(false);
@@ -102,9 +92,7 @@ export function CampaignSettingsDialog({ open, onOpenChange, onSave }: CampaignS
   }, [open, user?.id]);
 
   const handleSave = () => {
-    if (!formData.name || !formData.assistantId || 
-        (formData.contactSource === 'contact_list' && !formData.contactListId) ||
-        (formData.contactSource === 'csv_file' && !formData.csvFileId)) {
+    if (!formData.name || !formData.assistantId || !formData.csvFileId) {
       return; // Basic validation
     }
     
@@ -114,8 +102,6 @@ export function CampaignSettingsDialog({ open, onOpenChange, onSave }: CampaignS
     setFormData({
       name: '',
       assistantId: '',
-      contactSource: 'contact_list',
-      contactListId: '',
       csvFileId: '',
       dailyCap: 100,
       callingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
@@ -217,69 +203,24 @@ export function CampaignSettingsDialog({ open, onOpenChange, onSave }: CampaignS
             </div>
 
             <div className="space-y-2">
-              <Label className="text-sm font-medium text-foreground">Contact Source</Label>
+              <Label className="text-sm font-medium text-foreground">CSV File</Label>
               <Select
-                value={formData.contactSource}
-                onValueChange={(value) => setFormData(prev => ({ 
-                  ...prev, 
-                  contactSource: value as 'contact_list' | 'csv_file',
-                  contactListId: '',
-                  csvFileId: ''
-                }))}
+                value={formData.csvFileId}
+                onValueChange={(value) => setFormData(prev => ({ ...prev, csvFileId: value }))}
+                disabled={loading}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select contact source" />
+                  <SelectValue placeholder={loading ? "Loading CSV files..." : "Select a CSV file"} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="contact_list">Contact Lists</SelectItem>
-                  <SelectItem value="csv_file">CSV Files</SelectItem>
+                  {csvFiles?.map((file) => (
+                    <SelectItem key={file.id} value={file.id}>
+                      {file.name} ({file.row_count || 0} contacts)
+                    </SelectItem>
+                  )) || []}
                 </SelectContent>
               </Select>
             </div>
-
-            {formData.contactSource === 'contact_list' && (
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-foreground">Contact List</Label>
-                <Select
-                  value={formData.contactListId}
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, contactListId: value }))}
-                  disabled={loading}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder={loading ? "Loading contact lists..." : "Select a contact list"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {contactLists?.map((list) => (
-                      <SelectItem key={list.id} value={list.id}>
-                        {list.name} ({list.total_contacts || 0} contacts)
-                      </SelectItem>
-                    )) || []}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {formData.contactSource === 'csv_file' && (
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-foreground">CSV File</Label>
-                <Select
-                  value={formData.csvFileId}
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, csvFileId: value }))}
-                  disabled={loading}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder={loading ? "Loading CSV files..." : "Select a CSV file"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {csvFiles?.map((file) => (
-                      <SelectItem key={file.id} value={file.id}>
-                        {file.name} ({file.row_count || 0} contacts)
-                      </SelectItem>
-                    )) || []}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
           </div>
 
           {/* Campaign Prompt */}
@@ -385,9 +326,7 @@ export function CampaignSettingsDialog({ open, onOpenChange, onSave }: CampaignS
             </Button>
             <Button 
               onClick={handleSave}
-              disabled={!formData.name || !formData.assistantId || 
-                       (formData.contactSource === 'contact_list' && !formData.contactListId) ||
-                       (formData.contactSource === 'csv_file' && !formData.csvFileId)}
+              disabled={!formData.name || !formData.assistantId || !formData.csvFileId}
               className="px-6"
             >
               Finish

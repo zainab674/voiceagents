@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { SMSAssistantService } from '../services/sms-assistant-service.js';
 import { SMSDatabaseService } from '../services/sms-database-service.js';
 import { SMSAIService } from '../services/sms-ai-service.js';
-import { sendSMS, getSMSMessages, smsWebhook, smsStatusCallback, getSMSStats } from '../controllers/smsController.js';
+import { sendSMS, getSMSMessages, smsWebhook, smsStatusCallback, getSMSStats, getSMSNumbers } from '../controllers/smsController.js';
 import { authenticateToken } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
@@ -24,6 +24,7 @@ const smsAssistantService = new SMSAssistantService(smsDatabaseService, smsAISer
 router.post('/send', authenticateToken, sendSMS);
 router.get('/conversation/:conversationId', authenticateToken, getSMSMessages);
 router.get('/stats', authenticateToken, getSMSStats);
+router.get('/numbers', authenticateToken, getSMSNumbers);
 router.post('/webhook', smsWebhook);
 router.post('/status-callback', smsStatusCallback);
 
