@@ -151,7 +151,7 @@ const AICallInterface = () => {
     // Create enhanced prompt for calendar-enabled agents
     let enhancedPrompt = selectedAgent.prompt;
     if (selectedAgent.cal_enabled) {
-      enhancedPrompt += `\n\nIMPORTANT: This agent has Cal.com integration enabled. When users want to book appointments, you can show them available calendar slots and help them schedule. You have access to calendar functionality during the call.`;
+      enhancedPrompt += `\n\nIMPORTANT: This agent has Cal.com integration enabled. Only use calendar functionality when users explicitly request to book, schedule, or make an appointment. Do NOT automatically start the booking process during casual conversation. You have access to calendar functionality during the call.`;
     }
 
     await createToken(enhancedPrompt, selectedAgentId, setCallStatus);

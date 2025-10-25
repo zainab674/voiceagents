@@ -50,6 +50,11 @@ export interface ConversationMessage {
   call_sid?: string;
   recording_info?: any;
   smsData?: SMSMessage;
+  associatedAgent?: {
+    id: string;
+    name: string;
+    description: string;
+  };
 }
 
 export interface ConversationTranscript {

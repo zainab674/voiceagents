@@ -78,12 +78,17 @@ const CommunicationHub = () => {
 
 	// derive channels using live stats for SMS; Email/WhatsApp fixed to 0; Calls from call history
 	const [callsCount, setCallsCount] = useState<number>(0);
+	
+	// Determine if we're in SMS view or Calls view
+	const isSmsView = allSmsNumbers !== null || selectedNumber !== null;
+	const isCallsView = allCallNumbers !== null || selectedCallNumber !== null;
+	
 	const channels = useMemo(() => ([
 		{ name: "Email", icon: Mail, count: 0, status: "active", color: "bg-blue-500" },
 		{ name: "WhatsApp", icon: MessageSquare, count: 0, status: "active", color: "bg-green-500" },
-		{ name: "SMS", icon: Smartphone, count: smsStats?.total ?? 0, status: "active", color: "bg-purple-500" },
-		{ name: "Voice Calls", icon: Phone, count: callsCount, status: "active", color: "bg-orange-500" },
-	]), [smsStats, callsCount]);
+		{ name: "SMS", icon: Smartphone, count: isSmsView ? (smsStats?.total ?? 0) : 0, status: "active", color: "bg-purple-500" },
+		{ name: "Voice Calls", icon: Phone, count: isCallsView ? callsCount : 0, status: "active", color: "bg-orange-500" },
+	]), [smsStats, callsCount, isSmsView, isCallsView]);
 
 	// fetchers
 	const loadSmsStats = async () => {

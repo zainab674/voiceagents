@@ -16,9 +16,10 @@ export async function createMainTrunkForUser({ accountSid, authToken, userId, la
   // Create Twilio client
   const client = Twilio(accountSid, authToken);
 
-  // Generate unique trunk name and domain
-  const trunkName = `main-trunk-${userId.slice(0, 8)}-${Date.now()}`;
-  const domainPrefix = `user-${userId.slice(0, 8)}-${Date.now()}`;
+  // Generate unique trunk name and domain with random numbers
+  const randomSuffix = Math.floor(Math.random() * 1000000);
+  const trunkName = `main-trunk-${userId.slice(0, 8)}-${Date.now()}-${randomSuffix}`;
+  const domainPrefix = `user-${userId.slice(0, 8)}-${Date.now()}-${randomSuffix}`;
   const domainName = `${domainPrefix}.pstn.twilio.com`;
 
   console.log(`Creating main trunk for user ${userId}: ${trunkName}`);
@@ -32,7 +33,7 @@ export async function createMainTrunkForUser({ accountSid, authToken, userId, la
         'Authorization': `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString('base64')}`,
         'Content-Type': 'application/x-www-form-urlencoded'
       },
-      body: `FriendlyName=SIP-Credentials-${userId.slice(0, 8)}`
+      body: `FriendlyName=SIP-Credentials-${userId.slice(0, 8)}-${randomSuffix}`
     });
 
     if (!credentialListResponse.ok) {
@@ -44,7 +45,7 @@ export async function createMainTrunkForUser({ accountSid, authToken, userId, la
     console.log(`Created credential list: ${credentialList.sid}`);
 
     // 2. Add credentials to the list using Programmable Voice SIP API
-    const sipUsername = `sip-${userId.slice(0, 8)}`;
+    const sipUsername = `sip-${userId.slice(0, 8)}-${randomSuffix}`;
     const sipPassword = generateSecurePassword();
 
     const credentialResponse = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/SIP/CredentialLists/${credentialList.sid}/Credentials.json`, {

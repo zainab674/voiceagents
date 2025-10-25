@@ -58,9 +58,6 @@ const App = () => (
             <Route path="/white-label" element={<ProtectedRoute><AppLayout><div className="p-6"><h1 className="text-2xl font-bold">White Label - Coming Soon</h1></div></AppLayout></ProtectedRoute>} />
             <Route path="/users" element={<ProtectedRoute><AppLayout><div className="p-6"><h1 className="text-2xl font-bold">User Management - Coming Soon</h1></div></AppLayout></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><AppLayout><UserProfile /></AppLayout></ProtectedRoute>} />
-            <Route path="/onboarding" element={<ProtectedRoute><AppLayout><div className="p-6"><h1 className="text-2xl font-bold">Onboarding - Coming Soon</h1></div></AppLayout></ProtectedRoute>} />
-            <Route path="/training" element={<ProtectedRoute><AppLayout><div className="p-6"><h1 className="text-2xl font-bold">Training - Coming Soon</h1></div></AppLayout></ProtectedRoute>} />
-            <Route path="/support" element={<ProtectedRoute><AppLayout><div className="p-6"><h1 className="text-2xl font-bold">Support - Coming Soon</h1></div></AppLayout></ProtectedRoute>} />
             
             {/* Catch-all route */}
             <Route path="*" element={<NotFound />} />

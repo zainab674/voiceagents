@@ -89,7 +89,19 @@ export const fetchRecordingUrl = async (callSid: string): Promise<RecordingInfo 
 
     // Use our proxy endpoint instead of direct Twilio API access
     // This avoids CORS and authentication issues
-    const proxyAudioUrl = `${import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'}/api/v1/call/recording/${recording.sid}/audio?accountSid=${credentials.account_sid}&authToken=${credentials.auth_token}`;
+    const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
+    const recordingSid = encodeURIComponent(recording.sid);
+    const accountSid = encodeURIComponent(credentials.account_sid);
+    const authToken = encodeURIComponent(credentials.auth_token);
+    const proxyAudioUrl = `${baseUrl}/api/v1/call/recording/${recordingSid}/audio?accountSid=${accountSid}&authToken=${authToken}`;
+    
+    console.log('Generated recording URL:', {
+      recordingSid: recording.sid,
+      encodedRecordingSid: recordingSid,
+      accountSid: credentials.account_sid.substring(0, 8) + '...',
+      authToken: credentials.auth_token.substring(0, 8) + '...',
+      proxyAudioUrl: proxyAudioUrl.substring(0, 100) + '...'
+    });
 
     return {
       recordingSid: recording.sid,

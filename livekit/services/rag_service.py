@@ -93,10 +93,12 @@ class RAGService:
         knowledge_base_id: str, 
         query: str, 
         max_context_length: int = 8000,
-        top_k: int = 16
+        top_k: int = 16,
+        timeout: float = 8.0
     ) -> Optional[str]:
         """
         Get enhanced context from knowledge base using Pinecone Assistants
+        with parallel processing and timeout optimization.
         """
         logging.info(f"RAG_SERVICE | get_enhanced_context called - KB: {knowledge_base_id}, Query: '{query[:100]}...'")
         
@@ -104,6 +106,31 @@ class RAGService:
             logging.warning("RAG_SERVICE | Pinecone or Supabase not available - cannot perform RAG lookup")
             return None
         
+        try:
+            # Use parallel processing with timeout for faster response
+            rag_task = asyncio.create_task(
+                self._get_enhanced_context_async(knowledge_base_id, query, max_context_length, top_k)
+            )
+            result = await asyncio.wait_for(rag_task, timeout=timeout)
+            return result
+            
+        except asyncio.TimeoutError:
+            logging.warning(f"RAG_SERVICE | Enhanced context search timed out after {timeout}s for query: '{query[:50]}...'")
+            return None
+        except Exception as e:
+            logging.error(f"RAG_SERVICE | Error getting enhanced context: {e}")
+            return None
+    
+    async def _get_enhanced_context_async(
+        self, 
+        knowledge_base_id: str, 
+        query: str, 
+        max_context_length: int = 8000,
+        top_k: int = 16
+    ) -> Optional[str]:
+        """
+        Internal async method for enhanced context retrieval.
+        """
         try:
             # Get knowledge base info from Supabase
             logging.info(f"RAG_SERVICE | Fetching knowledge base info for: {knowledge_base_id}")
@@ -191,7 +218,7 @@ class RAGService:
             return full_context
                 
         except Exception as e:
-            logging.error(f"RAG_SERVICE | Error getting enhanced context: {e}")
+            logging.error(f"RAG_SERVICE | Error in async enhanced context retrieval: {e}")
             return None
     
     async def search_knowledge_base(
@@ -199,14 +226,41 @@ class RAGService:
         knowledge_base_id: str, 
         query: str,
         top_k: int = 16,
-        snippet_size: int = 2048
+        snippet_size: int = 2048,
+        timeout: float = 8.0
     ) -> Optional[RAGContext]:
         """
         Search knowledge base and return structured context using Pinecone Assistants
+        with parallel processing and timeout optimization.
         """
         if not self.pinecone or not self.supabase:
             return None
         
+        try:
+            # Use parallel processing with timeout for faster response
+            rag_task = asyncio.create_task(
+                self._search_knowledge_base_async(knowledge_base_id, query, top_k, snippet_size)
+            )
+            result = await asyncio.wait_for(rag_task, timeout=timeout)
+            return result
+            
+        except asyncio.TimeoutError:
+            logging.warning(f"RAG_SERVICE | Knowledge base search timed out after {timeout}s for query: '{query[:50]}...'")
+            return None
+        except Exception as e:
+            logging.error(f"RAG_SERVICE | Error searching knowledge base {knowledge_base_id}: {e}", exc_info=True)
+            return None
+    
+    async def _search_knowledge_base_async(
+        self, 
+        knowledge_base_id: str, 
+        query: str,
+        top_k: int = 16,
+        snippet_size: int = 2048
+    ) -> Optional[RAGContext]:
+        """
+        Internal async method for knowledge base search.
+        """
         try:
             # Get knowledge base info to extract company_id
             kb_info = await self._get_knowledge_base_info(knowledge_base_id)
@@ -271,7 +325,7 @@ class RAGService:
             )
             
         except Exception as e:
-            logging.error(f"RAG_SERVICE | Error searching knowledge base {knowledge_base_id}: {e}", exc_info=True)
+            logging.error(f"RAG_SERVICE | Error in async knowledge base search {knowledge_base_id}: {e}", exc_info=True)
             return None
     
     async def search_multiple_queries(

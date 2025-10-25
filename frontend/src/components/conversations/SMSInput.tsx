@@ -105,27 +105,7 @@ export function SMSInput({ conversation, onMessageSent }: SMSInputProps) {
   return (
     <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
       <div className="flex items-end gap-3">
-        {/* Message Type Toggle */}
-        <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
-          <Button
-            variant={messageType === 'sms' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setMessageType('sms')}
-            className="h-7 px-2 text-xs"
-          >
-            <MessageSquare className="h-3 w-3 mr-1" />
-            SMS
-          </Button>
-          <Button
-            variant={messageType === 'call' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setMessageType('call')}
-            className="h-7 px-2 text-xs"
-          >
-            <Phone className="h-3 w-3 mr-1" />
-            Call
-          </Button>
-        </div>
+       
 
         {/* Message Input */}
         <div className="flex-1">

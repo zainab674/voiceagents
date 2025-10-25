@@ -12,6 +12,11 @@ from livekit.agents.voice import RunContext
 from livekit.plugins import openai, silero
 
 from utils.logging_config import get_logger
+from utils.latency_logger import (
+    measure_latency, measure_latency_context, 
+    measure_llm_latency, measure_tts_latency,
+    get_tracker, clear_tracker
+)
 
 
 class RAGAssistant(Agent):
@@ -38,6 +43,10 @@ class RAGAssistant(Agent):
         current_year = datetime.datetime.now().year
         
         enhanced_instructions = instructions
+        
+        # Knowledge base usage will be specified in the agent's prompt
+        # No additional instructions needed here - the prompt will contain the specific rules
+        
         if calendar:
             enhanced_instructions += f"""
 
@@ -45,7 +54,9 @@ CURRENT DATE CONTEXT:
 Today's date is {current_date} (year {current_year}). Always use the current year {current_year} when discussing dates or booking appointments.
 
 BOOKING APPOINTMENTS:
-When a user expresses interest in booking an appointment (says things like "I want to book", "schedule an appointment", "book a meeting", etc.), use the step-by-step booking functions in this order:
+IMPORTANT: Only use booking functions when the user explicitly requests to book, schedule, or make an appointment. Do NOT automatically start the booking process during casual conversation. The user must clearly express intent to book an appointment (e.g., 'I want to book an appointment', 'Can I schedule a meeting?', 'I need to make an appointment').
+
+When a user explicitly expresses interest in booking an appointment (says things like "I want to book", "schedule an appointment", "book a meeting", etc.), use the step-by-step booking functions in this order:
 1. detect_booking_intent - Detect if user wants to book (call this first)
 2. set_notes - Ask for the reason for the appointment
 3. list_slots_on_day - Show available times for their preferred day
@@ -61,7 +72,8 @@ IMPORTANT:
 - Wait for the user to say they want to book an appointment
 - Always use the current year {current_year} for any date references
 - Use the step-by-step functions to collect information gradually
-- Do NOT try to collect all information at once"""
+- Do NOT try to collect all information at once
+- Knowledge base usage rules will be specified in the agent's prompt"""
         
         super().__init__(instructions=enhanced_instructions)
         
@@ -82,13 +94,29 @@ IMPORTANT:
         """Called when the agent enters the session."""
         self.logger.info("RAG_ASSISTANT_ENTERED")
         
+        # Initialize latency tracking for this session
+        call_id = getattr(self.session, 'call_id', 'unknown')
+        room_name = getattr(self.session, 'room_name', 'unknown')
+        participant_id = getattr(self.session, 'participant_id', 'unknown')
+        
+        # Wait a moment for the session to be fully ready
+        await asyncio.sleep(0.5)
+        
         # Use specific first message if available, otherwise use generic greeting
-        if self.first_message:
-            self.logger.info(f"USING_FIRST_MESSAGE | message='{self.first_message}'")
-            self.session.generate_reply(instructions=f"Say exactly this: '{self.first_message}'")
-        else:
-            self.logger.info("USING_DEFAULT_GREETING | no_first_message_configured")
-            self.session.generate_reply(instructions="greet the user and ask how you can help")
+        try:
+            if self.first_message:
+                self.logger.info(f"USING_FIRST_MESSAGE | message='{self.first_message}'")
+                await self.session.say(self.first_message, allow_interruptions=True)
+            else:
+                self.logger.info("USING_DEFAULT_GREETING | no_first_message_configured")
+                await self.session.say("Hello! I'm Professor, how can I assist you today?", allow_interruptions=True)
+        except Exception as e:
+            self.logger.error(f"FIRST_MESSAGE_ERROR | error={str(e)}")
+            # Try a simpler message
+            try:
+                await self.session.say("Hello, how can I help you?", allow_interruptions=True)
+            except Exception as e2:
+                self.logger.error(f"FALLBACK_MESSAGE_ERROR | error={str(e2)}")
     
     @function_tool
     async def detect_booking_intent(
@@ -121,6 +149,7 @@ IMPORTANT:
         query: str
     ) -> str:
         """Query the knowledge base for relevant information.
+        Use this function according to the instructions in your agent prompt.
         
         Args:
             query: The search query to look up in the knowledge base
@@ -131,56 +160,27 @@ IMPORTANT:
             
             self.logger.info(f"QUERYING_KNOWLEDGE_BASE | query={query}")
             
-            # First, get the knowledge base details to find the Pinecone assistant name
-            kb_response = self.supabase.table('knowledge_bases').select('pinecone_assistant_name').eq('id', self.knowledge_base_id).execute()
+            # Use the optimized RAG service with timeout
+            from services.rag_service import rag_service
             
-            if not kb_response.data or len(kb_response.data) == 0:
-                self.logger.info("KNOWLEDGE_BASE_NOT_FOUND")
-                return "Knowledge base not found."
+            # Use parallel processing with timeout for faster response
+            rag_task = asyncio.create_task(
+                rag_service.get_enhanced_context(self.knowledge_base_id, query, timeout=8.0)
+            )
             
-            assistant_name = kb_response.data[0].get('pinecone_assistant_name')
-            if not assistant_name:
-                self.logger.info("NO_PINECONE_ASSISTANT")
-                return "No Pinecone assistant configured for this knowledge base."
-            
-            # Use Pinecone Python SDK to query the assistant
             try:
-                from pinecone import Pinecone
-                import os
+                context_info = await asyncio.wait_for(rag_task, timeout=8.0)
                 
-                pinecone_api_key = os.getenv('PINECONE_API_KEY')
-                if not pinecone_api_key:
-                    self.logger.error("PINECONE_API_KEY_NOT_SET")
-                    return "Pinecone API key not configured."
-                
-                # Initialize Pinecone client
-                pc = Pinecone(api_key=pinecone_api_key)
-                
-                # Get assistant instance using the correct API path
-                assistant = pc.assistant.Assistant(assistant_name)
-                
-                # Query the assistant for context snippets
-                response = assistant.context(
-                    query=query,
-                    top_k=5,
-                    snippet_size=2048
-                )
-                
-                snippets = response.snippets if hasattr(response, 'snippets') else response.get('snippets', [])
-                if snippets:
-                    context_info = "\n\n".join([snippet.get('content', '') for snippet in snippets])
-                    self.logger.info(f"KNOWLEDGE_BASE_RESULTS | found={len(snippets)} snippets")
+                if context_info:
+                    self.logger.info(f"KNOWLEDGE_BASE_RESULTS | found context for query: '{query[:50]}...'")
                     return f"Found relevant information from the knowledge base:\n\n{context_info}"
                 else:
                     self.logger.info("KNOWLEDGE_BASE_NO_RESULTS")
                     return "No relevant information found in the knowledge base."
                     
-            except ImportError:
-                self.logger.error("PINECONE_PYTHON_SDK_NOT_INSTALLED")
-                return "Pinecone Python SDK not installed. Please install it with: pip install pinecone"
-            except Exception as e:
-                self.logger.error(f"PINECONE_QUERY_ERROR | error={str(e)}")
-                return "Sorry, I encountered an error while searching the knowledge base."
+            except asyncio.TimeoutError:
+                self.logger.warning(f"KNOWLEDGE_BASE_TIMEOUT | query timed out after 8s: '{query[:50]}...'")
+                return "The knowledge base search timed out. Please try a more specific query."
                 
         except Exception as e:
             self.logger.error(f"KNOWLEDGE_BASE_ERROR | error={str(e)}")
@@ -262,7 +262,21 @@ IMPORTANT:
 
         try:
             self.logger.info(f"CHECKING_CALENDAR_AVAILABILITY | date={d} | duration=60")
-            result = await self.calendar.list_available_slots(start_time=start_utc, end_time=end_utc)
+            
+            # Track calendar operation latency
+            call_id = getattr(self.session, 'call_id', 'unknown')
+            room_name = getattr(self.session, 'room_name', 'unknown')
+            participant_id = getattr(self.session, 'participant_id', 'unknown')
+            
+            async with measure_latency_context(
+                "calendar_list_slots", 
+                call_id=call_id, 
+                room_name=room_name, 
+                participant_id=participant_id,
+                metadata={"date": str(d), "duration_minutes": 60}
+            ):
+                result = await self.calendar.list_available_slots(start_time=start_utc, end_time=end_utc)
+            
             self.logger.info(f"CALENDAR_SLOTS_RESPONSE | slots_count={len(result.slots) if result.is_success else 0}")
 
             def present(slots_list: list, label: str) -> str:
@@ -461,13 +475,29 @@ IMPORTANT:
                          self._booking_data['selected_slot'].start_time if self._booking_data.get('selected_slot') else None,
                          self._booking_data.get('name'), self._booking_data.get('email'))
         try:
-            resp = await self.calendar.schedule_appointment(
-                start_time=self._booking_data['selected_slot'].start_time,
-                attendee_name=self._booking_data.get('name', ""),
-                attendee_email=self._booking_data.get('email', ""),
-                attendee_phone=self._booking_data.get('phone', ""),
-                notes=self._booking_data.get('notes', ""),
-            )
+            # Track calendar scheduling latency
+            call_id = getattr(self.session, 'call_id', 'unknown')
+            room_name = getattr(self.session, 'room_name', 'unknown')
+            participant_id = getattr(self.session, 'participant_id', 'unknown')
+            
+            async with measure_latency_context(
+                "calendar_schedule_appointment", 
+                call_id=call_id, 
+                room_name=room_name, 
+                participant_id=participant_id,
+                metadata={
+                    "start_time": str(self._booking_data['selected_slot'].start_time),
+                    "attendee_name": self._booking_data.get('name', ""),
+                    "attendee_email": self._booking_data.get('email', "")
+                }
+            ):
+                resp = await self.calendar.schedule_appointment(
+                    start_time=self._booking_data['selected_slot'].start_time,
+                    attendee_name=self._booking_data.get('name', ""),
+                    attendee_email=self._booking_data.get('email', ""),
+                    attendee_phone=self._booking_data.get('phone', ""),
+                    notes=self._booking_data.get('notes', ""),
+                )
             self.logger.info("BOOKING_SUCCESS | appointment scheduled successfully")
             
             # Format confirmation message with details

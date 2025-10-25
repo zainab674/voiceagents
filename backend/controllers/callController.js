@@ -520,7 +520,16 @@ export const getRecordingAudio = async (req, res) => {
     const { recordingSid } = req.params;
     const { accountSid, authToken } = req.query;
 
+    console.log('getRecordingAudio called with:', {
+      userId,
+      recordingSid,
+      accountSid: accountSid ? `${accountSid.substring(0, 8)}...` : 'missing',
+      authToken: authToken ? `${authToken.substring(0, 8)}...` : 'missing',
+      fullUrl: req.originalUrl
+    });
+
     if (!recordingSid || !accountSid || !authToken) {
+      console.error('Missing required parameters:', { recordingSid: !!recordingSid, accountSid: !!accountSid, authToken: !!authToken });
       return res.status(400).json({
         success: false,
         message: 'recordingSid, accountSid, and authToken are required'

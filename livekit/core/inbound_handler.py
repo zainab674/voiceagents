@@ -13,7 +13,37 @@ from config.settings import Settings
 from services.rag_assistant import RAGAssistant
 from cal_calendar_api import Calendar, CalComCalendar
 from utils.logging_config import get_logger
-from livekit.plugins import silero, openai
+from utils.latency_logger import (
+    measure_latency, measure_latency_context, 
+    measure_room_connection, measure_participant_wait,
+    get_tracker, clear_tracker
+)
+from livekit.plugins import silero, openai, rime
+
+
+def create_tts_instance(settings: Settings):
+    """Create TTS instance with Rime or OpenAI fallback."""
+    logger = get_logger(__name__)
+    if settings.rime.api_key:
+        try:
+            tts = rime.TTS(
+                model=settings.rime.model,
+                speaker=settings.rime.speaker,
+                speed_alpha=settings.rime.speed_alpha,
+                reduce_latency=settings.rime.reduce_latency,
+                api_key=settings.rime.api_key,
+            )
+            logger.info(f"RIME_TTS_CONFIGURED | model={settings.rime.model} | speaker={settings.rime.speaker}")
+            return tts
+        except Exception as e:
+            logger.warning(f"RIME_TTS_FAILED | {str(e)} | falling back to OpenAI TTS")
+    
+    # Fallback to OpenAI TTS
+    import os
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    tts = openai.TTS(model="tts-1", voice="alloy", api_key=openai_api_key)
+    logger.info("OPENAI_TTS_CONFIGURED | using OpenAI TTS")
+    return tts
 
 
 class InboundCallHandler:
@@ -57,32 +87,39 @@ class InboundCallHandler:
         
         self.logger.info(f"INBOUND_CALL_START | call_id={call_id} | room={room_name}")
         
-        try:
-            # Resolve assistant configuration
-            assistant_config = await self._resolve_assistant_config_safe(ctx)
-            
-            if not assistant_config:
-                await self._handle_no_assistant_config(ctx)
-                return
-            
-            self.logger.info(f"ASSISTANT_CONFIG_RESOLVED | assistant_id={assistant_config.get('id')}")
-            
-            # Create and configure agent
-            agent = await self._create_agent_safe(assistant_config)
-            
-            if not agent:
-                await self._handle_agent_creation_failure(ctx)
-                return
-            
-            # Start session with call history saving
-            await self._start_session_with_history_saving(ctx, agent)
-            
-            self.logger.info(f"INBOUND_CALL_SUCCESS | call_id={call_id}")
-            
-        except Exception as e:
-            self.logger.error(f"INBOUND_CALL_ERROR | call_id={call_id} | error={str(e)}", exc_info=True)
-            await self._handle_inbound_error(ctx, e)
-            raise
+        # Track room connection latency
+        async with measure_latency_context(
+            "room_connection", 
+            call_id=call_id, 
+            room_name=room_name,
+            metadata={"room_name": room_name, "call_type": "inbound"}
+        ):
+            try:
+                # Resolve assistant configuration
+                assistant_config = await self._resolve_assistant_config_safe(ctx)
+                
+                if not assistant_config:
+                    await self._handle_no_assistant_config(ctx)
+                    return
+                
+                self.logger.info(f"ASSISTANT_CONFIG_RESOLVED | assistant_id={assistant_config.get('id')}")
+                
+                # Create and configure agent
+                agent = await self._create_agent_safe(assistant_config)
+                
+                if not agent:
+                    await self._handle_agent_creation_failure(ctx)
+                    return
+                
+                # Start session with call history saving
+                await self._start_session_with_history_saving(ctx, agent)
+                
+                self.logger.info(f"INBOUND_CALL_SUCCESS | call_id={call_id}")
+                
+            except Exception as e:
+                self.logger.error(f"INBOUND_CALL_ERROR | call_id={call_id} | error={str(e)}", exc_info=True)
+                await self._handle_inbound_error(ctx, e)
+                raise
     
     async def _resolve_assistant_config_safe(self, ctx: JobContext) -> Optional[Dict[str, Any]]:
         """
@@ -104,7 +141,7 @@ class InboundCallHandler:
             if job_metadata:
                 try:
                     dial_info = json.loads(job_metadata)
-                    assistant_id = dial_info.get("assistantId") or dial_info.get("assistant_id")
+                    assistant_id = dial_info.get("assistantId") or dial_info.get("assistant_id") or dial_info.get("agentId")
                     
                     if assistant_id:
                         self.logger.info(f"ASSISTANT_ID_FROM_JOB_METADATA | assistant_id={assistant_id}")
@@ -118,7 +155,13 @@ class InboundCallHandler:
                 self.logger.info(f"INBOUND_LOOKUP | looking up assistant for DID={called_did}")
                 return await self._get_assistant_by_phone(called_did)
             
-            self.logger.error("INBOUND_NO_DID | could not determine called number")
+            # Method 3: Try to get phone number from job metadata as fallback
+            phone_from_metadata = self._extract_phone_from_job_metadata(ctx)
+            if phone_from_metadata:
+                self.logger.info(f"INBOUND_LOOKUP_FROM_METADATA | looking up assistant for phone={phone_from_metadata}")
+                return await self._get_assistant_by_phone(phone_from_metadata)
+            
+            self.logger.error("INBOUND_NO_DID | could not determine called number from room name or metadata")
             return None
                 
         except Exception as e:
@@ -128,6 +171,8 @@ class InboundCallHandler:
     def _extract_did_from_room(self, room_name: str) -> Optional[str]:
         """Extract DID from room name. Implements the same logic as sass-livekit."""
         try:
+            self.logger.info(f"EXTRACTING_DID_FROM_ROOM | room_name={room_name}")
+            
             # Handle patterns like "did-1234567890"
             if room_name.startswith("did-"):
                 # For per-assistant trunks, the room name might contain caller's number
@@ -147,6 +192,7 @@ class InboundCallHandler:
                     return None
                 
                 # If no underscores, it might be the agent's number
+                self.logger.info(f"DID_EXTRACTED_FROM_DID_PREFIX | phone_part={phone_part}")
                 return phone_part
 
             # For assistant rooms, we need to get the called number from job metadata
@@ -157,16 +203,66 @@ class InboundCallHandler:
                 parts = room_name.split("_")
                 if len(parts) >= 2:
                     phone_part = parts[1]  # This might be caller's number, not called number
+                    self.logger.info(f"DID_EXTRACTED_FROM_ASSISTANT_PREFIX | phone_part={phone_part}")
                     return phone_part
+
+            # Handle room patterns like "room-sv3w-Fm2I" - this might be a different format
+            if room_name.startswith("room-"):
+                # Extract the last part after the last dash
+                parts = room_name.split("-")
+                if len(parts) >= 3:  # room-sv3w-Fm2I
+                    phone_part = parts[-1]  # Fm2I
+                    self.logger.info(f"DID_EXTRACTED_FROM_ROOM_PREFIX | phone_part={phone_part}")
+                    
+                    # Check if this looks like a phone number or if it's an encoded identifier
+                    if phone_part.isdigit() or phone_part.startswith("+") or len(phone_part) >= 10:
+                        return phone_part
+                    else:
+                        # This might be an encoded identifier, not a phone number
+                        self.logger.warning(f"EXTRACTED_IDENTIFIER_NOT_PHONE | phone_part={phone_part} | room_name={room_name}")
+                        # Try to get the actual phone number from job metadata instead
+                        return None
 
             # Handle other patterns
             if "-" in room_name:
                 parts = room_name.split("-")
                 if len(parts) >= 2:
-                    return parts[-1]
+                    phone_part = parts[-1]
+                    self.logger.info(f"DID_EXTRACTED_FROM_GENERIC_PATTERN | phone_part={phone_part}")
+                    return phone_part
 
+            self.logger.warning(f"NO_DID_PATTERN_MATCHED | room_name={room_name}")
             return None
-        except Exception:
+        except Exception as e:
+            self.logger.error(f"DID_EXTRACTION_ERROR | room_name={room_name} | error={str(e)}")
+            return None
+
+    def _extract_phone_from_job_metadata(self, ctx: JobContext) -> Optional[str]:
+        """Extract phone number from job metadata as fallback."""
+        try:
+            job_metadata = getattr(ctx.job, 'metadata', None)
+            if not job_metadata:
+                return None
+            
+            try:
+                metadata = json.loads(job_metadata)
+                # Try different possible keys for phone number
+                phone_number = (metadata.get("phone_number") or 
+                              metadata.get("phone") or 
+                              metadata.get("called_number") or 
+                              metadata.get("to") or
+                              metadata.get("To"))
+                
+                if phone_number:
+                    self.logger.info(f"PHONE_FROM_JOB_METADATA | phone_number={phone_number}")
+                    return phone_number
+                    
+            except json.JSONDecodeError as e:
+                self.logger.warning(f"JOB_METADATA_JSON_PARSE_ERROR | error={str(e)}")
+            
+            return None
+        except Exception as e:
+            self.logger.error(f"PHONE_EXTRACTION_FROM_METADATA_ERROR | error={str(e)}")
             return None
 
     async def _get_assistant_by_id(self, assistant_id: str) -> Optional[Dict[str, Any]]:
@@ -195,15 +291,33 @@ class InboundCallHandler:
             if not self.supabase:
                 self.logger.error("SUPABASE_CLIENT_NOT_AVAILABLE")
                 return None
-                
+            
+            self.logger.info(f"LOOKING_UP_ASSISTANT_BY_PHONE | phone_number={phone_number}")
+            
             # First, find the assistant_id for this phone number
             phone_result = self.supabase.table("phone_number").select("inbound_assistant_id").eq("number", phone_number).execute()
             
+            self.logger.info(f"PHONE_QUERY_RESULT | phone_number={phone_number} | result_count={len(phone_result.data) if phone_result.data else 0}")
+            
             if not phone_result.data or len(phone_result.data) == 0:
                 self.logger.warning(f"No assistant found for phone number: {phone_number}")
+                
+                # Try to see what phone numbers exist in the database for debugging
+                try:
+                    all_phones = self.supabase.table("phone_number").select("number, inbound_assistant_id").execute()
+                    if all_phones.data:
+                        self.logger.info(f"AVAILABLE_PHONE_NUMBERS | count={len(all_phones.data)}")
+                        for phone in all_phones.data[:5]:  # Show first 5 for debugging
+                            self.logger.info(f"AVAILABLE_PHONE | number={phone.get('number')} | assistant_id={phone.get('inbound_assistant_id')}")
+                    else:
+                        self.logger.warning("NO_PHONE_NUMBERS_IN_DATABASE")
+                except Exception as debug_error:
+                    self.logger.error(f"DEBUG_QUERY_ERROR | error={str(debug_error)}")
+                
                 return None
             
             assistant_id = phone_result.data[0]["inbound_assistant_id"]
+            self.logger.info(f"FOUND_ASSISTANT_ID | phone_number={phone_number} | assistant_id={assistant_id}")
             
             # Now fetch the assistant configuration
             return await self._get_assistant_by_id(assistant_id)
@@ -522,8 +636,9 @@ class InboundCallHandler:
         try:
             self.logger.info("STARTING_SESSION_WITH_HISTORY_SAVING")
             
-            # Connect to room
+            # Connect to room with more permissive audio settings
             await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
+            self.logger.info("ROOM_CONNECTED | audio_subscription=AUDIO_ONLY")
             
             # Wait for participant with longer timeout and better error handling
             try:
@@ -547,19 +662,22 @@ class InboundCallHandler:
                 vad=silero.VAD.load(),
                 stt=openai.STT(model="whisper-1"),
                 llm=openai.LLM(model="gpt-4o-mini", temperature=0.1),
-                tts=openai.TTS(model="tts-1", voice="alloy", api_key=openai_api_key),
-                allow_interruptions=True
+                tts=create_tts_instance(self.settings),
+                allow_interruptions=True,
+                preemptive_generation=self.settings.preemptive_generation,
+                resume_false_interruption=True
             )
             
             # Start session
+            self.logger.info("STARTING_AGENT_SESSION | agent_configured=True | room_connected=True")
             await session.start(
                 agent=agent,
                 room=ctx.room,
-                room_input_options=RoomInputOptions(close_on_disconnect=True),
+                room_input_options=RoomInputOptions(close_on_disconnect=False),
                 room_output_options=RoomOutputOptions(transcription_enabled=True)
             )
             
-            self.logger.info("AGENT_SESSION_STARTED")
+            self.logger.info("AGENT_SESSION_STARTED | session_active=True")
             
             # Set up call history saving on session shutdown (primary method like sass-livekit)
             call_saved = False
@@ -737,8 +855,7 @@ class InboundCallHandler:
             import os
             
             # Create simple TTS for fallback
-            openai_api_key = os.getenv("OPENAI_API_KEY")
-            fallback_tts = openai.TTS(model="tts-1", voice="alloy", api_key=openai_api_key)
+            fallback_tts = create_tts_instance(self.settings)
             
             fallback_agent = Agent(
                 instructions="You are a helpful assistant. Please inform the user that there was a configuration issue and they should contact support.",
@@ -767,13 +884,15 @@ class InboundCallHandler:
                 stt=openai.STT(model="whisper-1"),
                 llm=openai.LLM(model="gpt-4o-mini", temperature=0.1),
                 tts=fallback_tts,
-                allow_interruptions=True
+                allow_interruptions=True,
+                preemptive_generation=self.settings.preemptive_generation,
+                resume_false_interruption=True
             )
             
             await session.start(
                 agent=fallback_agent,
                 room=ctx.room,
-                room_input_options=RoomInputOptions(close_on_disconnect=True),
+                room_input_options=RoomInputOptions(close_on_disconnect=False),
                 room_output_options=RoomOutputOptions(transcription_enabled=True)
             )
             
@@ -801,8 +920,7 @@ class InboundCallHandler:
             import os
             
             # Create simple TTS for fallback
-            openai_api_key = os.getenv("OPENAI_API_KEY")
-            fallback_tts = openai.TTS(model="tts-1", voice="alloy", api_key=openai_api_key)
+            fallback_tts = create_tts_instance(self.settings)
             
             fallback_agent = Agent(
                 instructions="You are a helpful assistant. Please inform the user that there was a technical issue and they should try calling again later.",
@@ -831,13 +949,15 @@ class InboundCallHandler:
                 stt=openai.STT(model="whisper-1"),
                 llm=openai.LLM(model="gpt-4o-mini", temperature=0.1),
                 tts=fallback_tts,
-                allow_interruptions=True
+                allow_interruptions=True,
+                preemptive_generation=self.settings.preemptive_generation,
+                resume_false_interruption=True
             )
             
             await session.start(
                 agent=fallback_agent,
                 room=ctx.room,
-                room_input_options=RoomInputOptions(close_on_disconnect=True),
+                room_input_options=RoomInputOptions(close_on_disconnect=False),
                 room_output_options=RoomOutputOptions(transcription_enabled=True)
             )
             
@@ -888,13 +1008,15 @@ class InboundCallHandler:
                     stt=openai.STT(model="whisper-1"),
                     llm=openai.LLM(model="gpt-4o-mini", temperature=0.1),
                     tts=fallback_tts,
-                    allow_interruptions=True
+                    allow_interruptions=True,
+                    preemptive_generation=self.settings.preemptive_generation,
+                    resume_false_interruption=True
                 )
                 
                 await session.start(
                     agent=fallback_agent,
                     room=ctx.room,
-                    room_input_options=RoomInputOptions(close_on_disconnect=True),
+                    room_input_options=RoomInputOptions(close_on_disconnect=False),
                     room_output_options=RoomOutputOptions(transcription_enabled=True)
                 )
                 

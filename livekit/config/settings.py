@@ -44,6 +44,33 @@ class OpenAISettings:
         self.max_tokens: int = int(os.getenv("OPENAI_MAX_TOKENS", "250"))
 
 
+class GroqSettings:
+    """Groq configuration."""
+    def __init__(self):
+        self.api_key: str = os.getenv("GROQ_API_KEY", "")
+        self.model: str = "meta-llama/llama-4-maverick-17b-128e-instruct"  # Correct format matching sass-livekit
+        self.temperature: float = 0.1  # Hardcoded optimal temperature
+        self.max_tokens: int = 250  # Hardcoded token limit
+
+
+class RimeSettings:
+    """Rime TTS configuration."""
+    def __init__(self):
+        self.api_key: str = os.getenv("RIME_API_KEY", "")
+        self.model: str = os.getenv("RIME_MODEL", "mistv2")
+        self.speaker: str = os.getenv("RIME_SPEAKER", "rainforest")
+        self.speed_alpha: float = float(os.getenv("RIME_SPEED_ALPHA", "0.9"))
+        self.reduce_latency: bool = os.getenv("RIME_REDUCE_LATENCY", "true").lower() == "true"
+
+
+class DeepgramSettings:
+    """Deepgram STT configuration."""
+    def __init__(self):
+        self.api_key: str = os.getenv("DEEPGRAM_API_KEY", "")
+        self.model: str = os.getenv("DEEPGRAM_MODEL", "flux-general-en")
+        self.eager_eot_threshold: float = float(os.getenv("DEEPGRAM_EAGER_EOT_THRESHOLD", "0.4"))
+
+
 class Settings:
     """Main application settings."""
     
@@ -53,6 +80,9 @@ class Settings:
         self.calendar: CalendarSettings = CalendarSettings()
         self.livekit: LiveKitSettings = LiveKitSettings()
         self.openai: OpenAISettings = OpenAISettings()
+        self.groq: GroqSettings = GroqSettings()
+        self.rime: RimeSettings = RimeSettings()
+        self.deepgram: DeepgramSettings = DeepgramSettings()
         
         # General settings
         self.debug: bool = os.getenv("DEBUG", "false").lower() == "true"
@@ -60,6 +90,13 @@ class Settings:
         self.backend_url: str = os.getenv("BACKEND_URL", "http://localhost:3001")
         self.enable_rag: bool = os.getenv("ENABLE_RAG", "true").lower() == "true"
         self.enable_recording: bool = os.getenv("ENABLE_RECORDING", "true").lower() == "true"
+        self.llm_provider: str = "groq"  # Hardcoded to use Groq as primary
+        self.preemptive_generation: bool = os.getenv("PREEMPTIVE_GENERATION", "true").lower() == "true"
+        self.participant_timeout: float = float(os.getenv("PARTICIPANT_TIMEOUT", "60.0"))  # Timeout in seconds for waiting for participants
+        
+        # LiveKit worker timeout settings
+        self.assignment_timeout: float = float(os.getenv("ASSIGNMENT_TIMEOUT", "30.0"))  # Timeout for job assignment acceptance
+        self.job_timeout: float = float(os.getenv("JOB_TIMEOUT", "300.0"))  # Timeout for job execution
 
 
 # Global settings instance

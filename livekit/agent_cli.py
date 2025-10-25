@@ -44,10 +44,20 @@ def validate_environment():
         "LIVEKIT_URL", 
         "LIVEKIT_API_KEY", 
         "LIVEKIT_API_SECRET", 
-        "OPENAI_API_KEY",
         "SUPABASE_URL",
         "SUPABASE_SERVICE_ROLE_KEY"
     ]
+    
+    # Check for at least one LLM provider
+    llm_provider = os.getenv("LLM_PROVIDER", "openai")
+    if llm_provider.lower() == "groq":
+        if not os.getenv("GROQ_API_KEY"):
+            logger.error("❌ GROQ_API_KEY is required when LLM_PROVIDER=groq")
+            sys.exit(1)
+    else:
+        if not os.getenv("OPENAI_API_KEY"):
+            logger.error("❌ OPENAI_API_KEY is required when LLM_PROVIDER=openai")
+            sys.exit(1)
     
     missing_vars = [var for var in required_vars if not os.getenv(var)]
     
@@ -63,11 +73,31 @@ if __name__ == "__main__":
     validate_environment()
     
     # Log configuration
-    agent_name = os.getenv("LK_AGENT_NAME", "voiceagents")
+    agent_name = os.getenv("LK_AGENT_NAME", "ai")
+    llm_provider = os.getenv("LLM_PROVIDER", "openai")
     logger.info("STARTING_LIVEKIT_AGENT")
     logger.info(f"LIVEKIT_URL={os.getenv('LIVEKIT_URL')}")
-    logger.info(f"OPENAI_MODEL={os.getenv('OPENAI_LLM_MODEL', 'gpt-4o-mini')}")
+    logger.info(f"LLM_PROVIDER={llm_provider}")
+    
+    if llm_provider.lower() == "groq":
+        logger.info(f"GROQ_MODEL={os.getenv('GROQ_LLM_MODEL', 'llama-4-maverick-17b-128e-instruct')}")
+    else:
+        logger.info(f"OPENAI_MODEL={os.getenv('OPENAI_LLM_MODEL', 'gpt-4o-mini')}")
+    
     logger.info(f"🤖 Agent name: {agent_name}")
     
-    # Run the agent with official CLI
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, agent_name=agent_name))
+    # Get settings for timeout configuration
+    from config.settings import get_settings
+    settings = get_settings()
+    
+    # Run the agent with official CLI and timeout configuration
+    worker_options = WorkerOptions(
+        entrypoint_fnc=entrypoint, 
+        agent_name=agent_name,
+        # Add timeout configuration to prevent AssignmentTimeoutError
+        initialize_process_timeout=settings.assignment_timeout,  # Timeout for process initialization
+        shutdown_process_timeout=settings.job_timeout,          # Timeout for process shutdown
+        drain_timeout=int(settings.job_timeout),               # Timeout for draining jobs
+    )
+    
+    cli.run_app(worker_options)

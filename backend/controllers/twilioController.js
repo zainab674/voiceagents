@@ -23,11 +23,13 @@ import {
   createAssistantTrunk
 } from "#services/livekitSipService.js";
 import { TwilioCredentialsService } from "#services/twilioCredentialsService.js";
+import { generateRandomAlphanumeric } from "#utils/generateRandomToken.js";
 
 // Web call Access Token using user-specific credentials
 export const generateWebCallAccessToken = async (req, res) => {
   try {
     const userId = req.user?.userId;
+    const { agentId } = req.query; // Get agentId from query parameters
     
     if (!userId) {
       return res.status(400).json({
@@ -58,10 +60,13 @@ export const generateWebCallAccessToken = async (req, res) => {
       });
     }
 
+    // Create a unique room name for this webcall
+    const roomName = `webcall-${generateRandomAlphanumeric(8)}-${Date.now()}`;
+    const identity = req.query.identity || `identity-${Math.random().toString(36).slice(2, 8)}`;
+
+    // Generate Twilio access token
     const AccessToken = twilio.jwt.AccessToken;
     const VoiceGrant = AccessToken.VoiceGrant;
-
-    const identity = req.query.identity || `identity-${Math.random().toString(36).slice(2, 8)}`;
 
     const accessToken = new AccessToken(credentials.account_sid, apiKey, apiKeySecret, {
       identity,
@@ -73,7 +78,71 @@ export const generateWebCallAccessToken = async (req, res) => {
     });
     accessToken.addGrant(voiceGrant);
 
-    return res.json({ success: true, token: accessToken.toJwt(), identity });
+    // Dispatch LiveKit agent to the room (if agentId is provided)
+    let agentDispatchResult = null;
+    if (agentId) {
+      try {
+        console.log(`🤖 Dispatching agent for webcall: room=${roomName}, agentId=${agentId}`);
+        
+        // Import LiveKit dependencies dynamically
+        const { AgentDispatchClient, AccessToken: LKAccessToken } = await import('livekit-server-sdk');
+        
+        // Create LiveKit agent dispatch client
+        const livekitHttpUrl = process.env.LIVEKIT_HOST?.replace('wss://', 'https://').replace('ws://', 'http://') || 'https://your-livekit-host.com';
+        const agentDispatchClient = new AgentDispatchClient(
+          livekitHttpUrl, 
+          process.env.LIVEKIT_API_KEY, 
+          process.env.LIVEKIT_API_SECRET
+        );
+
+        // Create access token for agent dispatch
+        const at = new LKAccessToken(process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET, {
+          identity: `webcall-dispatcher-${Date.now()}`,
+          metadata: JSON.stringify({
+            userId,
+            agentId,
+            callType: 'webcall',
+            roomName
+          })
+        });
+
+        at.addGrant({
+          room: roomName,
+          roomJoin: true,
+          canPublish: true,
+          canSubscribe: true,
+        });
+
+        const jwt = await at.toJwt();
+
+        // Dispatch agent using AgentDispatchClient
+        const agentName = process.env.LK_AGENT_NAME || 'ai';
+        agentDispatchResult = await agentDispatchClient.createDispatch(roomName, agentName, {
+          metadata: JSON.stringify({
+            agentId: agentId,
+            callType: 'webcall',
+            userId: userId,
+            roomName: roomName,
+            webcall: true
+          }),
+        });
+
+        console.log('✅ Webcall agent dispatched successfully:', agentDispatchResult);
+      } catch (dispatchError) {
+        console.error('❌ Failed to dispatch agent for webcall:', dispatchError);
+        // Don't fail the entire request if agent dispatch fails
+        // The webcall can still work without the agent
+      }
+    }
+
+    return res.json({ 
+      success: true, 
+      token: accessToken.toJwt(), 
+      identity,
+      roomName: roomName,
+      agentDispatched: !!agentDispatchResult,
+      agentDispatchResult: agentDispatchResult
+    });
   } catch (error) {
     console.error("Error generating web call access token:", error);
     return res.status(500).json({

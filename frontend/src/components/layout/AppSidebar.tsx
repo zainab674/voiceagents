@@ -6,10 +6,7 @@ import {
   BarChart3, 
   Settings, 
   Users, 
-  BookOpen,
-  Presentation,
   Building,
-  Headphones,
   Mail,
   Calendar,
   FileText,
@@ -47,21 +44,13 @@ const navigationItems = [
   { title: "Phone Management", url: "/trunk-management", icon: Network },
   { title: "CRM Integration", url: "/crm", icon: Database },
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
-  { title: "Bookings", url: "/bookings", icon: Calendar },
 ];
 
 const adminItems = [
   { title: "Admin Panel", url: "/admin", icon: Shield },
-  { title: "White Label", url: "/white-label", icon: Building },
-  { title: "User Management", url: "/users", icon: Users },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 
-const resourceItems = [
-  { title: "Onboarding", url: "/onboarding", icon: BookOpen },
-  { title: "Training", url: "/training", icon: Presentation },
-  { title: "Support", url: "/support", icon: Headphones },
-];
 
 export function AppSidebar() {
   const { state } = useSidebar();
@@ -130,24 +119,6 @@ export function AppSidebar() {
           </SidebarGroup>
         )}
 
-        {/* Resources */}
-        <SidebarGroup>
-          <SidebarGroupLabel>Resources</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {resourceItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild>
-                    <NavLink to={item.url} end className={getNavCls}>
-                      <item.icon className="mr-2 h-4 w-4" />
-                      {!collapsed && <span>{item.title}</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
       </SidebarContent>
     </Sidebar>
   );

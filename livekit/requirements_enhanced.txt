@@ -1,6 +1,6 @@
 # Enhanced LiveKit Voice Agent Requirements
 # Core LiveKit Agents Framework (Official)
-livekit-agents[openai,silero,deepgram]~=1.0
+livekit-agents[openai,silero,deepgram,rime]~=1.2
 
 # Environment and configuration
 python-dotenv

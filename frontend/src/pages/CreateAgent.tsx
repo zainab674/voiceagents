@@ -11,8 +11,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
-import { Bot, ArrowLeft, Save, Calendar, Database } from "lucide-react";
+import { Bot, ArrowLeft, Save, Calendar, Database, Users } from "lucide-react";
 import { AGENTS_ENDPOINT } from "@/constants/URLConstant";
+import CRMContactSelector from "@/components/CRMContactSelector";
 
 interface KnowledgeBase {
   id: string;
@@ -39,6 +40,10 @@ const CreateAgent = () => {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [selectedKnowledgeBase, setSelectedKnowledgeBase] = useState<string>("");
   const [enableRAG, setEnableRAG] = useState(false);
+
+  // CRM Contact states
+  const [contactSource, setContactSource] = useState<'manual' | 'crm'>('manual');
+  const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
 
   // Load knowledge bases on mount
   useEffect(() => {
@@ -119,7 +124,9 @@ const CreateAgent = () => {
           calEventTypeSlug: calEventTypeSlug.trim() || null,
           calEventTypeId: calEventTypeId.trim() || null,
           calTimezone: calTimezone,
-          knowledgeBaseId: enableRAG && selectedKnowledgeBase ? selectedKnowledgeBase : null
+          knowledgeBaseId: enableRAG && selectedKnowledgeBase ? selectedKnowledgeBase : null,
+          contactSource: contactSource,
+          selectedContacts: contactSource === 'crm' ? selectedContacts : null
         })
       });
 
@@ -195,10 +202,9 @@ const CreateAgent = () => {
             </CardHeader>
             <CardContent>
               <Tabs defaultValue="basic" className="space-y-6">
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="basic">Basic Info</TabsTrigger>
                   <TabsTrigger value="knowledge">Knowledge Base</TabsTrigger>
-                  <TabsTrigger value="calendar">Calendar</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="basic" className="space-y-6">
@@ -362,6 +368,53 @@ const CreateAgent = () => {
                   </p>
                 </div>
               </div>
+
+              {/* CRM Contact Integration Section */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-primary" />
+                  <Label className="text-base font-medium">Contact Source</Label>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Choose how to manage contacts for this agent
+                </p>
+
+                <div className="flex gap-4">
+                  <Button
+                    variant={contactSource === 'manual' ? 'default' : 'outline'}
+                    onClick={() => setContactSource('manual')}
+                    disabled={isCreating}
+                  >
+                    Manual Entry
+                  </Button>
+                  <Button
+                    variant={contactSource === 'crm' ? 'default' : 'outline'}
+                    onClick={() => setContactSource('crm')}
+                    disabled={isCreating}
+                  >
+                    CRM Contacts
+                  </Button>
+                </div>
+
+                {contactSource === 'crm' && (
+                  <div className="mt-4">
+                    <CRMContactSelector
+                      selectedContacts={selectedContacts}
+                      onContactsChange={setSelectedContacts}
+                      contactSource={contactSource}
+                      onSourceChange={setContactSource}
+                    />
+                  </div>
+                )}
+
+                {contactSource === 'manual' && (
+                  <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                    <p className="text-sm text-gray-600">
+                      Manual contact entry will be available when creating campaigns for this agent.
+                    </p>
+                  </div>
+                )}
+              </div>
                 </TabsContent>
 
                 <TabsContent value="knowledge" className="space-y-6">
@@ -414,94 +467,7 @@ const CreateAgent = () => {
                 </TabsContent>
 
 
-                <TabsContent value="calendar" className="space-y-6">
-                  {/* Calendar Integration Section */}
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-5 h-5" />
-                      <h3 className="text-lg font-semibold">Calendar Integration (Optional)</h3>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Connect your agent to Cal.com for automatic appointment booking
-                    </p>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="calApiKey" className="text-sm font-medium">
-                          Cal.com API Key
-                        </Label>
-                        <Input
-                          id="calApiKey"
-                          type="password"
-                          placeholder="cal_live_..."
-                          value={calApiKey}
-                          onChange={(e) => setCalApiKey(e.target.value)}
-                          disabled={isCreating}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Get this from your Cal.com account settings
-                        </p>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="calEventTypeSlug" className="text-sm font-medium">
-                          Event Type Slug
-                        </Label>
-                        <Input
-                          id="calEventTypeSlug"
-                          placeholder="e.g., consultation, meeting"
-                          value={calEventTypeSlug}
-                          onChange={(e) => setCalEventTypeSlug(e.target.value)}
-                          disabled={isCreating}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          The slug of your Cal.com event type
-                        </p>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="calEventTypeId" className="text-sm font-medium">
-                          Event Type ID
-                        </Label>
-                        <Input
-                          id="calEventTypeId"
-                          placeholder="e.g., 12345678-1234-1234-1234-123456789012"
-                          value={calEventTypeId}
-                          onChange={(e) => setCalEventTypeId(e.target.value)}
-                          disabled={isCreating}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          The unique ID of your Cal.com event type
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="calTimezone" className="text-sm font-medium">
-                        Timezone
-                      </Label>
-                      <Select value={calTimezone} onValueChange={setCalTimezone} disabled={isCreating}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="UTC">UTC</SelectItem>
-                          <SelectItem value="America/New_York">Eastern Time</SelectItem>
-                          <SelectItem value="America/Chicago">Central Time</SelectItem>
-                          <SelectItem value="America/Denver">Mountain Time</SelectItem>
-                          <SelectItem value="America/Los_Angeles">Pacific Time</SelectItem>
-                          <SelectItem value="Europe/London">London</SelectItem>
-                          <SelectItem value="Europe/Paris">Paris</SelectItem>
-                          <SelectItem value="Asia/Tokyo">Tokyo</SelectItem>
-                          <SelectItem value="Asia/Shanghai">Shanghai</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground">
-                        Timezone for appointment scheduling
-                      </p>
-                    </div>
-                  </div>
-                </TabsContent>
+                
               </Tabs>
 
               {/* Action Buttons */}

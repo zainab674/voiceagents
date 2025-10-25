@@ -5,13 +5,45 @@ Outbound call handler for processing outgoing calls.
 import logging
 import json
 import asyncio
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from livekit.agents import JobContext, AgentSession, AutoSubscribe, RoomInputOptions, RoomOutputOptions
 from livekit import api
+from livekit.plugins import openai, rime
 
 from config.settings import Settings
 from services.rag_assistant import RAGAssistant
+from services.call_outcome_service import CallOutcomeService
 from utils.logging_config import get_logger
+from utils.latency_logger import (
+    measure_latency, measure_latency_context, 
+    measure_room_connection, measure_call_processing,
+    get_tracker, clear_tracker
+)
+
+
+def create_tts_instance(settings: Settings):
+    """Create TTS instance with Rime or OpenAI fallback."""
+    logger = get_logger(__name__)
+    if settings.rime.api_key:
+        try:
+            tts = rime.TTS(
+                model=settings.rime.model,
+                speaker=settings.rime.speaker,
+                speed_alpha=settings.rime.speed_alpha,
+                reduce_latency=settings.rime.reduce_latency,
+                api_key=settings.rime.api_key,
+            )
+            logger.info(f"RIME_TTS_CONFIGURED | model={settings.rime.model} | speaker={settings.rime.speaker}")
+            return tts
+        except Exception as e:
+            logger.warning(f"RIME_TTS_FAILED | {str(e)} | falling back to OpenAI TTS")
+    
+    # Fallback to OpenAI TTS
+    import os
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    tts = openai.TTS(model="tts-1", voice="alloy", api_key=openai_api_key)
+    logger.info("OPENAI_TTS_CONFIGURED | using OpenAI TTS")
+    return tts
 
 
 class OutboundCallHandler:
@@ -20,6 +52,7 @@ class OutboundCallHandler:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.logger = get_logger(__name__)
+        self.call_outcome_service = CallOutcomeService()
         
         # Initialize Supabase client
         try:
@@ -55,54 +88,61 @@ class OutboundCallHandler:
         
         self.logger.info(f"OUTBOUND_CALL_START | call_id={call_id} | room={room_name}")
         
-        try:
-            # Connect to room
-            await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
-            self.logger.info(f"OUTBOUND_CALL_CONNECTED | room={room_name}")
-            
-            # Extract call metadata
-            metadata = await self._extract_call_metadata_safe(ctx)
-            
-            if not metadata:
-                await self._handle_no_metadata(ctx)
-                return
-            
-            # Resolve assistant configuration
-            assistant_config = await self._resolve_assistant_config_safe(metadata)
-            
-            if not assistant_config:
-                await self._handle_no_assistant_config(ctx)
-                return
-            
-            self.logger.info(f"ASSISTANT_CONFIG_RESOLVED | assistant_id={assistant_config.get('id')}")
-            
-            # Create SIP participant for outbound call
-            await self._create_sip_participant_safe(ctx, metadata)
-            
-            # Wait for participant to connect
-            participant = await asyncio.wait_for(
-                ctx.wait_for_participant(),
-                timeout=30.0
-            )
-            
-            self.logger.info(f"OUTBOUND_PARTICIPANT_CONNECTED | phone={metadata.get('phone_number')}")
-            
-            # Create and configure agent
-            agent = await self._create_agent_safe(assistant_config)
-            
-            if not agent:
-                await self._handle_agent_creation_failure(ctx)
-                return
-            
-            # Start session
-            await self._start_session_safe(ctx, agent)
-            
-            self.logger.info(f"OUTBOUND_CALL_SUCCESS | call_id={call_id}")
-            
-        except Exception as e:
-            self.logger.error(f"OUTBOUND_CALL_ERROR | call_id={call_id} | error={str(e)}", exc_info=True)
-            await self._handle_outbound_error(ctx, e)
-            raise
+        # Track room connection latency
+        async with measure_latency_context(
+            "room_connection", 
+            call_id=call_id, 
+            room_name=room_name,
+            metadata={"room_name": room_name, "call_type": "outbound"}
+        ):
+            try:
+                # Connect to room
+                await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
+                self.logger.info(f"OUTBOUND_CALL_CONNECTED | room={room_name}")
+                
+                # Extract call metadata
+                metadata = await self._extract_call_metadata_safe(ctx)
+                
+                if not metadata:
+                    await self._handle_no_metadata(ctx)
+                    return
+                
+                # Resolve assistant configuration
+                assistant_config = await self._resolve_assistant_config_safe(metadata)
+                
+                if not assistant_config:
+                    await self._handle_no_assistant_config(ctx)
+                    return
+                
+                self.logger.info(f"ASSISTANT_CONFIG_RESOLVED | assistant_id={assistant_config.get('id')}")
+                
+                # Create SIP participant for outbound call
+                await self._create_sip_participant_safe(ctx, metadata)
+                
+                # Wait for participant to connect
+                participant = await asyncio.wait_for(
+                    ctx.wait_for_participant(),
+                    timeout=30.0
+                )
+                
+                self.logger.info(f"OUTBOUND_PARTICIPANT_CONNECTED | phone={metadata.get('phone_number')}")
+                
+                # Create and configure agent
+                agent = await self._create_agent_safe(assistant_config)
+                
+                if not agent:
+                    await self._handle_agent_creation_failure(ctx)
+                    return
+                
+                # Start session
+                await self._start_session_safe(ctx, agent)
+                
+                self.logger.info(f"OUTBOUND_CALL_SUCCESS | call_id={call_id}")
+                
+            except Exception as e:
+                self.logger.error(f"OUTBOUND_CALL_ERROR | call_id={call_id} | error={str(e)}", exc_info=True)
+                await self._handle_outbound_error(ctx, e)
+                raise
     
     async def _extract_call_metadata_safe(self, ctx: JobContext) -> Optional[Dict[str, Any]]:
         """Safely extract call metadata from job context."""
@@ -201,6 +241,7 @@ class OutboundCallHandler:
                 calendar=None,  # Can be added later if needed
                 knowledge_base_id=knowledge_base_id,
                 company_id=company_id,
+                supabase=self.supabase,
                 assistant_id=assistant_id,
                 user_id=assistant_config.get('user_id')  # Get user_id from config if available
             )
@@ -221,12 +262,11 @@ class OutboundCallHandler:
             from livekit.plugins import silero, openai
             import os
             
-            openai_api_key = os.getenv("OPENAI_API_KEY")
             session = AgentSession(
                 vad=silero.VAD.load(),
                 stt=openai.STT(model="whisper-1"),
                 llm=openai.LLM(model="gpt-4o-mini", temperature=0.1),
-                tts=openai.TTS(model="tts-1", voice="alloy", api_key=openai_api_key),
+                tts=create_tts_instance(self.settings),
                 allow_interruptions=True,
                 preemptive_generation=True,
                 resume_false_interruption=True,
@@ -236,7 +276,7 @@ class OutboundCallHandler:
             await session.start(
                 agent=agent,
                 room=ctx.room,
-                room_input_options=RoomInputOptions(close_on_disconnect=True),
+                room_input_options=RoomInputOptions(close_on_disconnect=False),
                 room_output_options=RoomOutputOptions(transcription_enabled=True)
             )
             
@@ -260,8 +300,7 @@ class OutboundCallHandler:
             import os
             
             # Create simple TTS for fallback
-            openai_api_key = os.getenv("OPENAI_API_KEY")
-            fallback_tts = openai.TTS(model="tts-1", voice="alloy", api_key=openai_api_key)
+            fallback_tts = create_tts_instance(self.settings)
             
             fallback_agent = Agent(
                 instructions="You are a helpful assistant. Please inform the user that there was a configuration issue and they should contact support.",
@@ -275,20 +314,22 @@ class OutboundCallHandler:
                 stt=openai.STT(model="whisper-1"),
                 llm=openai.LLM(model="gpt-4o-mini", temperature=0.1),
                 tts=fallback_tts,
-                allow_interruptions=True
+                allow_interruptions=True,
+                resume_false_interruption=True
             )
             
             await session.start(
                 agent=fallback_agent,
                 room=ctx.room,
-                room_input_options=RoomInputOptions(close_on_disconnect=True),
+                room_input_options=RoomInputOptions(close_on_disconnect=False),
                 room_output_options=RoomOutputOptions(transcription_enabled=True)
             )
             
             await session.say(
                 "I'm sorry, but I couldn't find the call information. "
                 "Please contact support for assistance.",
-                allow_interruptions=True
+                allow_interruptions=True,
+                resume_false_interruption=True
             )
             
             self.logger.info("OUTBOUND_ERROR_SESSION_CREATED")
@@ -308,8 +349,7 @@ class OutboundCallHandler:
             import os
             
             # Create simple TTS for fallback
-            openai_api_key = os.getenv("OPENAI_API_KEY")
-            fallback_tts = openai.TTS(model="tts-1", voice="alloy", api_key=openai_api_key)
+            fallback_tts = create_tts_instance(self.settings)
             
             fallback_agent = Agent(
                 instructions="You are a helpful assistant. Please inform the user that there was a configuration issue and they should contact support.",
@@ -323,20 +363,22 @@ class OutboundCallHandler:
                 stt=openai.STT(model="whisper-1"),
                 llm=openai.LLM(model="gpt-4o-mini", temperature=0.1),
                 tts=fallback_tts,
-                allow_interruptions=True
+                allow_interruptions=True,
+                resume_false_interruption=True
             )
             
             await session.start(
                 agent=fallback_agent,
                 room=ctx.room,
-                room_input_options=RoomInputOptions(close_on_disconnect=True),
+                room_input_options=RoomInputOptions(close_on_disconnect=False),
                 room_output_options=RoomOutputOptions(transcription_enabled=True)
             )
             
             await session.say(
                 "I'm sorry, but I couldn't find the assistant configuration. "
                 "Please contact support for assistance.",
-                allow_interruptions=True
+                allow_interruptions=True,
+                resume_false_interruption=True
             )
             
             self.logger.info("OUTBOUND_FALLBACK_SESSION_CREATED")
@@ -356,8 +398,7 @@ class OutboundCallHandler:
             import os
             
             # Create simple TTS for fallback
-            openai_api_key = os.getenv("OPENAI_API_KEY")
-            fallback_tts = openai.TTS(model="tts-1", voice="alloy", api_key=openai_api_key)
+            fallback_tts = create_tts_instance(self.settings)
             
             fallback_agent = Agent(
                 instructions="You are a helpful assistant. Please inform the user that there was a technical issue and they should try calling again later.",
@@ -371,20 +412,22 @@ class OutboundCallHandler:
                 stt=openai.STT(model="whisper-1"),
                 llm=openai.LLM(model="gpt-4o-mini", temperature=0.1),
                 tts=fallback_tts,
-                allow_interruptions=True
+                allow_interruptions=True,
+                resume_false_interruption=True
             )
             
             await session.start(
                 agent=fallback_agent,
                 room=ctx.room,
-                room_input_options=RoomInputOptions(close_on_disconnect=True),
+                room_input_options=RoomInputOptions(close_on_disconnect=False),
                 room_output_options=RoomOutputOptions(transcription_enabled=True)
             )
             
             await session.say(
                 "I'm experiencing technical difficulties. "
                 "Please try calling again later or contact support.",
-                allow_interruptions=True
+                allow_interruptions=True,
+                resume_false_interruption=True
             )
             
             self.logger.info("OUTBOUND_ERROR_SESSION_CREATED")
@@ -421,20 +464,22 @@ class OutboundCallHandler:
                     stt=openai.STT(model="whisper-1"),
                     llm=openai.LLM(model="gpt-4o-mini", temperature=0.1),
                     tts=fallback_tts,
-                    allow_interruptions=True
+                    allow_interruptions=True,
+                resume_false_interruption=True
                 )
                 
                 await session.start(
                     agent=fallback_agent,
                     room=ctx.room,
-                    room_input_options=RoomInputOptions(close_on_disconnect=True),
+                    room_input_options=RoomInputOptions(close_on_disconnect=False),
                     room_output_options=RoomOutputOptions(transcription_enabled=True)
                 )
                 
                 await session.say(
                     "I'm experiencing technical difficulties. "
                     "Please try calling again in a moment.",
-                    allow_interruptions=True
+                    allow_interruptions=True,
+                resume_false_interruption=True
                 )
                 
                 self.logger.info("OUTBOUND_ERROR_RECOVERY_SESSION_CREATED")
@@ -466,6 +511,14 @@ class OutboundCallHandler:
                 return
             
             # Extract call data from session and room
+            # Perform AI analysis of the call
+            analysis_results = await self._perform_call_analysis(
+                transcription=self._extract_transcription(session),
+                call_duration=self._calculate_call_duration(ctx.room.creation_time if hasattr(ctx.room, 'creation_time') else None, session.end_time if hasattr(session, 'end_time') else None),
+                call_type="outbound",
+                agent=agent
+            )
+            
             call_data = {
                 'agent_id': agent_id,
                 'user_id': user_id,
@@ -473,12 +526,12 @@ class OutboundCallHandler:
                 'contact_phone': self._extract_phone_from_room(ctx.room.name),
                 'status': 'completed',
                 'duration_seconds': self._calculate_call_duration(ctx.room.creation_time if hasattr(ctx.room, 'creation_time') else None, session.end_time if hasattr(session, 'end_time') else None),
-                'outcome': 'completed',
+                'outcome': analysis_results.get('call_outcome', 'completed'),
                 'notes': None,
                 'call_sid': self._extract_call_sid(ctx),
                 'started_at': ctx.room.creation_time.isoformat() if hasattr(ctx.room, 'creation_time') and ctx.room.creation_time else None,
                 'ended_at': session.end_time.isoformat() if hasattr(session, 'end_time') and session.end_time else None,
-                'success': True,
+                'success': analysis_results.get('call_success', True),
                 'transcription': self._extract_transcription(session)
             }
             
@@ -489,6 +542,57 @@ class OutboundCallHandler:
             
         except Exception as e:
             self.logger.error(f"OUTBOUND_CALL_HISTORY_SAVE_ERROR | error={str(e)}", exc_info=True)
+    
+    async def _perform_call_analysis(
+        self, 
+        transcription: List[Dict[str, Any]], 
+        call_duration: int,
+        call_type: str,
+        agent: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Perform comprehensive call analysis including AI-powered outcome determination.
+        """
+        analysis_results = {
+            "call_outcome": None,
+            "call_success": None
+        }
+        
+        try:
+            # Use OpenAI to analyze call outcome
+            outcome_analysis = await self.call_outcome_service.analyze_call_outcome(
+                transcription=transcription,
+                call_duration=call_duration,
+                call_type=call_type
+            )
+            
+            if outcome_analysis:
+                analysis_results["call_outcome"] = outcome_analysis.outcome
+                self.logger.info(f"AI_OUTCOME_ANALYSIS | outcome={outcome_analysis.outcome}")
+            else:
+                # Fallback to heuristic-based outcome determination
+                fallback_outcome = self.call_outcome_service.get_fallback_outcome(transcription, call_duration)
+                analysis_results["call_outcome"] = fallback_outcome
+                self.logger.warning(f"FALLBACK_OUTCOME_ANALYSIS | outcome={fallback_outcome}")
+            
+            # Evaluate call success using LLM
+            try:
+                call_success = await self.call_outcome_service.evaluate_call_success(transcription)
+                analysis_results["call_success"] = call_success
+                self.logger.info(f"CALL_SUCCESS_EVALUATED | success={call_success}")
+            except Exception as e:
+                self.logger.error(f"CALL_SUCCESS_EVALUATION_ERROR | error={str(e)}")
+                analysis_results["call_success"] = True  # Default to True for completed calls
+            
+            self.logger.info(f"POST_CALL_ANALYSIS_COMPLETE | outcome={analysis_results['call_outcome']} | success={analysis_results['call_success']}")
+            
+        except Exception as e:
+            self.logger.error(f"POST_CALL_ANALYSIS_ERROR | error={str(e)}")
+            # Fallback to basic analysis
+            analysis_results["call_outcome"] = "Qualified"
+            analysis_results["call_success"] = True
+        
+        return analysis_results
     
     def _extract_phone_from_room(self, room_name: str) -> str:
         """Extract phone number from room name."""

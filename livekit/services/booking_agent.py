@@ -18,7 +18,7 @@ from cal_calendar_api import Calendar, AvailableSlot, SlotUnavailableError, Cale
 class BookingAgent(Agent):
     """LiveKit Agent for handling booking appointments."""
     
-    def __init__(self, instructions: str, calendar: Calendar | None = None) -> None:
+    def __init__(self, instructions: str, calendar: Calendar | None = None, first_message: Optional[str] = None) -> None:
         # Enhanced instructions for step-by-step booking
         # Add current date context to instructions
         current_date = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -32,20 +32,28 @@ CURRENT DATE CONTEXT:
 Today's date is {current_date} (year {current_year}). Always use the current year {current_year} when discussing dates or booking appointments.
 
 BOOKING APPOINTMENTS:
-When a user expresses interest in booking an appointment (says things like "I want to book", "schedule an appointment", "book a meeting", etc.), FIRST call detect_booking_intent to set the booking intent, THEN use the step-by-step booking functions in this order:
-1. detect_booking_intent - Detect if user wants to book (call this first)
-2. set_notes - Ask for the reason for the appointment
-3. list_slots_on_day - Show available times for their preferred day
-4. choose_slot - Let them select a time slot
-5. provide_name - Ask for their full name
-6. provide_email - Ask for their email address
-7. provide_phone - Ask for their phone number
-8. confirm_details - Confirm and book the appointment
+IMPORTANT: Only use booking functions when the user explicitly requests to book, schedule, or make an appointment. Do NOT automatically start the booking process during casual conversation. The user must clearly express intent to book an appointment (e.g., 'I want to book an appointment', 'Can I schedule a meeting?', 'I need to make an appointment').
 
-IMPORTANT: Only start the booking process when the user explicitly expresses booking intent. Do NOT automatically start booking after the first message. Wait for the user to say they want to book an appointment. Always use the current year {current_year} for any date references."""
+When a user explicitly expresses interest in booking an appointment (says things like "I want to book", "schedule an appointment", "book a meeting", etc.), use the step-by-step booking functions in this order:
+1. detect_booking_intent - Detect if user wants to book (call this first)
+2. provide_name - Ask for their full name
+3. provide_email - Ask for their email address  
+4. provide_phone - Ask for their phone number
+5. provide_date - Ask for their preferred date (this will show available slots)
+6. choose_slot - Let them select a time slot
+7. confirm_details - Confirm and book the appointment
+
+IMPORTANT: 
+- Only start the booking process when the user explicitly expresses booking intent
+- Do NOT automatically start booking after the first message
+- Wait for the user to say they want to book an appointment
+- Always use the current year {current_year} for any date references
+- Ask for information ONE AT A TIME, not all at once
+- Wait for the user to respond before asking for the next piece of information"""
         
         super().__init__(instructions=enhanced_instructions)
         self.calendar = calendar
+        self.first_message = first_message
 
         # Booking state (FSM)
         self._booking_intent: bool = False
@@ -68,8 +76,13 @@ IMPORTANT: Only start the booking process when the user explicitly expresses boo
 
     async def on_enter(self):
         """Called when the agent is added to the session."""
-        # Generate initial greeting
-        self.session.generate_reply()
+        # Use specific first message if available, otherwise use generic greeting
+        if self.first_message:
+            logging.info(f"USING_FIRST_MESSAGE | message='{self.first_message}'")
+            await self.session.say(self.first_message)
+        else:
+            logging.info("USING_DEFAULT_GREETING | no_first_message_configured")
+            await self.session.say("Hello! I'm Professor, how can I assist you today?")
 
     # ---------- Helper methods ----------
     def _tz(self):
@@ -209,6 +222,87 @@ IMPORTANT: Only start the booking process when the user explicitly expresses boo
                 return "I understand you'd like to book an appointment. Let me help you with that. What's the reason for your visit?"
         
         return "I'm here to help. How can I assist you today?"
+
+    @function_tool(name="provide_name")
+    async def provide_name(self, ctx: RunContext, name: str) -> str:
+        """Set the customer's name for the appointment."""
+        if not name or len(name.strip()) < 2:
+            return "Please provide your full name."
+        
+        self._name = name.strip()
+        logging.info(f"NAME_COLLECTED | name={self._name}")
+        return f"Great! I have your name as {self._name}. What's your email address?"
+
+    @function_tool(name="provide_email")
+    async def provide_email(self, ctx: RunContext, email: str) -> str:
+        """Set the customer's email for the appointment."""
+        if not email or not self._email_ok(email):
+            return "Please provide a valid email address."
+        
+        self._email = email.strip()
+        logging.info(f"EMAIL_COLLECTED | email={self._email}")
+        return f"Perfect! I have your email as {self._email}. What's your phone number?"
+
+    @function_tool(name="provide_phone")
+    async def provide_phone(self, ctx: RunContext, phone: str) -> str:
+        """Set the customer's phone number for the appointment."""
+        if not phone or not self._phone_ok(phone):
+            return "Please provide a valid phone number."
+        
+        self._phone = self._format_phone(phone)
+        logging.info(f"PHONE_COLLECTED | phone={self._phone}")
+        return f"Excellent! I have your phone as {self._phone}. What date would you like for your appointment?"
+
+    @function_tool(name="provide_date")
+    async def provide_date(self, ctx: RunContext, date: str) -> str:
+        """Set the preferred date for the appointment."""
+        if not date:
+            return "Please provide your preferred date (e.g., 'today', 'tomorrow', 'Friday', or '2025-09-05')."
+        
+        parsed_date = self._parse_day(date)
+        if not parsed_date:
+            return "I couldn't understand that date. Please say it like 'today', 'tomorrow', 'Friday', or '2025-09-05'."
+        
+        self._preferred_day = parsed_date
+        logging.info(f"DATE_COLLECTED | original={date} | parsed={parsed_date}")
+        
+        # Get available slots for this date
+        msg = self._require_calendar()
+        if msg: 
+            return msg
+        
+        try:
+            # Check availability for the day
+            tz = self._tz()
+            start_local = datetime.datetime.combine(parsed_date, datetime.time(0,0,tzinfo=tz))
+            end_local = start_local + datetime.timedelta(days=1)
+            from zoneinfo import ZoneInfo
+            start_utc = start_local.astimezone(ZoneInfo("UTC"))
+            end_utc = end_local.astimezone(ZoneInfo("UTC"))
+
+            logging.info(f"CALENDAR_SLOTS_REQUEST | date={parsed_date} | start_utc={start_utc} | end_utc={end_utc}")
+            result = await self.calendar.list_available_slots(start_time=start_utc, end_time=end_utc)
+            logging.info(f"CALENDAR_SLOTS_RESPONSE | slots_count={len(result.slots) if result.is_success else 0}")
+
+            if not result.is_success or not result.slots:
+                return f"I don't see any available times on {parsed_date.strftime('%A, %B %d')}. Would you like to try a different date?"
+
+            # Show available slots
+            self._slots_map.clear()
+            available_times = []
+            for i, slot in enumerate(result.slots[:6], 1):  # Show up to 6 options
+                slot_local = slot.start_time.astimezone(tz)
+                available_times.append(f"Option {i}: {slot_local.strftime('%I:%M %p')}")
+                self._slots_map[str(i)] = slot
+                self._slots_map[f"option {i}"] = slot
+            
+            times_list = "\n".join(available_times)
+            logging.info(f"SLOTS_LISTED | date={parsed_date.strftime('%A, %B %d')} | slots_count={len(result.slots)}")
+            return f"Great! Here are the available times on {parsed_date.strftime('%A, %B %d')}:\n{times_list}\nWhich option would you like to choose?"
+                
+        except Exception as e:
+            logging.exception("Error checking availability")
+            return "I'm having trouble checking availability. Could you try again or call back later?"
 
     @function_tool(name="collect_booking_info")
     async def collect_booking_info(self, ctx: RunContext, name: str, email: str, phone: str, date: str, time: str, notes: str = "") -> str:

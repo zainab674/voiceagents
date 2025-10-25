@@ -63,12 +63,70 @@ export const createToken = catchAsyncError(async (req, res, next) => {
         metadata: JSON.stringify(enhancedMetadata)
     }, grant);
 
+    // Dispatch LiveKit agent to the room (if agentId is provided)
+    let agentDispatchResult = null;
+    if (agentId) {
+        try {
+            console.log(`🤖 Dispatching agent for LiveKit call: room=${roomName}, agentId=${agentId}`);
+            
+            // Import LiveKit dependencies dynamically
+            const { AgentDispatchClient, AccessToken: LKAccessToken } = await import('livekit-server-sdk');
+            
+            // Create LiveKit agent dispatch client
+            const livekitHttpUrl = process.env.LIVEKIT_HOST?.replace('wss://', 'https://').replace('ws://', 'http://') || 'https://your-livekit-host.com';
+            const agentDispatchClient = new AgentDispatchClient(
+                livekitHttpUrl, 
+                process.env.LIVEKIT_API_KEY, 
+                process.env.LIVEKIT_API_SECRET
+            );
+
+            // Create access token for agent dispatch
+            const at = new LKAccessToken(process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET, {
+                identity: `livekit-dispatcher-${Date.now()}`,
+                metadata: JSON.stringify({
+                    agentId,
+                    callType: 'livekit',
+                    roomName
+                })
+            });
+
+            at.addGrant({
+                room: roomName,
+                roomJoin: true,
+                canPublish: true,
+                canSubscribe: true,
+            });
+
+            const jwt = await at.toJwt();
+
+            // Dispatch agent using AgentDispatchClient
+            const agentName = process.env.LK_AGENT_NAME || 'ai';
+            agentDispatchResult = await agentDispatchClient.createDispatch(roomName, agentName, {
+                metadata: JSON.stringify({
+                    agentId: agentId,
+                    callType: 'livekit',
+                    roomName: roomName,
+                    webcall: false
+                }),
+            });
+
+            console.log('✅ LiveKit agent dispatched successfully:', agentDispatchResult);
+        } catch (dispatchError) {
+            console.error('❌ Failed to dispatch agent for LiveKit call:', dispatchError);
+            // Don't fail the entire request if agent dispatch fails
+            // The call can still work without the agent
+        }
+    }
+
     res.status(200).json({
         success: true,
         message: "Token created successfully",
         result: {
             identity,
             accessToken: token,
+            roomName: roomName,
+            agentDispatched: !!agentDispatchResult,
+            agentDispatchResult: agentDispatchResult
         }
     });
 })

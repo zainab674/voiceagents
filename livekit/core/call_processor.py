@@ -13,6 +13,37 @@ from config.settings import get_settings
 from core.inbound_handler import InboundCallHandler
 from core.outbound_handler import OutboundCallHandler
 from utils.logging_config import setup_logging, get_logger
+from utils.latency_logger import (
+    measure_latency, measure_latency_context, 
+    measure_call_processing, measure_room_connection,
+    get_tracker, clear_tracker
+)
+from livekit.plugins import openai, rime
+
+
+def create_tts_instance(settings):
+    """Create TTS instance with Rime or OpenAI fallback."""
+    logger = get_logger(__name__)
+    if settings.rime.api_key:
+        try:
+            tts = rime.TTS(
+                model=settings.rime.model,
+                speaker=settings.rime.speaker,
+                speed_alpha=settings.rime.speed_alpha,
+                reduce_latency=settings.rime.reduce_latency,
+                api_key=settings.rime.api_key,
+            )
+            logger.info(f"RIME_TTS_CONFIGURED | model={settings.rime.model} | speaker={settings.rime.speaker}")
+            return tts
+        except Exception as e:
+            logger.warning(f"RIME_TTS_FAILED | {str(e)} | falling back to OpenAI TTS")
+    
+    # Fallback to OpenAI TTS
+    import os
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    tts = openai.TTS(model="tts-1", voice="alloy", api_key=openai_api_key)
+    logger.info("OPENAI_TTS_CONFIGURED | using OpenAI TTS")
+    return tts
 
 
 class CallProcessor:
@@ -43,24 +74,31 @@ class CallProcessor:
         
         self.logger.info(f"CALL_PROCESSING_START | call_id={call_id} | room={room_name}")
         
-        try:
-            # Determine call type with error handling
-            call_type = await self._determine_call_type_safe(ctx)
-            
-            self.logger.info(f"CALL_TYPE_DETERMINED | type={call_type} | call_id={call_id}")
-            
-            # Process call based on type
-            if call_type == "outbound":
-                await self._handle_outbound_call_safe(ctx)
-            else:
-                await self._handle_inbound_call_safe(ctx)
+        # Track overall call processing latency
+        async with measure_latency_context(
+            "call_processing", 
+            call_id=call_id, 
+            room_name=room_name,
+            metadata={"room_name": room_name}
+        ):
+            try:
+                # Determine call type with error handling
+                call_type = await self._determine_call_type_safe(ctx)
                 
-            self.logger.info(f"CALL_PROCESSING_COMPLETE | type={call_type} | call_id={call_id}")
-            
-        except Exception as e:
-            self.logger.error(f"CALL_PROCESSING_ERROR | call_id={call_id} | error={str(e)}", exc_info=True)
-            await self._handle_processing_error(ctx, e)
-            raise
+                self.logger.info(f"CALL_TYPE_DETERMINED | type={call_type} | call_id={call_id}")
+                
+                # Process call based on type
+                if call_type == "outbound":
+                    await self._handle_outbound_call_safe(ctx)
+                else:
+                    await self._handle_inbound_call_safe(ctx)
+                    
+                self.logger.info(f"CALL_PROCESSING_COMPLETE | type={call_type} | call_id={call_id}")
+                
+            except Exception as e:
+                self.logger.error(f"CALL_PROCESSING_ERROR | call_id={call_id} | error={str(e)}", exc_info=True)
+                await self._handle_processing_error(ctx, e)
+                raise
     
     async def _determine_call_type_safe(self, ctx: JobContext) -> str:
         """
@@ -156,8 +194,7 @@ class CallProcessor:
                 import os
                 
                 # Create simple TTS for fallback
-                openai_api_key = os.getenv("OPENAI_API_KEY")
-                fallback_tts = openai.TTS(model="tts-1", voice="alloy", api_key=openai_api_key)
+                fallback_tts = create_tts_instance(self.settings)
                 
                 fallback_agent = Agent(
                     instructions="You are a helpful assistant. Please inform the user that there was a technical issue and they should try calling again in a moment.",

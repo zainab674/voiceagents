@@ -25,12 +25,22 @@ import uuid
 from zoneinfo import ZoneInfo
 
 from livekit import agents, api
-from livekit.agents import AgentSession, Agent, JobContext, function_tool, AutoSubscribe, Worker, WorkerOptions, RoomInputOptions, RoomOutputOptions, RunContext
+from livekit.agents.voice import Agent, AgentSession, RunContext
+from livekit.agents import JobContext, function_tool, AutoSubscribe, Worker, WorkerOptions, RoomInputOptions, RoomOutputOptions
 from cal_calendar_api import CalComCalendar, AvailableSlot, CalendarResult, CalendarError
 
 # ⬇️ OpenAI + VAD plugins
-from livekit.plugins import openai as lk_openai  # LLM, STT, TTS
+from livekit.plugins import openai as lk_openai  # LLM, TTS
+from livekit.plugins import groq as lk_groq  # Groq LLM
 from livekit.plugins import silero              # VAD
+from livekit.plugins import rime as lk_rime     # Rime TTS
+from livekit.plugins import deepgram            # Deepgram STT
+
+# ⬇️ AI Analysis Service
+from services.call_outcome_service import CallOutcomeService, CallOutcomeAnalysis
+
+# ⬇️ Booking Agent
+from services.booking_agent import BookingAgent
 
 # ========== UNIFIED AGENT CLASS ==========
 
@@ -93,6 +103,11 @@ class UnifiedAgent(Agent):
             if not name or len(name.strip()) < 2:
                 return "Please tell me your full name."
             
+            # Reject common fake/test names
+            fake_names = ['john doe', 'jane doe', 'test user', 'example', 'demo', 'sample']
+            if name.lower().strip() in fake_names:
+                return "Please provide your real name, not a placeholder name."
+            
             self.booking_state['name'] = name.strip()
             self.logger.info(f"NAME_COLLECTED | name={name.strip()}")
             
@@ -112,6 +127,11 @@ class UnifiedAgent(Agent):
             # Basic email validation
             if not email or '@' not in email or '.' not in email.split('@')[-1]:
                 return "That email doesn't look valid. Could you repeat it?"
+            
+            # Reject common fake/test emails
+            fake_emails = ['johndoe@example.com', 'test@example.com', 'demo@example.com', 'sample@example.com']
+            if email.lower().strip() in fake_emails:
+                return "Please provide your real email address, not a placeholder email."
             
             self.booking_state['email'] = email.strip()
             self.logger.info(f"EMAIL_COLLECTED | email={email.strip()}")
@@ -138,6 +158,11 @@ class UnifiedAgent(Agent):
             if not digits or len(digits) < 7:
                 return "That phone number doesn't look right. Please say it with digits."
             
+            # Reject common fake/test phone numbers
+            fake_phones = ['1234567890', '5555555555', '0000000000', '1111111111']
+            if phone.strip() in fake_phones:
+                return "Please provide your real phone number, not a placeholder number."
+            
             self.booking_state['phone'] = phone.strip()
             self.logger.info(f"PHONE_COLLECTED | phone={phone.strip()}")
             
@@ -152,43 +177,155 @@ class UnifiedAgent(Agent):
         if not date_str:
             return date_str
         
-        date_lower = date_str.lower().strip()
-        today = datetime.datetime.now()
-        
-        # Handle common date expressions
-        if date_lower in ["tomorrow", "tmrw", "tomorow", "tommorow"]:
-            tomorrow = today + datetime.timedelta(days=1)
-            return tomorrow.strftime("%A, %B %d")
-        elif date_lower == "today":
-            return today.strftime("%A, %B %d")
-        elif date_lower in ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]:
-            # Find next occurrence of this weekday
-            weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-            target_day = weekdays.index(date_lower)
-            current_day = today.weekday()
-            days_ahead = (target_day - current_day) % 7
-            if days_ahead == 0:  # If it's today, use next week
-                days_ahead = 7
-            target_date = today + datetime.timedelta(days=days_ahead)
-            return target_date.strftime("%A, %B %d")
-        elif "october" in date_lower or "oct" in date_lower:
-            # Handle "October 16" or "16 October" format
-            import re
-            numbers = re.findall(r'\d+', date_str)
-            if numbers:
-                day = int(numbers[0])
-                year = today.year
-                # If the date is in the past, assume next year
-                try:
-                    parsed_date = datetime.date(year, 10, day)
-                    if parsed_date < today.date():
-                        parsed_date = datetime.date(year + 1, 10, day)
-                    return parsed_date.strftime("%A, %B %d")
-                except ValueError:
-                    pass
+        # Use the comprehensive date parsing logic
+        parsed_date = self._parse_day_comprehensive(date_str)
+        if parsed_date:
+            return parsed_date.strftime("%A, %B %d")
         
         # If we can't parse it, return the original string
         return date_str.strip()
+
+    def _parse_day_comprehensive(self, day_query: str) -> Optional[datetime.date]:
+        """Comprehensive date parsing that handles all common formats."""
+        if not day_query:
+            return None
+        
+        q = day_query.strip().lower()
+        today = datetime.datetime.now().date()
+        
+        self.logger.info(f"DATE_PARSING_DEBUG | input='{day_query}' | normalized='{q}' | today={today}")
+        
+        # Relative dates
+        if q in {"today"}:
+            self.logger.info(f"DATE_PARSING_DEBUG | matched: today")
+            return today
+        if q in {"tomorrow", "tmrw", "tomorow", "tommorow"}:
+            self.logger.info(f"DATE_PARSING_DEBUG | matched: tomorrow")
+            return today + datetime.timedelta(days=1)
+        
+        # Weekdays
+        wk = {
+            "mon": 0, "monday": 0, "tue": 1, "tues": 1, "tuesday": 1, 
+            "wed": 2, "wednesday": 2, "thu": 3, "thur": 3, "thurs": 3, "thursday": 3, 
+            "fri": 4, "friday": 4, "sat": 5, "saturday": 5, "sun": 6, "sunday": 6
+        }
+        if q in wk:
+            delta = (wk[q] - today.weekday()) % 7
+            if delta == 0:  # If it's today, use next week
+                delta = 7
+            result = today + datetime.timedelta(days=delta)
+            self.logger.info(f"DATE_PARSING_DEBUG | matched weekday: {q} -> {result}")
+            return result
+        
+        # ISO format (YYYY-MM-DD)
+        try:
+            parsed_date = datetime.date.fromisoformat(q)
+            # If the parsed date is in the past (older than current year), assume current year
+            if parsed_date.year < today.year:
+                parsed_date = datetime.date(today.year, parsed_date.month, parsed_date.day)
+            self.logger.info(f"DATE_PARSING_DEBUG | matched ISO: {q} -> {parsed_date}")
+            return parsed_date
+        except Exception:
+            pass
+        
+        # Numeric formats (MM/DD, DD/MM, MM-DD, DD-MM, MM DD, DD MM)
+        import re
+        m = re.match(r"^\s*(\d{1,2})[\/\-\s](\d{1,2})\s*$", q)
+        if m:
+            a, b = int(m.group(1)), int(m.group(2))
+            for (d, mo) in [(a, b), (b, a)]:
+                try:
+                    parsed_date = datetime.date(today.year, mo, d)
+                    if parsed_date < today:
+                        parsed_date = datetime.date(today.year + 1, mo, d)
+                    self.logger.info(f"DATE_PARSING_DEBUG | matched numeric: {q} -> {parsed_date}")
+                    return parsed_date
+                except Exception:
+                    pass
+        
+        # Month name formats (November 1st, 1 November, Nov 1st, 1 Nov, etc.)
+        months = {m.lower(): i for i, m in enumerate(
+            ["January", "February", "March", "April", "May", "June", 
+             "July", "August", "September", "October", "November", "December"], 1)}
+        short = {k[:3]: v for k, v in months.items()}
+        
+        toks = re.split(r"\s+", q)
+        if len(toks) == 2:
+            a, b = toks
+            
+            def tom(s): 
+                return months.get(s.lower()) or short.get(s[:3].lower())
+            
+            def clean_day(day_str):
+                return re.sub(r'(\d+)(st|nd|rd|th)', r'\1', day_str)
+            
+            # Try "Day Month" format (e.g., "1 November", "1st Nov")
+            try:
+                day = int(clean_day(a))
+                mo = tom(b)
+                if mo: 
+                    parsed_date = datetime.date(today.year, mo, day)
+                    if parsed_date < today:
+                        parsed_date = datetime.date(today.year + 1, mo, day)
+                    self.logger.info(f"DATE_PARSING_DEBUG | matched day-month: {q} -> {parsed_date}")
+                    return parsed_date
+            except Exception:
+                pass
+            
+            # Try "Month Day" format (e.g., "November 1", "Nov 1st")
+            try:
+                mo = tom(a)
+                day = int(clean_day(b))
+                if mo: 
+                    parsed_date = datetime.date(today.year, mo, day)
+                    if parsed_date < today:
+                        parsed_date = datetime.date(today.year + 1, mo, day)
+                    self.logger.info(f"DATE_PARSING_DEBUG | matched month-day: {q} -> {parsed_date}")
+                    return parsed_date
+            except Exception:
+                pass
+        
+        # Handle ordinal words like "first", "second", "third"
+        ordinal_words = {
+            "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5,
+            "sixth": 6, "seventh": 7, "eighth": 8, "ninth": 9, "tenth": 10,
+            "eleventh": 11, "twelfth": 12, "thirteenth": 13, "fourteenth": 14, "fifteenth": 15,
+            "sixteenth": 16, "seventeenth": 17, "eighteenth": 18, "nineteenth": 19, "twentieth": 20,
+            "twenty-first": 21, "twenty-second": 22, "twenty-third": 23, "twenty-fourth": 24, "twenty-fifth": 25,
+            "twenty-sixth": 26, "twenty-seventh": 27, "twenty-eighth": 28, "twenty-ninth": 29, "thirtieth": 30, "thirty-first": 31
+        }
+        
+        if len(toks) == 2:
+            a, b = toks
+            
+            # Try "Month Ordinal" format (e.g., "November first", "Nov second")
+            try:
+                mo = tom(a)
+                ordinal_day = ordinal_words.get(b)
+                if mo and ordinal_day: 
+                    parsed_date = datetime.date(today.year, mo, ordinal_day)
+                    if parsed_date < today:
+                        parsed_date = datetime.date(today.year + 1, mo, ordinal_day)
+                    self.logger.info(f"DATE_PARSING_DEBUG | matched month-ordinal: {q} -> {parsed_date}")
+                    return parsed_date
+            except Exception:
+                pass
+            
+            # Try "Ordinal Month" format (e.g., "first November", "second Nov")
+            try:
+                ordinal_day = ordinal_words.get(a)
+                mo = tom(b)
+                if ordinal_day and mo: 
+                    parsed_date = datetime.date(today.year, mo, ordinal_day)
+                    if parsed_date < today:
+                        parsed_date = datetime.date(today.year + 1, mo, ordinal_day)
+                    self.logger.info(f"DATE_PARSING_DEBUG | matched ordinal-month: {q} -> {parsed_date}")
+                    return parsed_date
+            except Exception:
+                pass
+        
+        self.logger.warning(f"DATE_PARSING_DEBUG | no match found for: {q}")
+        return None
 
     @function_tool(name="list_slots_on_day")
     async def list_slots_on_day(self, ctx: RunContext, day: str, max_options: int = 6) -> str:
@@ -264,30 +401,13 @@ class UnifiedAgent(Agent):
             # Parse the date string to get start and end times
             today = datetime.datetime.now()
             
-            # Handle different date formats
-            if "tomorrow" in date_str.lower():
-                target_date = today + datetime.timedelta(days=1)
-            elif "today" in date_str.lower():
-                target_date = today
+            # Use comprehensive date parsing
+            parsed_date = self._parse_day_comprehensive(date_str)
+            if parsed_date:
+                target_date = datetime.datetime.combine(parsed_date, datetime.time())
             else:
-                # Try to parse other date formats
-                try:
-                    # Handle "October 16" format
-                    if "october" in date_str.lower() or "oct" in date_str.lower():
-                        import re
-                        numbers = re.findall(r'\d+', date_str)
-                        if numbers:
-                            day = int(numbers[0])
-                            year = today.year
-                            target_date = datetime.datetime(year, 10, day)
-                            if target_date < today:
-                                target_date = datetime.datetime(year + 1, 10, day)
-                        else:
-                            target_date = today + datetime.timedelta(days=1)
-                    else:
-                        target_date = today + datetime.timedelta(days=1)
-                except:
-                    target_date = today + datetime.timedelta(days=1)
+                # Fallback to tomorrow if parsing fails
+                target_date = today + datetime.timedelta(days=1)
             
             # Set up time range for the day
             start_time = target_date.replace(hour=9, minute=0, second=0, microsecond=0)
@@ -645,6 +765,7 @@ class EnhancedVoiceAgent:
         self.logger = logging.getLogger(__name__)
         self.assistant_service = EnhancedAssistantService()
         self.supabase: Optional[Client] = None
+        self.call_outcome_service = CallOutcomeService()
         
         # Initialize Supabase if configured
         if settings.supabase.url and settings.supabase.service_role_key:
@@ -658,7 +779,7 @@ class EnhancedVoiceAgent:
                 self.logger.error(f"Failed to initialize Supabase: {e}")
     
     async def handle_inbound_call(self, ctx: JobContext) -> None:
-        """Handle inbound calls with enhanced features following sass-livekit pattern."""
+        """Handle inbound calls with simplified agents-main pattern."""
         try:
             room_name = ctx.room.name
             call_id = f"inbound_{room_name}_{int(datetime.datetime.now().timestamp())}"
@@ -667,30 +788,21 @@ class EnhancedVoiceAgent:
             
             # Connect to room
             await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
+            self.logger.info(f"ROOM_CONNECTED | room={room_name}")
             
-            # Wait for participant
-            participant = await asyncio.wait_for(
-                ctx.wait_for_participant(),
-                timeout=35.0
-            )
-            self.logger.info(f"PARTICIPANT_CONNECTED | room={room_name}")
-            
-            # Get assistant data from job metadata (where assistantId is stored)
+            # Get assistant data from job metadata
             job_metadata = self._get_job_metadata(ctx.job)
-            
-            # Get assistant data from database if assistantId is provided
-            assistant_db_data = await self._get_assistant_from_database(job_metadata.get("assistantId"))
+            assistant_db_data = await self._get_assistant_from_database(job_metadata.get("agentId") or job_metadata.get("assistantId"))
             
             # Create assistant config
             config = AssistantConfig(
                 name=assistant_db_data.get("name", "Assistant"),
                 instructions=assistant_db_data.get("prompt", "You are a helpful assistant."),
-                assistant_id=assistant_db_data.get("id"),  # Add the UUID
-                user_id=assistant_db_data.get("user_id"),  # Add the user UUID
+                assistant_id=assistant_db_data.get("id"),
+                user_id=assistant_db_data.get("user_id"),
                 knowledge_base_id=assistant_db_data.get("knowledge_base_id"),
                 first_message=assistant_db_data.get("first_message"),
                 enable_rag=self.settings.enable_rag,
-                # Calendar settings from agent database
                 cal_api_key=assistant_db_data.get("cal_api_key"),
                 cal_event_type_id=assistant_db_data.get("cal_event_type_id"),
                 cal_timezone=assistant_db_data.get("cal_timezone"),
@@ -714,24 +826,27 @@ class EnhancedVoiceAgent:
             # Create session with proper configuration
             session = self._create_session(config)
             
-            # Start the session
+            # CRITICAL: Start the session immediately - let the agent handle participant management
+            self.logger.info(f"STARTING_SESSION | room={room_name}")
+            
             await session.start(
                 agent=assistant,
                 room=ctx.room,
-                room_input_options=RoomInputOptions(close_on_disconnect=False),
+                room_input_options=RoomInputOptions(),
                 room_output_options=RoomOutputOptions(transcription_enabled=True)
             )
             
             self.logger.info(f"SESSION_STARTED | room={room_name}")
             
-            # Set up call history saving on session shutdown (like sass-livekit)
+            # The session will now automatically handle listening and participant management
+            
+            # Set up call history saving on session shutdown
             call_saved = False
             
             async def save_call_history_on_shutdown():
                 nonlocal call_saved
                 try:
                     self.logger.info("AGENT_SESSION_COMPLETED")
-                    self.logger.info("SAVING_CALL_HISTORY_VIA_SHUTDOWN_CALLBACK")
                     
                     if not call_saved:
                         # Extract session history
@@ -740,39 +855,32 @@ class EnhancedVoiceAgent:
                             if hasattr(session, 'transcript') and session.transcript:
                                 transcript_dict = session.transcript.to_dict()
                                 session_history = transcript_dict.get("items", [])
-                                self.logger.info(f"SHUTDOWN_TRANSCRIPT_FROM_SESSION | items={len(session_history)}")
                             elif hasattr(session, 'history') and session.history:
                                 history_dict = session.history.to_dict()
                                 session_history = history_dict.get("items", [])
-                                self.logger.info(f"SHUTDOWN_HISTORY_FROM_SESSION | items={len(session_history)}")
-                            else:
-                                self.logger.warning("NO_SHUTDOWN_SESSION_TRANSCRIPT_AVAILABLE")
                         except Exception as e:
                             self.logger.error(f"SHUTDOWN_SESSION_HISTORY_READ_FAILED | error={str(e)}")
                             session_history = []
                         
                         # Save call history
-                        await self._save_call_history_safe(ctx, assistant, session, session_history, participant, call_id, config)
+                        await self._save_call_history_safe(ctx, assistant, session, session_history, None, call_id, config)
                         call_saved = True
-                    else:
-                        self.logger.info("CALL_HISTORY_ALREADY_SAVED | skipping shutdown callback")
+                        
+                        # End call tracking when session naturally completes
+                        await self.assistant_service.end_call(call_id, config)
                     
                 except Exception as e:
                     self.logger.error(f"SHUTDOWN_CALL_HISTORY_SAVE_ERROR | error={str(e)}", exc_info=True)
             
             # Register shutdown callback
             ctx.add_shutdown_callback(save_call_history_on_shutdown)
-            self.logger.info("SHUTDOWN_CALLBACK_REGISTERED")
-            
-            # End call tracking
-            await self.assistant_service.end_call(call_id, config)
             
         except Exception as e:
             self.logger.error(f"INBOUND_CALL_ERROR | room={room_name} | error={str(e)}")
             raise
     
     async def handle_outbound_call(self, ctx: JobContext) -> None:
-        """Handle outbound calls with campaign features following sass-livekit pattern."""
+        """Handle outbound calls with simplified agents-main pattern."""
         try:
             room_name = ctx.room.name
             call_id = f"outbound_{room_name}_{int(datetime.datetime.now().timestamp())}"
@@ -781,34 +889,39 @@ class EnhancedVoiceAgent:
             
             # Connect to room
             await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
+            self.logger.info(f"ROOM_CONNECTED | room={room_name}")
             
-            # Wait for participant
-            participant = await asyncio.wait_for(
-                ctx.wait_for_participant(),
-                timeout=35.0
-            )
-            self.logger.info(f"PARTICIPANT_CONNECTED | room={room_name}")
+            # Wait for participant with configurable timeout
+            participant_timeout = self.settings.participant_timeout
+            participant = None
+            
+            try:
+                participant = await asyncio.wait_for(
+                    ctx.wait_for_participant(),
+                    timeout=participant_timeout
+                )
+                self.logger.info(f"PARTICIPANT_CONNECTED | room={room_name} | participant={participant.identity}")
+            except asyncio.TimeoutError:
+                self.logger.warning(f"PARTICIPANT_TIMEOUT | room={room_name} | timeout={participant_timeout}s")
+                raise TimeoutError(f"No participant connected within {participant_timeout} seconds")
             
             # Get campaign data from room metadata
             campaign_data = self._get_campaign_data_from_room(ctx.room)
             phone_number = get_phone_number_from_job(ctx.job)
             
-            # Get assistant data from job metadata (where assistantId is stored)
+            # Get assistant data from job metadata
             job_metadata = self._get_job_metadata(ctx.job)
-            
-            # Get assistant data from database if assistantId is provided
-            assistant_db_data = await self._get_assistant_from_database(job_metadata.get("assistantId"))
+            assistant_db_data = await self._get_assistant_from_database(job_metadata.get("agentId") or job_metadata.get("assistantId"))
             
             # Create assistant config for campaign
             config = AssistantConfig(
                 name=assistant_db_data.get("name", campaign_data.get("assistant_name", "Campaign Assistant")),
                 instructions=assistant_db_data.get("prompt", campaign_data.get("assistant_instructions", "You are a helpful assistant.")),
-                assistant_id=assistant_db_data.get("id"),  # Add the UUID
-                user_id=assistant_db_data.get("user_id"),  # Add the user UUID
+                assistant_id=assistant_db_data.get("id"),
+                user_id=assistant_db_data.get("user_id"),
                 knowledge_base_id=assistant_db_data.get("knowledge_base_id", campaign_data.get("knowledge_base_id")),
                 first_message=assistant_db_data.get("first_message"),
                 enable_rag=self.settings.enable_rag,
-                # Calendar settings from agent database
                 cal_api_key=assistant_db_data.get("cal_api_key"),
                 cal_event_type_id=assistant_db_data.get("cal_event_type_id"),
                 cal_timezone=assistant_db_data.get("cal_timezone"),
@@ -835,24 +948,27 @@ class EnhancedVoiceAgent:
             # Create session with proper configuration
             session = self._create_session(config)
             
-            # Start the session
+            # CRITICAL: Start the session
+            self.logger.info(f"STARTING_SESSION | room={room_name}")
+            
             await session.start(
                 agent=assistant,
                 room=ctx.room,
-                room_input_options=RoomInputOptions(close_on_disconnect=False),
+                room_input_options=RoomInputOptions(),
                 room_output_options=RoomOutputOptions(transcription_enabled=True)
             )
             
             self.logger.info(f"SESSION_STARTED | room={room_name}")
             
-            # Set up call history saving on session shutdown (like sass-livekit)
+            # The session will now automatically handle listening and participant management
+            
+            # Set up call history saving on session shutdown
             call_saved = False
             
             async def save_call_history_on_shutdown():
                 nonlocal call_saved
                 try:
                     self.logger.info("AGENT_SESSION_COMPLETED")
-                    self.logger.info("SAVING_CALL_HISTORY_VIA_SHUTDOWN_CALLBACK")
                     
                     if not call_saved:
                         # Extract session history
@@ -861,37 +977,31 @@ class EnhancedVoiceAgent:
                             if hasattr(session, 'transcript') and session.transcript:
                                 transcript_dict = session.transcript.to_dict()
                                 session_history = transcript_dict.get("items", [])
-                                self.logger.info(f"SHUTDOWN_TRANSCRIPT_FROM_SESSION | items={len(session_history)}")
                             elif hasattr(session, 'history') and session.history:
                                 history_dict = session.history.to_dict()
                                 session_history = history_dict.get("items", [])
-                                self.logger.info(f"SHUTDOWN_HISTORY_FROM_SESSION | items={len(session_history)}")
-                            else:
-                                self.logger.warning("NO_SHUTDOWN_SESSION_TRANSCRIPT_AVAILABLE")
                         except Exception as e:
                             self.logger.error(f"SHUTDOWN_SESSION_HISTORY_READ_FAILED | error={str(e)}")
                             session_history = []
                         
                         # Save call history
-                        await self._save_call_history_safe(ctx, assistant, session, session_history, participant, call_id, config)
+                        await self._save_call_history_safe(ctx, assistant, session, session_history, None, call_id, config)
                         call_saved = True
-                    else:
-                        self.logger.info("CALL_HISTORY_ALREADY_SAVED | skipping shutdown callback")
+                        
+                        # End call tracking when session naturally completes
+                        await self.assistant_service.end_call(call_id, config)
                     
                 except Exception as e:
                     self.logger.error(f"SHUTDOWN_CALL_HISTORY_SAVE_ERROR | error={str(e)}", exc_info=True)
             
             # Register shutdown callback
             ctx.add_shutdown_callback(save_call_history_on_shutdown)
-            self.logger.info("SHUTDOWN_CALLBACK_REGISTERED")
-            
-            # End call tracking
-            await self.assistant_service.end_call(call_id, config)
             
         except Exception as e:
             self.logger.error(f"OUTBOUND_CALL_ERROR | room={room_name} | error={str(e)}")
             raise
     
+
     async def _create_enhanced_assistant(self, config: AssistantConfig) -> Agent:
         """Create enhanced assistant with function tools using modern LiveKit pattern."""
         # Add RAG context if enabled
@@ -899,14 +1009,16 @@ class EnhancedVoiceAgent:
         if config.enable_rag and config.knowledge_base_id:
             instructions = f"{config.instructions}\n\nYou have access to a knowledge base. Use it to provide accurate and helpful information. When users ask about booking history or previous appointments, use the get_booking_history function to search for their information."
         
-        # Add booking instructions
-        booking_instructions = "\n\nWhen users want to book an appointment, use the book_appointment function to start the process. Then use the individual collection functions (provide_name, provide_email, provide_phone, provide_date) as the user provides each piece of information. When the user provides a date, use provide_date to show available time slots. Then use choose_slot when the user selects a time option. Each function asks for the next piece of information, creating a natural conversational flow. Don't ask for all details at once - collect them one by one as the user responds."
-        instructions += booking_instructions
+        # Add booking instructions only if no calendar is available
+        if not (config.cal_api_key and config.cal_event_type_id):
+            booking_instructions = "\n\nBOOKING INSTRUCTIONS: I don't have calendar integration available, so I cannot book appointments. I can only provide general information and assistance."
+            instructions += booking_instructions
         
         # Get first message from config
         first_message = config.first_message
         
         # Create calendar instance if configured using agent-specific settings
+        # Use async timeout to prevent blocking during initialization
         calendar = None
         if config.cal_api_key and config.cal_event_type_id:
             try:
@@ -918,8 +1030,15 @@ class EnhancedVoiceAgent:
                     event_type_id=config.cal_event_type_id,
                     event_type_slug=config.cal_event_type_slug
                 )
-                await calendar.initialize()
-                self.logger.info("Calendar integration initialized successfully with agent-specific settings")
+                
+                # Initialize calendar with timeout to prevent blocking
+                try:
+                    await asyncio.wait_for(calendar.initialize(), timeout=10.0)
+                    self.logger.info("Calendar integration initialized successfully with agent-specific settings")
+                except asyncio.TimeoutError:
+                    self.logger.warning("Calendar initialization timed out, continuing without calendar")
+                    calendar = None
+                    
             except Exception as e:
                 self.logger.error(f"Failed to initialize calendar with agent settings: {e}")
                 calendar = None
@@ -930,7 +1049,8 @@ class EnhancedVoiceAgent:
         self.logger.info(f"UNIFIED_AGENT_CONFIG | knowledge_base_id={config.knowledge_base_id} | enable_rag={config.enable_rag}")
         self.logger.info(f"UNIFIED_AGENT_CONFIG | calendar_configured={calendar is not None}")
         
-        # Create unified agent with function tools built-in and calendar integration
+        # Always use UnifiedAgent (which has the proper on_enter method)
+        self.logger.info("CREATING_UNIFIED_AGENT | using unified agent for all cases")
         assistant = UnifiedAgent(
             instructions=instructions, 
             first_message=first_message,
@@ -941,34 +1061,103 @@ class EnhancedVoiceAgent:
         return assistant
     
     def _create_session(self, config: AssistantConfig) -> AgentSession:
-        """Create agent session with proper configuration following sass-livekit pattern."""
+        """Create agent session with proper configuration following agents-main pattern."""
+        # Get settings first
+        settings = get_settings()
+        
         # Prewarm VAD for better performance
         vad = silero.VAD.load()
         
-        # Create session components
-        stt = lk_openai.STT(
-            model="whisper-1",
+        # Create session components - match agents-main working configuration
+        stt = deepgram.STT(
+            model="nova-3",
             language="en",
-            detect_language=True,
+            api_key=settings.deepgram.api_key
         )
+        self.logger.info(f"DEEPGRAM_STT_CONFIGURED | model=nova-3 | language=en | api_key={'SET' if settings.deepgram.api_key else 'NOT_SET'}")
         
-        llm = lk_openai.LLM(
-            model="gpt-4o-mini",
-            temperature=0.1,
-        )
+        # Choose LLM provider with Groq as primary and OpenAI as fallback
+        llm = None
+        llm_provider_used = None
         
-        tts = lk_openai.TTS(
-            model="tts-1",
-            voice="alloy",
-        )
+        # Try Groq first (primary provider)
+        if settings.groq.api_key:
+            try:
+                llm = lk_groq.LLM(
+                    model=settings.groq.model,
+                    api_key=settings.groq.api_key,
+                    temperature=settings.groq.temperature,
+                    parallel_tool_calls=True,
+                    tool_choice="auto",
+                )
+                llm_provider_used = "groq"
+                self.logger.info(f"GROQ_LLM_CONFIGURED | model={settings.groq.model} | temperature={settings.groq.temperature}")
+            except Exception as e:
+                self.logger.warning(f"GROQ_LLM_FAILED | {str(e)} | falling back to OpenAI")
+                llm = None
         
-        return AgentSession(
+        # Fallback to OpenAI if Groq failed or not configured
+        if llm is None and settings.openai.api_key:
+            try:
+                llm = lk_openai.LLM(
+                    model=settings.openai.model,
+                    temperature=settings.openai.temperature,
+                )
+                llm_provider_used = "openai"
+                self.logger.info(f"OPENAI_LLM_CONFIGURED | model={settings.openai.model} | temperature={settings.openai.temperature}")
+            except Exception as e:
+                self.logger.error(f"OPENAI_LLM_FAILED | {str(e)} | no LLM provider available")
+                raise RuntimeError("No LLM provider available - both Groq and OpenAI failed")
+        
+        # Final fallback - use default OpenAI configuration
+        if llm is None:
+            self.logger.warning("LLM_FALLBACK_TO_DEFAULT | using default OpenAI configuration")
+            llm = lk_openai.LLM(
+                model="gpt-4o-mini",
+                temperature=0.1,
+            )
+            llm_provider_used = "openai_default"
+        
+        self.logger.info(f"LLM_PROVIDER_SELECTED | provider={llm_provider_used} | model={getattr(llm, 'model', 'unknown')}")
+        
+        # Configure TTS - Use Rime with OpenAI fallback
+        if settings.rime.api_key:
+            try:
+                tts = lk_rime.TTS(
+                    model=settings.rime.model,
+                    speaker=settings.rime.speaker,
+                    speed_alpha=settings.rime.speed_alpha,
+                    reduce_latency=settings.rime.reduce_latency,
+                    api_key=settings.rime.api_key,
+                )
+                self.logger.info(f"RIME_TTS_CONFIGURED | model={settings.rime.model} | speaker={settings.rime.speaker}")
+            except Exception as e:
+                self.logger.warning(f"RIME_TTS_FAILED | {str(e)} | falling back to OpenAI TTS")
+                tts = lk_openai.TTS(
+                    model="tts-1",
+                    voice="alloy",
+                )
+        else:
+            self.logger.info("RIME_API_KEY_NOT_SET | using OpenAI TTS")
+            tts = lk_openai.TTS(
+                model="tts-1",
+                voice="alloy",
+            )
+        
+        session = AgentSession(
             vad=vad,
             stt=stt,
             llm=llm,
             tts=tts,
             allow_interruptions=True,
+            preemptive_generation=True,  # Enable preemptive generation for reduced latency
+            min_endpointing_delay=0.1,   # Voice on punctuation
+            max_endpointing_delay=1.5,   # Voice on no punctuation
+            user_away_timeout=50,        # Silence timeout + buffer
         )
+        
+        self.logger.info(f"AGENT_SESSION_CREATED | vad={vad is not None} | stt={stt is not None} | llm={llm is not None} | tts={tts is not None}")
+        return session
     
     def _get_job_metadata(self, job) -> Dict[str, Any]:
         """Extract metadata from job."""
@@ -1005,7 +1194,7 @@ class EnhancedVoiceAgent:
             return {}
     
     async def _get_assistant_from_database(self, assistant_id: Optional[str]) -> Dict[str, Any]:
-        """Get assistant data from Supabase database."""
+        """Get assistant data from Supabase database with timeout."""
         if not assistant_id or not self.supabase:
             self.logger.warning(f"ASSISTANT_DB_SKIP | assistant_id={assistant_id} | supabase_available={bool(self.supabase)}")
             return {}
@@ -1013,8 +1202,12 @@ class EnhancedVoiceAgent:
         try:
             self.logger.info(f"FETCHING_ASSISTANT_FROM_DB | assistant_id={assistant_id}")
             
-            # Query the agents table for the assistant
-            result = self.supabase.table("agents").select("*").eq("id", assistant_id).single().execute()
+            # Query the agents table for the assistant with timeout
+            async def db_query():
+                return self.supabase.table("agents").select("*").eq("id", assistant_id).single().execute()
+            
+            # Add timeout to prevent blocking during initialization
+            result = await asyncio.wait_for(db_query(), timeout=5.0)
             
             if result.data:
                 assistant_data = result.data
@@ -1029,10 +1222,75 @@ class EnhancedVoiceAgent:
                 self.logger.warning(f"ASSISTANT_NOT_FOUND_IN_DB | assistant_id={assistant_id}")
                 return {}
                 
+        except asyncio.TimeoutError:
+            self.logger.warning(f"ASSISTANT_DB_TIMEOUT | assistant_id={assistant_id} | timeout=5s")
+            return {}
         except Exception as e:
             self.logger.error(f"ASSISTANT_DB_ERROR | assistant_id={assistant_id} | error={str(e)}")
             return {}
     
+    async def _perform_call_analysis(
+        self, 
+        transcription: List[Dict[str, Any]], 
+        call_duration: int,
+        call_type: str,
+        agent: Optional[Agent] = None
+    ) -> Dict[str, Any]:
+        """
+        Perform comprehensive call analysis including AI-powered outcome determination.
+        """
+        analysis_results = {
+            "call_outcome": None,
+            "call_success": None
+        }
+        
+        try:
+            # Use OpenAI to analyze call outcome
+            outcome_analysis = await self.call_outcome_service.analyze_call_outcome(
+                transcription=transcription,
+                call_duration=call_duration,
+                call_type=call_type
+            )
+            
+            if outcome_analysis:
+                analysis_results["call_outcome"] = outcome_analysis.outcome
+                self.logger.info(f"AI_OUTCOME_ANALYSIS | outcome={outcome_analysis.outcome}")
+            else:
+                # Check actual booking status from agent before fallback analysis
+                actual_booking_status = None
+                if agent and hasattr(agent, '_booking_data') and hasattr(agent._booking_data, 'booked'):
+                    actual_booking_status = agent._booking_data.booked
+                    self.logger.info(f"ACTUAL_BOOKING_STATUS | booked={actual_booking_status}")
+                
+                # Use actual booking status if available, otherwise fallback to heuristic
+                if actual_booking_status is True:
+                    analysis_results["call_outcome"] = "Booked Appointment"
+                    self.logger.info(f"BOOKING_STATUS_CONFIRMED | outcome=Booked Appointment")
+                else:
+                    # Fallback to heuristic-based outcome determination
+                    fallback_outcome = self.call_outcome_service.get_fallback_outcome(transcription, call_duration)
+                    analysis_results["call_outcome"] = fallback_outcome
+                    self.logger.warning(f"FALLBACK_OUTCOME_ANALYSIS | outcome={fallback_outcome}")
+            
+            # Evaluate call success using LLM
+            try:
+                call_success = await self.call_outcome_service.evaluate_call_success(transcription)
+                analysis_results["call_success"] = call_success
+                self.logger.info(f"CALL_SUCCESS_EVALUATED | success={call_success}")
+            except Exception as e:
+                self.logger.error(f"CALL_SUCCESS_EVALUATION_ERROR | error={str(e)}")
+                analysis_results["call_success"] = True  # Default to True for completed calls
+            
+            self.logger.info(f"POST_CALL_ANALYSIS_COMPLETE | outcome={analysis_results['call_outcome']} | success={analysis_results['call_success']}")
+            
+        except Exception as e:
+            self.logger.error(f"POST_CALL_ANALYSIS_ERROR | error={str(e)}")
+            # Fallback to basic analysis
+            analysis_results["call_outcome"] = "Qualified"
+            analysis_results["call_success"] = True
+        
+        return analysis_results
+
     async def _save_call_history_safe(self, ctx: JobContext, assistant, session, session_history: list, participant, call_id: str, config: AssistantConfig) -> None:
         """
         Safely save call history with comprehensive error handling (like sass-livekit).
@@ -1063,6 +1321,14 @@ class EnhancedVoiceAgent:
             ended_at = session.end_time.isoformat() if hasattr(session, 'end_time') and session.end_time else None
             transcription = self._extract_transcription_from_history(session_history)
             
+            # Perform AI analysis of the call
+            analysis_results = await self._perform_call_analysis(
+                transcription=transcription,
+                call_duration=duration_seconds,
+                call_type="inbound",
+                agent=assistant
+            )
+            
             call_data = {
                 'agent_id': assistant_id,
                 'user_id': config.user_id,  # Get user_id from config
@@ -1070,12 +1336,12 @@ class EnhancedVoiceAgent:
                 'contact_phone': contact_phone,
                 'status': 'completed',
                 'duration_seconds': duration_seconds,
-                'outcome': 'completed',
+                'outcome': analysis_results.get('call_outcome', 'completed'),
                 'notes': None,
                 'call_sid': call_sid,
                 'started_at': started_at,
                 'ended_at': ended_at,
-                'success': True,
+                'success': analysis_results.get('call_success', True),
                 'transcription': transcription
             }
             
@@ -1247,40 +1513,37 @@ class EnhancedVoiceAgent:
 # ===================== Main Entry Point =====================
 
 async def entrypoint(ctx: JobContext):
-    """Main entry point for the LiveKit agent."""
+    """Main entry point for the LiveKit agent using CallProcessor."""
     try:
         # Debug logging
         logging.info(f"AGENT_JOB_RECEIVED | job_id={ctx.job.id} | room={ctx.job.room}")
         logging.info(f"AGENT_JOB_METADATA | metadata={ctx.job.metadata}")
         
-        # Get settings
-        settings = get_settings()
+        # Import and use CallProcessor
+        from core.call_processor import process_call
         
-        # Create enhanced voice agent
-        agent = EnhancedVoiceAgent(settings)
-        
-        # Determine call type
-        phone_number = get_phone_number_from_job(ctx.job)
-        
-        logging.info(f"AGENT_CALL_TYPE | phone_number={phone_number} | type={'OUTBOUND' if phone_number else 'INBOUND'}")
-        
-        if phone_number is not None:
-            # OUTBOUND: Campaign dialer mode
-            logging.info(f"AGENT_HANDLING_OUTBOUND | phone={phone_number}")
-            await agent.handle_outbound_call(ctx)
-        else:
-            # INBOUND: Customer service mode
-            logging.info(f"AGENT_HANDLING_INBOUND | room={ctx.room.name}")
-            await agent.handle_inbound_call(ctx)
+        # Process the call using the CallProcessor
+        await process_call(ctx)
             
     except Exception as e:
         logging.error(f"ENTRYPOINT_ERROR | error={str(e)}", exc_info=True)
         raise
 
 if __name__ == "__main__":
-    # Run the agent using the CLI
+    # Run the agent using the CLI with timeout configuration
     agent_name = os.getenv("LK_AGENT_NAME", "ai")
-    agents.cli.run_app(agents.WorkerOptions(
+    
+    # Get settings for timeout configuration
+    settings = get_settings()
+    
+    # Configure worker options with timeout settings
+    worker_options = agents.WorkerOptions(
         entrypoint_fnc=entrypoint,
-        agent_name=agent_name
-    ))
+        agent_name=agent_name,
+        # Add timeout configuration to prevent AssignmentTimeoutError
+        initialize_process_timeout=settings.assignment_timeout,  # Timeout for process initialization
+        shutdown_process_timeout=settings.job_timeout,          # Timeout for process shutdown
+        drain_timeout=int(settings.job_timeout),               # Timeout for draining jobs
+    )
+    
+    agents.cli.run_app(worker_options)
