@@ -6,5 +6,6 @@ export const NEXT_PUBLIC_LIVEKIT_URL = import.meta.env.VITE_LIVEKIT_URL || "wss:
 export const API_BASE_URL = `${BACKEND_URL}/api/v1`;
 export const AUTH_ENDPOINT = `${API_BASE_URL}/auth`;
 export const AGENTS_ENDPOINT = `${API_BASE_URL}/agents`;
+export const AGENT_TEMPLATES_ENDPOINT = `${API_BASE_URL}/agent-templates`;
 export const ANALYTICS_ENDPOINT = `${API_BASE_URL}/analytics`;
 export const CALLS_ENDPOINT = `${API_BASE_URL}/calls`;

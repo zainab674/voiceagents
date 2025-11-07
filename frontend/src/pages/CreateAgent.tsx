@@ -6,20 +6,39 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
-import { Bot, ArrowLeft, Save, Calendar, Database, Users } from "lucide-react";
+import { Bot, ArrowLeft, Save, Calendar, Database, Users, Layers, Sparkles, Check, RefreshCw } from "lucide-react";
 import { AGENTS_ENDPOINT } from "@/constants/URLConstant";
 import CRMContactSelector from "@/components/CRMContactSelector";
+import { agentTemplateApi } from "@/http/agentTemplateHttp";
 
 interface KnowledgeBase {
   id: string;
   name: string;
   description: string;
   pinecone_index_status: string;
+}
+
+interface AgentTemplate {
+  id: string;
+  name: string;
+  description: string;
+  prompt: string;
+  sms_prompt?: string | null;
+  first_message?: string | null;
+  cal_event_type_slug?: string | null;
+  cal_event_type_id?: string | null;
+  cal_timezone?: string | null;
+  knowledge_base_id?: string | null;
+  is_public?: boolean;
+  category?: string | null;
+  tags?: string[] | null;
+  updated_at?: string | null;
 }
 
 const CreateAgent = () => {
@@ -45,12 +64,30 @@ const CreateAgent = () => {
   const [contactSource, setContactSource] = useState<'manual' | 'crm'>('manual');
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
 
+  // Template library state
+  const [templates, setTemplates] = useState<AgentTemplate[]>([]);
+  const [templateLoading, setTemplateLoading] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+
+  const selectedTemplate = selectedTemplateId
+    ? templates.find((template) => template.id === selectedTemplateId)
+    : undefined;
+
   // Load knowledge bases on mount
   useEffect(() => {
     if (user) {
       fetchKnowledgeBases();
+      fetchTemplates();
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!selectedTemplate || !selectedTemplate.knowledge_base_id) return;
+    if (knowledgeBases.some((kb) => kb.id === selectedTemplate.knowledge_base_id)) {
+      setEnableRAG(true);
+      setSelectedKnowledgeBase(selectedTemplate.knowledge_base_id);
+    }
+  }, [knowledgeBases, selectedTemplate]);
 
   const fetchKnowledgeBases = async () => {
     try {
@@ -77,6 +114,58 @@ const CreateAgent = () => {
     } catch (error) {
       console.error('Error fetching knowledge bases:', error);
     }
+  };
+
+  const fetchTemplates = async () => {
+    try {
+      setTemplateLoading(true);
+      const response = await agentTemplateApi.listTemplates();
+      if (response.success) {
+        setTemplates(response.data.templates || []);
+      }
+    } catch (error: any) {
+      console.error('Error fetching templates:', error);
+      toast({
+        title: "Unable to load templates",
+        description: error?.message || 'Please try again later.',
+        variant: "destructive",
+      });
+    } finally {
+      setTemplateLoading(false);
+    }
+  };
+
+  const handleApplyTemplate = (template: AgentTemplate) => {
+    setTitle(template.name || '');
+    setDescription(template.description || '');
+    setPrompt(template.prompt || '');
+    setSmsPrompt(template.sms_prompt || '');
+    setFirstMessage(template.first_message || '');
+    setCalEventTypeSlug(template.cal_event_type_slug || '');
+    setCalEventTypeId(template.cal_event_type_id || '');
+    setCalTimezone(template.cal_timezone || 'UTC');
+    setSelectedTemplateId(template.id);
+
+    if (template.knowledge_base_id && knowledgeBases.some((kb) => kb.id === template.knowledge_base_id)) {
+      setEnableRAG(true);
+      setSelectedKnowledgeBase(template.knowledge_base_id);
+    } else {
+      setEnableRAG(false);
+      setSelectedKnowledgeBase('');
+    }
+
+    toast({
+      title: "Template applied",
+      description: `${template.name} loaded successfully.`
+    });
+  };
+
+  const handleClearTemplate = () => {
+    setSelectedTemplateId(null);
+    toast({
+      title: "Template cleared",
+      description: "You can continue customizing your agent."
+    });
   };
 
 
@@ -126,7 +215,8 @@ const CreateAgent = () => {
           calTimezone: calTimezone,
           knowledgeBaseId: enableRAG && selectedKnowledgeBase ? selectedKnowledgeBase : null,
           contactSource: contactSource,
-          selectedContacts: contactSource === 'crm' ? selectedContacts : null
+          selectedContacts: contactSource === 'crm' ? selectedContacts : null,
+          templateId: selectedTemplateId
         })
       });
 
@@ -192,6 +282,89 @@ const CreateAgent = () => {
             </p>
           </div>
 
+          {/* Template Library */}
+          <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-primary" />
+                Start from a Template
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {templateLoading ? (
+                <div className="flex items-center justify-center py-6 text-muted-foreground">
+                  <RefreshCw className="w-5 h-5 animate-spin mr-2" />
+                  Loading templates...
+                </div>
+              ) : templates.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-6 text-center text-muted-foreground">
+                  <Layers className="w-12 h-12 mb-4 opacity-40" />
+                  <p className="font-medium">No templates available yet</p>
+                  <p className="text-sm">
+                    Your admin can create assistant templates in the admin panel.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2">
+                  {templates.map((template) => {
+                    const isSelected = selectedTemplateId === template.id;
+                    return (
+                      <div
+                        key={template.id}
+                        className={`rounded-lg border p-4 transition-colors ${isSelected ? 'border-primary bg-primary/5' : 'border-border/60 bg-muted/30 hover:border-primary/40 hover:bg-muted'}`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-lg font-semibold">{template.name}</h3>
+                              {template.category && (
+                                <Badge variant="secondary" className="text-xs">
+                                  {template.category}
+                                </Badge>
+                              )}
+                              {isSelected && (
+                                <Badge variant="default" className="flex items-center gap-1 text-xs">
+                                  <Check className="w-3 h-3" />
+                                  Selected
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="mt-2 text-sm text-muted-foreground line-clamp-3">
+                              {template.description}
+                            </p>
+                          </div>
+                        </div>
+
+                        {Array.isArray(template.tags) && template.tags.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {template.tags.map((tag) => (
+                              <Badge key={tag} variant="outline" className="text-xs">
+                                {tag}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="mt-4 flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground">
+                            Updated {template.updated_at ? new Date(template.updated_at).toLocaleDateString() : 'recently'}
+                          </span>
+                          <Button
+                            variant={isSelected ? 'secondary' : 'outline'}
+                            size="sm"
+                            onClick={() => (isSelected ? handleClearTemplate() : handleApplyTemplate(template))}
+                          >
+                            {isSelected ? 'Clear Template' : 'Use Template'}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Agent Creation Form */}
           <Card className="shadow-lg">
             <CardHeader>
@@ -201,6 +374,18 @@ const CreateAgent = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
+              {selectedTemplate && (
+                <div className="mb-6 flex items-center justify-between rounded-lg border border-primary/40 bg-primary/5 px-4 py-3 text-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
+                    <span>Template applied:</span>
+                    <span className="font-semibold">{selectedTemplate.name}</span>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={handleClearTemplate}>
+                    Clear
+                  </Button>
+                </div>
+              )}
+
               <Tabs defaultValue="basic" className="space-y-6">
                 <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="basic">Basic Info</TabsTrigger>

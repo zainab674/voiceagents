@@ -36,7 +36,7 @@ router.get("/test", authenticateToken, async (req, res) => {
 // Create a new agent
 router.post("/", authenticateToken, async (req, res) => {
   try {
-    const { name, description, prompt, smsPrompt, firstMessage, calApiKey, calEventTypeSlug, calTimezone, calEventTypeId, calEventTitle, calEventLength, knowledgeBaseId } = req.body;
+    const { name, description, prompt, smsPrompt, firstMessage, calApiKey, calEventTypeSlug, calTimezone, calEventTypeId, calEventTitle, calEventLength, knowledgeBaseId, templateId } = req.body;
     const userId = req.user.userId;
 
     console.log('Creating agent for user:', userId);
@@ -93,6 +93,7 @@ router.post("/", authenticateToken, async (req, res) => {
           cal_timezone: finalTimezone,
           cal_enabled: !!calApiKey,
           knowledge_base_id: knowledgeBaseId || null,
+        template_id: templateId || null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }

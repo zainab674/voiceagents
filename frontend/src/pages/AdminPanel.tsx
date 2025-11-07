@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { 
   Shield, 
   Users, 
@@ -17,15 +18,22 @@ import {
   Crown,
   RefreshCw,
   Search,
-  Eye
+  Eye,
+  Layers,
+  Plus,
+  Globe,
+  Lock
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { userApi } from "@/http/userHttp";
+import { agentTemplateApi } from "@/http/agentTemplateHttp";
 import { handleAuthError } from "@/utils/authHelper";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 
 const AdminPanel = () => {
   const navigate = useNavigate();
+  const { user: currentUser, loading: authLoading } = useAuth();
   
   // Real-time user data state
   const [users, setUsers] = useState([]);
@@ -46,6 +54,26 @@ const AdminPanel = () => {
     limit: 10,
     total: 0,
     totalPages: 0
+  });
+
+  // Template management state
+  const [templates, setTemplates] = useState([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState(null);
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [templateForm, setTemplateForm] = useState({
+    name: '',
+    description: '',
+    prompt: '',
+    smsPrompt: '',
+    firstMessage: '',
+    calEventTypeSlug: '',
+    calEventTypeId: '',
+    calTimezone: 'UTC',
+    isPublic: true,
+    category: '',
+    tags: ''
   });
 
   // Edit modal state
@@ -76,8 +104,197 @@ const AdminPanel = () => {
   });
 
   const { toast } = useToast();
+  const isAdmin = currentUser?.role === 'admin';
+
+  const resetTemplateForm = () => {
+    setTemplateForm({
+      name: '',
+      description: '',
+      prompt: '',
+      smsPrompt: '',
+      firstMessage: '',
+      calEventTypeSlug: '',
+      calEventTypeId: '',
+      calTimezone: 'UTC',
+      isPublic: true,
+      category: '',
+      tags: ''
+    });
+  };
+
+  const handleTemplateFormChange = (field, value) => {
+    setTemplateForm(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const openCreateTemplateModal = () => {
+    setEditingTemplate(null);
+    resetTemplateForm();
+    setTemplateModalOpen(true);
+  };
+
+  const closeTemplateModal = () => {
+    setTemplateModalOpen(false);
+    setEditingTemplate(null);
+    resetTemplateForm();
+  };
+
+  const handleEditTemplate = (template) => {
+    setEditingTemplate(template);
+    setTemplateForm({
+      name: template.name || '',
+      description: template.description || '',
+      prompt: template.prompt || '',
+      smsPrompt: template.sms_prompt || '',
+      firstMessage: template.first_message || '',
+      calEventTypeSlug: template.cal_event_type_slug || '',
+      calEventTypeId: template.cal_event_type_id || '',
+      calTimezone: template.cal_timezone || 'UTC',
+      isPublic: template.is_public ?? true,
+      category: template.category || '',
+      tags: Array.isArray(template.tags) ? template.tags.join(', ') : ''
+    });
+    setTemplateModalOpen(true);
+  };
 
   // Data fetching functions
+  const fetchTemplates = useCallback(async (showLoading = true) => {
+    if (!isAdmin) return;
+    try {
+      if (showLoading) setTemplatesLoading(true);
+      const response = await agentTemplateApi.listTemplates({ includePrivate: 'true' });
+
+      if (response.success) {
+        setTemplates(response.data.templates || []);
+        return;
+      }
+
+      throw new Error(response.message || 'Failed to fetch templates');
+    } catch (error) {
+      console.error('Error fetching templates:', error);
+      if (await handleAuthError(error, navigate)) {
+        toast({
+          title: "Session Expired",
+          description: "Please log in again to continue",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      toast({
+        title: "Error",
+        description: "Failed to fetch templates",
+        variant: "destructive"
+      });
+      setTemplates([]);
+    } finally {
+      if (showLoading) setTemplatesLoading(false);
+    }
+  }, [handleAuthError, isAdmin, navigate, toast]);
+
+  const handleDeleteTemplate = async (templateId, templateName) => {
+    if (!confirm(`Are you sure you want to delete "${templateName}"?`)) return;
+
+    try {
+      const response = await agentTemplateApi.deleteTemplate(templateId);
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to delete template');
+      }
+
+      toast({
+        title: "Template Deleted",
+        description: `"${templateName}" has been removed.`
+      });
+      await fetchTemplates();
+    } catch (error) {
+      console.error('Error deleting template:', error);
+      if (await handleAuthError(error, navigate)) {
+        toast({
+          title: "Session Expired",
+          description: "Please log in again to continue",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      toast({
+        title: "Error",
+        description: "Failed to delete template",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleSubmitTemplate = async () => {
+    if (!templateForm.name.trim() || !templateForm.description.trim() || !templateForm.prompt.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in the required fields (name, description, prompt)",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const payload = {
+      name: templateForm.name.trim(),
+      description: templateForm.description.trim(),
+      prompt: templateForm.prompt.trim(),
+      smsPrompt: templateForm.smsPrompt.trim() || null,
+      firstMessage: templateForm.firstMessage.trim() || null,
+      calEventTypeSlug: templateForm.calEventTypeSlug.trim() || null,
+      calEventTypeId: templateForm.calEventTypeId.trim() || null,
+      calTimezone: templateForm.calTimezone || 'UTC',
+      isPublic: templateForm.isPublic,
+      category: templateForm.category.trim() || null,
+      tags: templateForm.tags
+    };
+
+    setSavingTemplate(true);
+    try {
+      if (editingTemplate) {
+        const response = await agentTemplateApi.updateTemplate(editingTemplate.id, payload);
+        if (!response.success) {
+          throw new Error(response.message || 'Failed to update template');
+        }
+        toast({
+          title: "Template Updated",
+          description: `"${templateForm.name}" has been updated successfully.`
+        });
+      } else {
+        const response = await agentTemplateApi.createTemplate(payload);
+        if (!response.success) {
+          throw new Error(response.message || 'Failed to create template');
+        }
+        toast({
+          title: "Template Created",
+          description: `"${templateForm.name}" is now available for users.`
+        });
+      }
+
+      await fetchTemplates();
+      closeTemplateModal();
+    } catch (error) {
+      console.error('Error saving template:', error);
+      if (await handleAuthError(error, navigate)) {
+        toast({
+          title: "Session Expired",
+          description: "Please log in again to continue",
+          variant: "destructive"
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: editingTemplate ? 'Failed to update template' : 'Failed to create template',
+          variant: "destructive"
+        });
+      }
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
   const fetchUsers = useCallback(async (showLoading = true) => {
     try {
       if (showLoading) setLoading(true);
@@ -158,24 +375,42 @@ const AdminPanel = () => {
   }, []);
 
   const refreshData = useCallback(async () => {
+    if (!isAdmin) return;
     setRefreshing(true);
-    await Promise.all([fetchUsers(false), fetchUserStats()]);
+    await Promise.all([
+      fetchUsers(false),
+      fetchUserStats(),
+      fetchTemplates(false)
+    ]);
     setRefreshing(false);
-  }, [fetchUsers, fetchUserStats]);
+  }, [fetchTemplates, fetchUserStats, fetchUsers, isAdmin]);
 
   // Real-time polling effect
   useEffect(() => {
-    // Initial load
+    if (!isAdmin) return;
+
     fetchUsers();
     fetchUserStats();
+    fetchTemplates();
 
-    // Set up polling every 10 seconds
     const interval = setInterval(() => {
       refreshData();
     }, 10000);
 
     return () => clearInterval(interval);
-  }, [fetchUsers, fetchUserStats, refreshData]);
+  }, [fetchTemplates, fetchUserStats, fetchUsers, isAdmin, refreshData]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (currentUser && currentUser.role !== 'admin') {
+      toast({
+        title: "Access Denied",
+        description: "You need admin privileges to view this page.",
+        variant: "destructive"
+      });
+      navigate('/dashboard');
+    }
+  }, [authLoading, currentUser, navigate, toast]);
 
   // Handle filter changes
   const handleFilterChange = (key, value) => {
@@ -309,6 +544,30 @@ const AdminPanel = () => {
   };
 
 
+  if (authLoading) {
+    return (
+      <div className="p-6">
+        <Card>
+          <CardContent className="p-6 text-center text-muted-foreground">
+            Loading admin tools...
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="p-6">
+        <Card>
+          <CardContent className="p-6 text-center text-muted-foreground">
+            You need admin access to view this page.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -322,8 +581,9 @@ const AdminPanel = () => {
       </div>
 
       <Tabs defaultValue="users" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-1">
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="users">User Management</TabsTrigger>
+          <TabsTrigger value="templates">Assistant Templates</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="space-y-6">
@@ -511,7 +771,245 @@ const AdminPanel = () => {
           </Card>
         </TabsContent>
 
+        <TabsContent value="templates" className="space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-semibold">Assistant Templates Library</h2>
+              <p className="text-muted-foreground">
+                Create reusable blueprints your team can use to spin up new assistants quickly.
+              </p>
+            </div>
+            <Button
+              onClick={openCreateTemplateModal}
+              className="bg-gradient-to-r from-primary to-accent"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              New Template
+            </Button>
+          </div>
+
+          <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Layers className="w-5 h-5" />
+                Templates Overview
+                {templatesLoading && <RefreshCw className="w-4 h-4 animate-spin" />}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {templatesLoading ? (
+                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                  <RefreshCw className="w-6 h-6 animate-spin mb-3" />
+                  <span>Loading templates...</span>
+                </div>
+              ) : templates.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+                  <Layers className="w-12 h-12 mb-4 opacity-50" />
+                  <p className="text-lg font-medium mb-2">No templates yet</p>
+                  <p className="text-sm mb-4">Create your first template to give users a head start.</p>
+                  <Button onClick={openCreateTemplateModal} className="bg-gradient-to-r from-primary to-accent">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create Template
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {templates.map((template) => (
+                    <div
+                      key={template.id}
+                      className="rounded-lg border border-border/60 bg-muted/40 p-5 transition-colors hover:border-primary/50 hover:bg-muted"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-lg font-semibold">{template.name}</h3>
+                            <Badge variant={template.is_public ? "default" : "secondary"} className="flex items-center gap-1">
+                              {template.is_public ? <Globe className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                              {template.is_public ? 'Public' : 'Private'}
+                            </Badge>
+                          </div>
+                          {template.category && (
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground mt-1">{template.category}</p>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEditTemplate(template)}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            onClick={() => handleDeleteTemplate(template.id, template.name)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      <p className="mt-3 text-sm text-muted-foreground line-clamp-3">{template.description}</p>
+
+                      {Array.isArray(template.tags) && template.tags.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {template.tags.map((tag) => (
+                            <Badge key={tag} variant="secondary" className="text-xs">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="mt-4 grid gap-2 text-xs text-muted-foreground">
+                        <div>
+                          <span className="font-medium">Prompt Preview:</span>
+                          <p className="mt-1 line-clamp-2 bg-background/60 p-2 rounded">{template.prompt}</p>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>
+                            Updated {template.updated_at ? new Date(template.updated_at).toLocaleDateString() : '—'}
+                          </span>
+                          <span>Timezone: {template.cal_timezone || 'UTC'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
       </Tabs>
+
+      {/* Template Modal */}
+      <Dialog open={templateModalOpen} onOpenChange={(open) => (open ? setTemplateModalOpen(true) : closeTemplateModal())}>
+        <DialogContent className="sm:max-w-[720px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingTemplate ? 'Edit Assistant Template' : 'New Assistant Template'}</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-5 py-2">
+            <div className="grid gap-2">
+              <Label htmlFor="template-name">Template Name<span className="text-red-500"> *</span></Label>
+              <Input
+                id="template-name"
+                placeholder="e.g., B2B SaaS Demo Setter"
+                value={templateForm.name}
+                onChange={(e) => handleTemplateFormChange('name', e.target.value)}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="template-description">Description<span className="text-red-500"> *</span></Label>
+              <Textarea
+                id="template-description"
+                placeholder="Summarize what this assistant does and when to use it"
+                value={templateForm.description}
+                onChange={(e) => handleTemplateFormChange('description', e.target.value)}
+                className="min-h-[100px]"
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="template-prompt">Core Prompt<span className="text-red-500"> *</span></Label>
+              <Textarea
+                id="template-prompt"
+                placeholder="Detailed instructions the assistant should follow"
+                value={templateForm.prompt}
+                onChange={(e) => handleTemplateFormChange('prompt', e.target.value)}
+                className="min-h-[160px]"
+              />
+              <p className="text-xs text-muted-foreground">Provide tone, goals, guardrails, and example responses to guide users.</p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="template-sms">SMS Prompt (Optional)</Label>
+                <Textarea
+                  id="template-sms"
+                  placeholder="Short-form instructions for SMS experiences"
+                  value={templateForm.smsPrompt}
+                  onChange={(e) => handleTemplateFormChange('smsPrompt', e.target.value)}
+                  className="min-h-[100px]"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="template-first-message">First Message (Optional)</Label>
+                <Input
+                  id="template-first-message"
+                  placeholder="Default greeting to kick off conversations"
+                  value={templateForm.firstMessage}
+                  onChange={(e) => handleTemplateFormChange('firstMessage', e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="template-category">Category (Optional)</Label>
+                <Input
+                  id="template-category"
+                  placeholder="e.g., Sales, Support, Recruiting"
+                  value={templateForm.category}
+                  onChange={(e) => handleTemplateFormChange('category', e.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="template-tags">Tags (comma separated)</Label>
+                <Input
+                  id="template-tags"
+                  placeholder="appointment setting, saas, outbound"
+                  value={templateForm.tags}
+                  onChange={(e) => handleTemplateFormChange('tags', e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="template-timezone">Default Timezone</Label>
+                <Input
+                  id="template-timezone"
+                  placeholder="UTC"
+                  value={templateForm.calTimezone}
+                  onChange={(e) => handleTemplateFormChange('calTimezone', e.target.value)}
+                />
+              </div>
+              <div className="flex items-center justify-between rounded-md border border-dashed border-border/70 p-4">
+                <div>
+                  <p className="font-medium">Public Template</p>
+                  <p className="text-xs text-muted-foreground">Public templates are visible to all users.</p>
+                </div>
+                <Switch
+                  id="template-public"
+                  checked={templateForm.isPublic}
+                  onCheckedChange={(value) => handleTemplateFormChange('isPublic', value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeTemplateModal} disabled={savingTemplate}>
+              Cancel
+            </Button>
+            <Button onClick={handleSubmitTemplate} disabled={savingTemplate} className="bg-gradient-to-r from-primary to-accent">
+              {savingTemplate ? (
+                <div className="flex items-center gap-2">
+                  <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-white" />
+                  Saving...
+                </div>
+              ) : (
+                'Save Template'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* View User Details Modal */}
       <Dialog open={viewModalOpen} onOpenChange={setViewModalOpen}>

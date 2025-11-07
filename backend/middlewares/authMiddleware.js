@@ -1,16 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
-import dotenv from 'dotenv';
-
-dotenv.config();
-
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseServiceKey) {
-  console.error('Missing Supabase environment variables');
-}
-
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+import { supabase } from '#lib/supabase.js';
 
 export const authenticateToken = async (req, res, next) => {
   try {
@@ -49,8 +37,38 @@ export const authenticateToken = async (req, res, next) => {
       });
     }
 
-    console.log('Auth middleware - User authenticated:', user.id);
-    req.user = { userId: user.id, email: user.email };
+    const { data: userProfile, error: userProfileError } = await supabase
+      .from('users')
+      .select('id, role, status')
+      .eq('id', user.id)
+      .single();
+
+    if (userProfileError && userProfileError.code !== 'PGRST116') {
+      console.error('Auth middleware - Failed to load user profile:', userProfileError.message);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to load user profile',
+        error: userProfileError.message
+      });
+    }
+
+    if (userProfile && userProfile.status && userProfile.status !== 'Active') {
+      console.log('Auth middleware - User not active:', userProfile.status);
+      return res.status(403).json({
+        success: false,
+        message: 'Your account is not active. Please contact support.'
+      });
+    }
+
+    const role = userProfile?.role || user?.user_metadata?.role || 'user';
+
+    console.log('Auth middleware - User authenticated:', user.id, 'role:', role);
+    req.user = {
+      userId: user.id,
+      email: user.email,
+      role,
+      status: userProfile?.status || 'Active'
+    };
     next();
 
   } catch (error) {
@@ -70,7 +88,18 @@ export const optionalAuth = async (req, res, next) => {
     if (token) {
       const { data: { user }, error } = await supabase.auth.getUser(token);
       if (!error && user) {
-        req.user = { userId: user.id, email: user.email };
+        const { data: userProfile } = await supabase
+          .from('users')
+          .select('id, role, status')
+          .eq('id', user.id)
+          .single();
+
+        req.user = {
+          userId: user.id,
+          email: user.email,
+          role: userProfile?.role || user?.user_metadata?.role || 'user',
+          status: userProfile?.status || 'Active'
+        };
       }
     }
 
@@ -79,4 +108,26 @@ export const optionalAuth = async (req, res, next) => {
     // Continue without authentication
     next();
   }
+};
+
+export const authorizeRoles = (...allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    const userRole = req.user.role || 'user';
+
+    if (!allowedRoles.includes(userRole)) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to perform this action'
+      });
+    }
+
+    next();
+  };
 };

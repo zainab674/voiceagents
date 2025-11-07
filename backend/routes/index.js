@@ -15,6 +15,7 @@ import csvRoute from "#routes/csvRoute.js";
 import knowledgeBaseRoute from "#routes/knowledgeBaseRoute.js";
 import userRoute from "#routes/userRoute.js";
 import crmRoute from "#routes/crmRoute.js";
+import agentTemplateRoute from "#routes/agentTemplateRoute.js";
 import { recordingWebhookRouter } from "#services/recordingService.js";
 
 const router = express.Router();
@@ -35,6 +36,7 @@ router.use("/csv", csvRoute);
 router.use("/knowledge-base", knowledgeBaseRoute);
 router.use("/users", userRoute);
 router.use("/crm", crmRoute);
+router.use("/agent-templates", agentTemplateRoute);
 router.use("/recording", recordingWebhookRouter);
 
 export default router;

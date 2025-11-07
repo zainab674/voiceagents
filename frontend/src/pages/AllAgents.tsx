@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,10 +20,20 @@ import {
   Clock,
   User,
   Save,
-  Database
+  Database,
+  Sparkles
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { AGENTS_ENDPOINT } from "@/constants/URLConstant";
+import { agentTemplateApi } from "@/http/agentTemplateHttp";
+
+interface AgentTemplate {
+  id: string;
+  name: string;
+  description: string;
+  prompt: string;
+  updated_at?: string | null;
+}
 
 const AllAgents = () => {
   const { user } = useAuth();
@@ -32,6 +42,23 @@ const AllAgents = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filteredAgents, setFilteredAgents] = useState([]);
+
+  const [templates, setTemplates] = useState<AgentTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [cloneModalOpen, setCloneModalOpen] = useState(false);
+  const [cloneForm, setCloneForm] = useState({
+    templateId: '',
+    name: '',
+    description: '',
+    prompt: ''
+  });
+  const [isCloning, setIsCloning] = useState(false);
+
+  const templateLookup = useMemo(() => {
+    const map = new Map<string, AgentTemplate>();
+    templates.forEach((template) => map.set(template.id, template));
+    return map;
+  }, [templates]);
 
   // Edit modal state
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -60,6 +87,7 @@ const AllAgents = () => {
     if (user) {
       fetchAgents();
       fetchKnowledgeBases();
+      fetchTemplates();
     }
   }, [user]);
 
@@ -127,6 +155,89 @@ const AllAgents = () => {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchTemplates = async () => {
+    if (!user) return;
+
+    try {
+      setTemplatesLoading(true);
+      const response = await agentTemplateApi.listTemplates();
+      if (response.success) {
+        setTemplates(response.data.templates || []);
+      }
+    } catch (error) {
+      console.error('Error fetching templates:', error);
+    } finally {
+      setTemplatesLoading(false);
+    }
+  };
+
+  const openCloneModal = () => {
+    if (templates.length > 0) {
+      const template = templates[0];
+      setCloneForm({
+        templateId: template.id,
+        name: template.name,
+        description: template.description,
+        prompt: template.prompt
+      });
+    } else {
+      setCloneForm({ templateId: '', name: '', description: '', prompt: '' });
+    }
+    setCloneModalOpen(true);
+  };
+
+  const handleSelectCloneTemplate = (templateId: string) => {
+    const template = templateLookup.get(templateId);
+    setCloneForm({
+      templateId,
+      name: template ? `${template.name}` : '',
+      description: template?.description || '',
+      prompt: template?.prompt || ''
+    });
+  };
+
+  const handleCloneAgent = async () => {
+    if (!cloneForm.templateId) {
+      toast({
+        title: "Select a template",
+        description: "Please choose a template to clone from.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const overrides: Record<string, string> = {};
+    if (cloneForm.name.trim()) overrides.name = cloneForm.name.trim();
+    if (cloneForm.description.trim()) overrides.description = cloneForm.description.trim();
+    if (cloneForm.prompt.trim()) overrides.prompt = cloneForm.prompt.trim();
+
+    setIsCloning(true);
+    try {
+      const response = await agentTemplateApi.cloneToAgent(cloneForm.templateId, overrides);
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to create agent');
+      }
+
+      toast({
+        title: "Agent created",
+        description: "Your assistant was created from the selected template."
+      });
+
+      setCloneModalOpen(false);
+      setCloneForm({ templateId: '', name: '', description: '', prompt: '' });
+      await fetchAgents();
+    } catch (error) {
+      console.error('Error cloning agent:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Failed to create agent from template',
+        variant: "destructive"
+      });
+    } finally {
+      setIsCloning(false);
     }
   };
 
@@ -323,10 +434,18 @@ const AllAgents = () => {
             Manage and monitor all your AI agents in one place
           </p>
         </div>
-        <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={openCloneModal}
+            disabled={templatesLoading}
+          >
+            <Sparkles className="w-4 h-4 mr-2" />
+            Create From Template
+          </Button>
           <Button
             onClick={handleCreateAgent}
-            className="bg-gradient-to-r from-primary to-accent mr-4"
+            className="bg-gradient-to-r from-primary to-accent"
           >
             <Plus className="w-4 h-4 mr-2" />
             Create New Agent
@@ -423,7 +542,15 @@ const AllAgents = () => {
                             <Bot className="w-5 h-5 text-white" />
                           </div>
                           <div>
-                            <div className="font-medium">{agent.name}</div>
+                        <div className="flex items-center gap-2 font-medium">
+                          <span>{agent.name}</span>
+                          {agent.template_id && (
+                            <Badge variant="outline" className="flex items-center gap-1 text-xs">
+                              <Sparkles className="w-3 h-3" />
+                              {templateLookup.get(agent.template_id)?.name || 'Template'}
+                            </Badge>
+                          )}
+                        </div>
                             {/* <div className="text-sm text-muted-foreground">ID: {agent.id.slice(0, 8)}...</div> */}
                           </div>
                         </div>
@@ -778,6 +905,109 @@ const AllAgents = () => {
                   <Save className="w-4 h-4 mr-2" />
                   Update Agent
                 </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Clone Agent From Template */}
+      <Dialog
+        open={cloneModalOpen}
+        onOpenChange={(open) => {
+          setCloneModalOpen(open);
+          if (!open) {
+            setCloneForm({ templateId: '', name: '', description: '', prompt: '' });
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[520px] max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5" />
+              Create Agent From Template
+            </DialogTitle>
+            <DialogDescription>
+              Select a template and optionally customize the name, description, or prompt before cloning.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label>Select Template</Label>
+              {templatesLoading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-primary"></div>
+                  Loading templates...
+                </div>
+              ) : templates.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No templates available yet. Ask your admin to publish some templates.
+                </p>
+              ) : (
+                <Select
+                  value={cloneForm.templateId}
+                  onValueChange={(value) => handleSelectCloneTemplate(value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a template" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {templates.map((template) => (
+                      <SelectItem key={template.id} value={template.id}>
+                        {template.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="clone-name">Agent Name</Label>
+              <Input
+                id="clone-name"
+                placeholder="Enter agent name"
+                value={cloneForm.name}
+                onChange={(e) => setCloneForm((prev) => ({ ...prev, name: e.target.value }))}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="clone-description">Description</Label>
+              <Textarea
+                id="clone-description"
+                placeholder="Optional: customize the agent description"
+                className="min-h-[100px]"
+                value={cloneForm.description}
+                onChange={(e) => setCloneForm((prev) => ({ ...prev, description: e.target.value }))}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="clone-prompt">Prompt</Label>
+              <Textarea
+                id="clone-prompt"
+                placeholder="Optional: override the template prompt"
+                className="min-h-[140px]"
+                value={cloneForm.prompt}
+                onChange={(e) => setCloneForm((prev) => ({ ...prev, prompt: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCloneModalOpen(false)} disabled={isCloning}>
+              Cancel
+            </Button>
+            <Button onClick={handleCloneAgent} disabled={isCloning || templates.length === 0} className="bg-gradient-to-r from-primary to-accent">
+              {isCloning ? (
+                <div className="flex items-center gap-2">
+                  <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-white" />
+                  Creating...
+                </div>
+              ) : (
+                'Clone Agent'
               )}
             </Button>
           </DialogFooter>

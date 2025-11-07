@@ -159,7 +159,13 @@ app.use("*", (req, res) => {
             "POST /api/v1/knowledge-base/knowledge-bases/:kbId/context",
             "POST /api/v1/knowledge-base/knowledge-bases/:kbId/context/enhanced",
             "POST /api/v1/knowledge-base/knowledge-bases/:kbId/context/multi-search",
-            "POST /api/v1/knowledge-base/knowledge-bases/:kbId/context/filtered"
+            "POST /api/v1/knowledge-base/knowledge-bases/:kbId/context/filtered",
+            "GET /api/v1/agent-templates",
+            "POST /api/v1/agent-templates",
+            "GET /api/v1/agent-templates/:templateId",
+            "PUT /api/v1/agent-templates/:templateId",
+            "DELETE /api/v1/agent-templates/:templateId",
+            "POST /api/v1/agent-templates/:templateId/clone"
         ]
     });
 });

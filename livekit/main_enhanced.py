@@ -31,7 +31,7 @@ from cal_calendar_api import CalComCalendar, AvailableSlot, CalendarResult, Cale
 
 # ⬇️ OpenAI + VAD plugins
 from livekit.plugins import openai as lk_openai  # LLM, TTS
-from livekit.plugins import groq as lk_groq  # Groq LLM
+from livekit.plugins.groq import LLM as lk_groq  # Groq LLM
 from livekit.plugins import silero              # VAD
 from livekit.plugins import rime as lk_rime     # Rime TTS
 from livekit.plugins import deepgram            # Deepgram STT
