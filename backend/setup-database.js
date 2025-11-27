@@ -19,31 +19,40 @@ async function setupDatabase() {
   try {
     console.log('🚀 Setting up database schema...');
     
-    // Read the schema file
-    const schemaPath = path.join(process.cwd(), 'database', 'schema.sql');
-    const schema = fs.readFileSync(schemaPath, 'utf8');
-    
-    // Split the schema into individual statements
-    const statements = schema
-      .split(';')
-      .map(stmt => stmt.trim())
-      .filter(stmt => stmt.length > 0);
-    
-    console.log(`📝 Found ${statements.length} SQL statements to execute`);
-    
-    // Execute each statement
-    for (let i = 0; i < statements.length; i++) {
-      const statement = statements[i];
-      if (statement.trim()) {
+    const databaseDir = path.join(process.cwd(), 'database');
+    const sqlFiles = fs.readdirSync(databaseDir)
+      .filter(file => file.endsWith('.sql'))
+      .sort((a, b) => {
+        if (a === 'schema.sql') return -1;
+        if (b === 'schema.sql') return 1;
+        return a.localeCompare(b);
+      });
+
+    console.log(`🗂️  Found ${sqlFiles.length} SQL files to process`);
+
+    for (const file of sqlFiles) {
+      const filePath = path.join(databaseDir, file);
+      console.log(`\n📄 Executing statements from ${file}`);
+
+      const statements = fs
+        .readFileSync(filePath, 'utf8')
+        .split(';')
+        .map(stmt => stmt.trim())
+        .filter(stmt => stmt.length > 0);
+
+      console.log(`📝 ${statements.length} statements detected`);
+
+      for (let i = 0; i < statements.length; i++) {
+        const statement = statements[i];
         try {
-          console.log(`Executing statement ${i + 1}/${statements.length}...`);
+          console.log(`   ↳ Statement ${i + 1}/${statements.length}`);
           const { error } = await supabase.rpc('exec_sql', { sql: statement });
-          
+
           if (error) {
-            console.warn(`⚠️  Warning on statement ${i + 1}:`, error.message);
+            console.warn(`⚠️  Warning on ${file} statement ${i + 1}:`, error.message);
           }
         } catch (err) {
-          console.warn(`⚠️  Could not execute statement ${i + 1}:`, err.message);
+          console.warn(`⚠️  Could not execute ${file} statement ${i + 1}:`, err.message);
         }
       }
     }

@@ -10,13 +10,27 @@ interface User {
   phone?: string;
   role: 'admin' | 'user';
   status: 'Active' | 'Inactive' | 'Suspended';
+  tenant?: string;
+  slugName?: string;
+  isWhitelabel?: boolean;
+  minutesLimit?: number | null;
+}
+
+interface RegisterPayload {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  phone?: string;
+  whitelabel?: boolean;
+  slug?: string;
 }
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
-  register: (email: string, password: string, firstName: string, lastName: string, phone?: string) => Promise<{ success: boolean; message: string }>;
+  register: (payload: RegisterPayload) => Promise<{ success: boolean; message: string }>;
   logout: () => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<void>;
 }
@@ -135,20 +149,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const register = async (email: string, password: string, firstName: string, lastName: string, phone?: string) => {
+  const register = async (payload: RegisterPayload) => {
     try {
       const response = await fetch(`${AUTH_ENDPOINT}/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          email,
-          password,
-          firstName,
-          lastName,
-          phone
-        })
+        body: JSON.stringify(payload)
       });
 
       const result = await response.json();
@@ -156,8 +164,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (result.success) {
         // Sign in the user after successful registration
         const { data, error } = await supabase.auth.signInWithPassword({
-          email,
-          password
+          email: payload.email,
+          password: payload.password
         });
 
         if (!error && data.user) {

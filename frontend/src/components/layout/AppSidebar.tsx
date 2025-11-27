@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { useWebsiteSettings } from "@/contexts/WebsiteSettingsContext";
 import {
   Sidebar,
   SidebarContent,
@@ -48,6 +49,7 @@ const navigationItems = [
 
 const adminItems = [
   { title: "Admin Panel", url: "/admin", icon: Shield },
+  { title: "Website Settings", url: "/white-label", icon: FileText },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 
@@ -58,6 +60,10 @@ export function AppSidebar() {
   const location = useLocation();
   const currentPath = location.pathname;
   const { user } = useAuth();
+  const { settings } = useWebsiteSettings();
+  const camelCaseWebsiteName = (settings as { websiteName?: string | null } | null)?.websiteName;
+  const companyName = settings?.website_name || camelCaseWebsiteName || 'VoiceAI Pro';
+  const companyLogo = settings?.logo;
 
   const isActive = (path: string) => currentPath === path;
   const getNavCls = ({ isActive }: { isActive: boolean }) =>
@@ -72,10 +78,14 @@ export function AppSidebar() {
         {/* Logo */}
         <div className="p-4 border-b">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-r from-primary to-accent rounded-lg flex items-center justify-center">
-              <Phone className="w-4 h-4 text-white" />
+            <div className="w-10 h-10 bg-gradient-to-r from-primary to-accent rounded-lg flex items-center justify-center overflow-hidden">
+              {companyLogo ? (
+                <img src={companyLogo} alt={companyName} className="h-full w-full object-contain bg-white" />
+              ) : (
+                <Phone className="w-4 h-4 text-white" />
+              )}
             </div>
-            {!collapsed && <span className="font-bold text-lg">VoiceAI Pro</span>}
+            {!collapsed && <span className="font-bold text-lg">{companyName}</span>}
           </div>
         </div>
 

@@ -41,6 +41,15 @@ export const createAgentTemplate = async (req, res) => {
     }
 
     const userId = req.user.userId;
+    const slugName = req.user.slugName;
+
+    // Only main admin can create templates (whitelabel admins have slugName)
+    if (slugName && slugName !== 'main' && slugName.trim() !== '') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only main admin can create templates. Whitelabel admins do not have access to this feature.'
+      });
+    }
 
     const payload = {
       name: normalizeString(name),
@@ -219,6 +228,16 @@ export const updateAgentTemplate = async (req, res) => {
       tags
     } = req.body;
 
+    const slugName = req.user.slugName;
+
+    // Only main admin can update templates (whitelabel admins have slugName)
+    if (slugName && slugName !== 'main' && slugName.trim() !== '') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only main admin can update templates. Whitelabel admins do not have access to this feature.'
+      });
+    }
+
     const { data: existingTemplate, error: fetchError } = await supabase
       .from('agent_templates')
       .select('*')
@@ -293,6 +312,15 @@ export const updateAgentTemplate = async (req, res) => {
 export const deleteAgentTemplate = async (req, res) => {
   try {
     const { templateId } = req.params;
+    const slugName = req.user.slugName;
+
+    // Only main admin can delete templates (whitelabel admins have slugName)
+    if (slugName && slugName !== 'main' && slugName.trim() !== '') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only main admin can delete templates. Whitelabel admins do not have access to this feature.'
+      });
+    }
 
     const { error } = await supabase
       .from('agent_templates')

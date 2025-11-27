@@ -1,18 +1,54 @@
 import { supabase } from '#lib/supabase.js';
 import bcrypt from 'bcrypt';
+import { validateSlug } from '#utils/whitelabel.js';
 
 // Get all users with pagination and filtering
 export const getAllUsers = async (req, res) => {
   try {
     const { page = 1, limit = 10, role, status, search } = req.query;
     const offset = (page - 1) * limit;
+    const userId = req.user?.userId;
 
     console.log('📋 Fetching users with filters:', { page, limit, role, status, search });
+
+    // Get current user's tenant info for filtering
+    let userTenant = null;
+    let userRole = null;
+    let userSlug = null;
+    
+    if (userId) {
+      const { data: userData } = await supabase
+        .from('users')
+        .select('slug_name, tenant, role')
+        .eq('id', userId)
+        .single();
+
+      if (userData) {
+        userRole = userData.role;
+        userSlug = userData.slug_name;
+        userTenant = userData.tenant || 'main';
+      }
+    }
+
+    // Determine admin type
+    const isMainTenantAdmin = userRole === 'admin' && (!userSlug || userTenant === 'main');
+    const isWhitelabelAdmin = userRole === 'admin' && userSlug && userTenant !== 'main';
 
     let query = supabase
       .from('users')
       .select('*')
       .order('created_at', { ascending: false });
+
+    // Apply tenant-based filtering
+    if (isWhitelabelAdmin) {
+      // Whitelabel admin: only see users from their tenant (where tenant = their slug_name)
+      query = query.eq('tenant', userSlug);
+    } else if (isMainTenantAdmin) {
+      // Main tenant admin: see main tenant users (tenant = 'main') AND whitelabel admins (slug_name IS NOT NULL)
+      // But NOT whitelabel customers (tenant != 'main' AND slug_name IS NULL)
+      // We'll filter in JavaScript after fetching
+    }
+    // Regular users see no users (this endpoint should be admin-only anyway)
 
     // Apply filters
     if (role && role !== 'All Roles') {
@@ -27,23 +63,10 @@ export const getAllUsers = async (req, res) => {
       query = query.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%`);
     }
 
-    // Get total count for pagination
-    const { count, error: countError } = await supabase
-      .from('users')
-      .select('*', { count: 'exact', head: true });
+    // Note: We'll get count after filtering for main tenant admin
 
-    if (countError) {
-      console.error('❌ Error counting users:', countError);
-      return res.status(500).json({
-        success: false,
-        message: 'Error counting users',
-        error: countError.message
-      });
-    }
-
-    // Get paginated results
-    const { data: users, error } = await query
-      .range(offset, offset + limit - 1);
+    // Get all results first (before pagination) for main tenant admin filtering
+    const { data: allUsers, error } = await query;
 
     if (error) {
       console.error('❌ Error fetching users:', error);
@@ -54,8 +77,27 @@ export const getAllUsers = async (req, res) => {
       });
     }
 
+    // Apply main tenant admin filtering in JavaScript
+    let filteredUsers = allUsers || [];
+    if (isMainTenantAdmin) {
+      // Main tenant admin sees:
+      // - Main tenant users (tenant = 'main')
+      // - Whitelabel admins (slug_name IS NOT NULL)
+      // But NOT whitelabel customers (tenant != 'main' AND slug_name IS NULL)
+      filteredUsers = filteredUsers.filter(user => {
+        const isMainTenant = user.tenant === 'main';
+        const isWhitelabelAdminUser = user.slug_name !== null && user.slug_name !== undefined;
+        // Include main tenant users OR whitelabel admins, exclude whitelabel customers
+        return isMainTenant || isWhitelabelAdminUser;
+      });
+    }
+
+    // Apply pagination after filtering
+    const totalCount = filteredUsers.length;
+    const paginatedUsers = filteredUsers.slice(offset, offset + parseInt(limit));
+
     // Format user data for frontend
-    const formattedUsers = (users || []).map(user => ({
+    const formattedUsers = paginatedUsers.map(user => ({
       id: user.id,
       name: `${user.first_name} ${user.last_name}`,
       email: user.email,
@@ -63,7 +105,9 @@ export const getAllUsers = async (req, res) => {
       status: user.status || 'Active',
       lastLogin: user.last_login ? formatLastLogin(user.last_login) : 'Never',
       createdAt: user.created_at,
-      loginCount: user.login_count || 0
+      loginCount: user.login_count || 0,
+      tenant: user.tenant,
+      slug_name: user.slug_name
     }));
 
     console.log('✅ Users fetched successfully:', formattedUsers.length);
@@ -75,8 +119,8 @@ export const getAllUsers = async (req, res) => {
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
-          total: count || 0,
-          totalPages: Math.ceil((count || 0) / limit)
+          total: totalCount || 0,
+          totalPages: Math.ceil((totalCount || 0) / limit)
         }
       }
     });
@@ -375,58 +419,148 @@ export const deleteUser = async (req, res) => {
 // Get user statistics
 export const getUserStats = async (req, res) => {
   try {
+    const userId = req.user?.userId;
     console.log('📊 Fetching user statistics');
 
-    // Get total users count
-    const { count: totalUsers, error: totalError } = await supabase
-      .from('users')
-      .select('*', { count: 'exact', head: true });
+    // Get current user's tenant info for filtering
+    let userTenant = null;
+    let userSlug = null;
+    let userRole = null;
+    
+    if (userId) {
+      const { data: userData } = await supabase
+        .from('users')
+        .select('slug_name, tenant, role')
+        .eq('id', userId)
+        .single();
 
-    if (totalError) {
-      console.error('❌ Error counting total users:', totalError);
-      return res.status(500).json({
-        success: false,
-        message: 'Error fetching user statistics',
-        error: totalError.message
+      if (userData) {
+        userRole = userData.role;
+        userSlug = userData.slug_name;
+        userTenant = userData.tenant || 'main';
+      }
+    }
+
+    // Determine admin type
+    const isMainTenantAdmin = userRole === 'admin' && (!userSlug || userTenant === 'main');
+    const isWhitelabelAdmin = userRole === 'admin' && userSlug && userTenant !== 'main';
+
+    // Helper function to build query with tenant filtering
+    const buildQuery = () => {
+      let query = supabase.from('users');
+      if (isWhitelabelAdmin) {
+        // Whitelabel admin: only count users from their tenant (where tenant = their slug_name)
+        query = query.eq('tenant', userSlug);
+        console.log(`📊 Filtering stats for whitelabel admin tenant: ${userSlug}`);
+      }
+      return query;
+    };
+
+    // For main tenant admin, we need to fetch all and filter in JavaScript
+    // For whitelabel admin, we can use direct queries
+    let finalTotalUsers = 0;
+    let finalActiveUsers = 0;
+    let finalRecentLogins = 0;
+    let roleCounts = {};
+
+    if (isMainTenantAdmin) {
+      // Main tenant admin: fetch all users and filter
+      const { data: allUsers, error: fetchError } = await supabase
+        .from('users')
+        .select('id, status, last_login, tenant, slug_name, role');
+      
+      if (fetchError) {
+        console.error('❌ Error fetching users for stats:', fetchError);
+        return res.status(500).json({
+          success: false,
+          message: 'Error fetching user statistics',
+          error: fetchError.message
+        });
+      }
+
+      // Filter: main tenant users (tenant = 'main') OR whitelabel admins (slug_name IS NOT NULL)
+      const filteredUsers = (allUsers || []).filter(user => {
+        const isMainTenant = user.tenant === 'main';
+        const isWhitelabelAdminUser = user.slug_name !== null && user.slug_name !== undefined;
+        return isMainTenant || isWhitelabelAdminUser;
       });
-    }
 
-    // Get active users count
-    const { count: activeUsers, error: activeError } = await supabase
-      .from('users')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'Active');
+      finalTotalUsers = filteredUsers.length;
+      finalActiveUsers = filteredUsers.filter(u => u.status === 'Active').length;
+      
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      finalRecentLogins = filteredUsers.filter(u => {
+        if (!u.last_login) return false;
+        return new Date(u.last_login) >= yesterday;
+      }).length;
 
-    if (activeError) {
-      console.error('❌ Error counting active users:', activeError);
-    }
+      // Calculate role counts
+      roleCounts = filteredUsers
+        .filter(u => u.role)
+        .reduce((acc, user) => {
+          acc[user.role] = (acc[user.role] || 0) + 1;
+          return acc;
+        }, {});
+    } else if (isWhitelabelAdmin) {
+      // Whitelabel admin: use filtered queries
+      // Get total users count
+      const { count: totalUsers, error: totalError } = await buildQuery()
+        .select('*', { count: 'exact', head: true });
 
-    // Get users by role
-    const { data: roleStats, error: roleError } = await supabase
-      .from('users')
-      .select('role')
-      .not('role', 'is', null);
+      if (totalError) {
+        console.error('❌ Error counting total users:', totalError);
+        return res.status(500).json({
+          success: false,
+          message: 'Error fetching user statistics',
+          error: totalError.message
+        });
+      }
 
-    if (roleError) {
-      console.error('❌ Error fetching role stats:', roleError);
-    }
+      // Get active users count
+      const { count: activeUsers, error: activeError } = await buildQuery()
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'Active');
 
-    const roleCounts = (roleStats || []).reduce((acc, user) => {
-      acc[user.role] = (acc[user.role] || 0) + 1;
-      return acc;
-    }, {});
+      if (activeError) {
+        console.error('❌ Error counting active users:', activeError);
+      }
 
-    // Get recent logins (last 24 hours)
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
+      // Get users by role
+      const { data: roleStats, error: roleError } = await buildQuery()
+        .select('role')
+        .not('role', 'is', null);
 
-    const { count: recentLogins, error: recentError } = await supabase
-      .from('users')
-      .select('*', { count: 'exact', head: true })
-      .gte('last_login', yesterday.toISOString());
+      if (roleError) {
+        console.error('❌ Error fetching role stats:', roleError);
+      }
 
-    if (recentError) {
-      console.error('❌ Error counting recent logins:', recentError);
+      roleCounts = (roleStats || []).reduce((acc, user) => {
+        acc[user.role] = (acc[user.role] || 0) + 1;
+        return acc;
+      }, {});
+
+      // Get recent logins (last 24 hours)
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+
+      const { count: recentLogins, error: recentError } = await buildQuery()
+        .select('*', { count: 'exact', head: true })
+        .gte('last_login', yesterday.toISOString());
+
+      if (recentError) {
+        console.error('❌ Error counting recent logins:', recentError);
+      }
+
+      finalTotalUsers = totalUsers || 0;
+      finalActiveUsers = activeUsers || 0;
+      finalRecentLogins = recentLogins || 0;
+    } else {
+      // Regular user or no filtering - return empty stats
+      finalTotalUsers = 0;
+      finalActiveUsers = 0;
+      finalRecentLogins = 0;
+      roleCounts = {};
     }
 
     console.log('✅ User statistics fetched successfully');
@@ -434,11 +568,11 @@ export const getUserStats = async (req, res) => {
     res.status(200).json({
       success: true,
       data: {
-        totalUsers: totalUsers || 0,
-        activeUsers: activeUsers || 0,
-        inactiveUsers: (totalUsers || 0) - (activeUsers || 0),
+        totalUsers: finalTotalUsers,
+        activeUsers: finalActiveUsers,
+        inactiveUsers: finalTotalUsers - finalActiveUsers,
         roleCounts,
-        recentLogins: recentLogins || 0
+        recentLogins: finalRecentLogins
       }
     });
 
@@ -448,6 +582,122 @@ export const getUserStats = async (req, res) => {
       success: false,
       message: 'Internal server error',
       error: error.message
+    });
+  }
+};
+
+export const completeSignup = async (req, res) => {
+  try {
+    const { user_id: userId, slug, whitelabel } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'user_id is required'
+      });
+    }
+
+    const { data: userRecord, error: userError } = await supabase
+      .from('users')
+      .select('id, slug_name, tenant, role')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (userError) {
+      console.error('❌ Error fetching user during complete-signup:', userError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to load user'
+      });
+    }
+
+    if (!userRecord) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const updates = { updated_at: new Date().toISOString() };
+    let assignedSlug = userRecord.slug_name || null;
+    let tenant = userRecord.tenant || 'main';
+
+    if (whitelabel && slug) {
+      const validation = validateSlug(slug);
+      if (!validation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: validation.message
+        });
+      }
+
+      const normalizedSlug = validation.slug;
+
+      const { data: existingSlug, error: slugError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('slug_name', normalizedSlug)
+        .maybeSingle();
+
+      if (slugError && slugError.code !== 'PGRST116') {
+        console.error('❌ Error validating slug uniqueness:', slugError);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to validate slug'
+        });
+      }
+
+      if (existingSlug && existingSlug.id !== userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Slug is already taken'
+        });
+      }
+
+      assignedSlug = normalizedSlug;
+      tenant = normalizedSlug;
+
+      updates.slug_name = normalizedSlug;
+      updates.tenant = normalizedSlug;
+      updates.role = 'admin';
+      updates.is_whitelabel = true;
+      updates.minutes_used = 0;
+
+      if (process.env.DEFAULT_TENANT_MINUTES_LIMIT) {
+        const parsed = parseInt(process.env.DEFAULT_TENANT_MINUTES_LIMIT, 10);
+        if (!Number.isNaN(parsed)) {
+          updates.minutes_limit = parsed;
+        }
+      }
+    } else {
+      updates.tenant = tenant || 'main';
+    }
+
+    const { error: updateError } = await supabase
+      .from('users')
+      .update(updates)
+      .eq('id', userId);
+
+    if (updateError) {
+      console.error('❌ Error updating user during complete-signup:', updateError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to finalize signup'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Signup completed successfully',
+      tenant,
+      slug: assignedSlug
+    });
+
+  } catch (error) {
+    console.error('❌ completeSignup error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error'
     });
   }
 };
@@ -558,12 +808,19 @@ export const getUserDetails = async (req, res) => {
       calls: calls?.filter(call => call.agent_id === agent.id).length || 0
     }));
 
+    const minutesLimit = typeof user.minutes_limit === 'number' ? user.minutes_limit : 0;
+    const minutesUsed = typeof user.minutes_used === 'number' ? user.minutes_used : 0;
+    const minutesRemaining = minutesLimit === 0 ? null : Math.max(minutesLimit - minutesUsed, 0);
+
     const stats = {
       totalCalls,
       totalDuration: formatDuration(totalDuration),
       avgCallDuration: formatDuration(avgDuration),
       successRate: `${successRate}%`,
-      lastActivity: user.last_login ? formatLastLogin(user.last_login) : 'Never'
+      lastActivity: user.last_login ? formatLastLogin(user.last_login) : 'Never',
+      minutesLimit,
+      minutesUsed,
+      minutesRemaining
     };
 
     console.log('✅ User details fetched successfully');

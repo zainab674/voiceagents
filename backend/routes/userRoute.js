@@ -6,7 +6,8 @@ import {
   updateUser, 
   deleteUser, 
   getUserStats,
-  getUserDetails
+  getUserDetails,
+  completeSignup
 } from '#controllers/userController.js';
 import { authenticateToken } from '#middlewares/authMiddleware.js';
 
@@ -28,6 +29,8 @@ router.get('/test', async (req, res) => {
     });
   }
 });
+
+router.post('/complete-signup', completeSignup);
 
 // All other routes require authentication
 router.use(authenticateToken);

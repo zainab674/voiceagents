@@ -1,24 +1,76 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import path from "path";
+import fs from "fs";
 import router from "#routes/index.js";
 import { getCallRecordingInfo as getTwilioRecordingInfo } from '#services/twilioMainTrunkService.js';
 import { ngrokService } from './services/ngrok-service.js';
 import { campaignEngine } from './services/campaign-execution-engine.js';
+import { tenantMiddleware } from '#middlewares/tenantMiddleware.js';
 
 const PORT = process.env.PORT || 4000;
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// CORS configuration - allow whitelabel subdomains
+const allowedOrigins = [
+    process.env.FRONTEND_URL || "http://localhost:8080",
+    "http://localhost:5173", // Vite default port
+    "http://localhost:3000"  // Alternative frontend port
+];
+
+// Add main domain and subdomains if MAIN_DOMAIN is set
+if (process.env.MAIN_DOMAIN) {
+    const mainDomain = process.env.MAIN_DOMAIN;
+    allowedOrigins.push(
+        `https://${mainDomain}`,
+        `http://${mainDomain}`
+    );
+}
+
 app.use(cors({
-    origin: [
-        process.env.FRONTEND_URL || "http://localhost:8080",
-        "http://localhost:5173", // Vite default port
-        "http://localhost:3000"  // Alternative frontend port
-    ],
-    credentials: true
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        
+        // Check exact matches first
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+        
+        // Check for localhost subdomains (whitelabel subdomains)
+        // Matches: http://anything.localhost:8080, http://anything.localhost:5173, etc.
+        const localhostSubdomainRegex = /^https?:\/\/[a-z0-9-]+\.localhost(:\d+)?$/;
+        if (localhostSubdomainRegex.test(origin)) {
+            return callback(null, true);
+        }
+        
+        // Check for main domain subdomains (production whitelabel)
+        if (process.env.MAIN_DOMAIN) {
+            const mainDomain = process.env.MAIN_DOMAIN.replace('.', '\\.');
+            const subdomainRegex = new RegExp(`^https?://[a-z0-9-]+\\.${mainDomain}(:\\d+)?$`);
+            if (subdomainRegex.test(origin)) {
+                return callback(null, true);
+            }
+        }
+        
+        // In development, allow all localhost origins
+        if (process.env.NODE_ENV !== 'production' && origin.includes('localhost')) {
+            console.log(`✅ Allowing localhost origin: ${origin}`);
+            return callback(null, true);
+        }
+        
+        console.warn(`⚠️  CORS blocked origin: ${origin}`);
+        callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant', 'X-Requested-With']
 }));
+
+app.use(tenantMiddleware);
 
 // Test endpoint to verify server is running
 app.get("/", (req, res) => {
@@ -37,6 +89,13 @@ app.get("/health", (req, res) => {
 
 // API routes
 app.use("/api/v1", router);
+
+// Serve uploaded assets (logos, documents, etc.)
+const uploadsDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+app.use('/uploads', express.static(uploadsDir));
 
 // Recording routes (matching sass-livekit pattern)
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,11 +22,14 @@ import {
   Layers,
   Plus,
   Globe,
-  Lock
+  Lock,
+  CreditCard,
+  Settings
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { userApi } from "@/http/userHttp";
 import { agentTemplateApi } from "@/http/agentTemplateHttp";
+import { planApi } from "@/http/planHttp";
 import { handleAuthError } from "@/utils/authHelper";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -76,6 +79,20 @@ const AdminPanel = () => {
     tags: ''
   });
 
+  // Plan management state
+  const [plans, setPlans] = useState([]);
+  const [plansLoading, setPlansLoading] = useState(false);
+  const [planModalOpen, setPlanModalOpen] = useState(false);
+  const [editingPlan, setEditingPlan] = useState(null);
+  const [savingPlan, setSavingPlan] = useState(false);
+  const [planForm, setPlanForm] = useState({
+    planKey: '',
+    name: '',
+    price: '',
+    minutesLimit: '',
+    features: ''
+  });
+
   // Edit modal state
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -99,12 +116,17 @@ const AdminPanel = () => {
       totalDuration: "0:00",
       avgCallDuration: "0:00",
       successRate: "0%",
-      lastActivity: "Never"
+      lastActivity: "Never",
+      minutesLimit: 0,
+      minutesUsed: 0,
+      minutesRemaining: 0
     }
   });
 
   const { toast } = useToast();
   const isAdmin = currentUser?.role === 'admin';
+  const isMainAdmin = isAdmin && (!currentUser?.slugName || currentUser.slugName === 'main');
+  const isWhitelabelAdmin = isAdmin && currentUser?.slugName && currentUser.slugName !== 'main';
 
   const resetTemplateForm = () => {
     setTemplateForm({
@@ -374,16 +396,253 @@ const AdminPanel = () => {
     }
   }, []);
 
+  // Plan management functions
+  const fetchPlans = useCallback(async (showLoading = true) => {
+    if (!isAdmin) return;
+    try {
+      if (showLoading) setPlansLoading(true);
+      const response = await planApi.getAllPlans();
+
+      if (response.success) {
+        setPlans(response.data.plans || []);
+        return;
+      }
+
+      throw new Error(response.message || 'Failed to fetch plans');
+    } catch (error) {
+      console.error('Error fetching plans:', error);
+      if (await handleAuthError(error, navigate)) {
+        toast({
+          title: "Session Expired",
+          description: "Please log in again to continue",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      toast({
+        title: "Error",
+        description: "Failed to fetch plans",
+        variant: "destructive"
+      });
+      setPlans([]);
+    } finally {
+      if (showLoading) setPlansLoading(false);
+    }
+  }, [isAdmin, navigate, toast]);
+
+  const openCreatePlanModal = () => {
+    setEditingPlan(null);
+    setPlanForm({
+      planKey: '',
+      name: '',
+      price: '',
+      minutesLimit: '',
+      features: ''
+    });
+    setPlanModalOpen(true);
+  };
+
+  const closePlanModal = () => {
+    setPlanModalOpen(false);
+    setEditingPlan(null);
+    setPlanForm({
+      planKey: '',
+      name: '',
+      price: '',
+      minutesLimit: '',
+      features: ''
+    });
+  };
+
+  const handleEditPlan = (plan) => {
+    setEditingPlan(plan);
+    setPlanForm({
+      planKey: plan.plan_key || '',
+      name: plan.name || '',
+      price: plan.price?.toString() || '',
+      minutesLimit: plan.minutes_limit?.toString() || '',
+      features: Array.isArray(plan.features) ? plan.features.join('\n') : ''
+    });
+    setPlanModalOpen(true);
+  };
+
+  const handlePlanFormChange = (field, value) => {
+    setPlanForm(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  // Calculate allocated minutes from existing plans (excluding current plan being edited)
+  const minutesAllocation = useMemo(() => {
+    if (!isWhitelabelAdmin || !currentUser?.minutesLimit || currentUser.minutesLimit <= 0) {
+      return { allocated: 0, available: null, totalLimit: null };
+    }
+
+    const allocated = plans.reduce((sum, plan) => {
+      // Exclude the plan being edited from the calculation
+      if (editingPlan && plan.plan_key === editingPlan.plan_key) {
+        return sum;
+      }
+      const planMinutes = plan.minutes_limit || 0;
+      return planMinutes > 0 ? sum + planMinutes : sum;
+    }, 0);
+
+    const totalLimit = currentUser.minutesLimit;
+    const available = totalLimit - allocated;
+
+    return { allocated, available, totalLimit };
+  }, [isWhitelabelAdmin, currentUser?.minutesLimit, plans, editingPlan]);
+
+  const handleSubmitPlan = async () => {
+    if (!planForm.planKey.trim() || !planForm.name.trim() || !planForm.price || planForm.minutesLimit === '') {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields (planKey, name, price, minutesLimit)",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const price = parseFloat(planForm.price);
+    const minutesLimit = parseInt(planForm.minutesLimit);
+
+    if (isNaN(price) || price < 0) {
+      toast({
+        title: "Validation Error",
+        description: "Price must be a valid number greater than or equal to 0",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (isNaN(minutesLimit) || minutesLimit < 0) {
+      toast({
+        title: "Validation Error",
+        description: "Minutes limit must be a valid number greater than or equal to 0 (use 0 for unlimited)",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Validate minutes limit for whitelabel admins
+    if (isWhitelabelAdmin && currentUser?.minutesLimit && currentUser.minutesLimit > 0) {
+      const { allocated, available, totalLimit } = minutesAllocation;
+      
+      // Prevent unlimited plans for limited admins
+      if (minutesLimit === 0) {
+        toast({
+          title: "Validation Error",
+          description: "Cannot set plan to unlimited minutes. You have a limited plan.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Check if the new total would exceed the limit
+      const newTotal = allocated + minutesLimit;
+      if (newTotal > totalLimit) {
+        toast({
+          title: "Validation Error",
+          description: `Cannot allocate ${minutesLimit} minutes. Available: ${available} minutes. Total allocated cannot exceed your plan limit of ${totalLimit} minutes.`,
+          variant: "destructive"
+        });
+        return;
+      }
+    }
+
+    const featuresArray = planForm.features
+      .split('\n')
+      .map(f => f.trim())
+      .filter(f => f.length > 0);
+
+    const payload = {
+      planKey: planForm.planKey.trim(),
+      name: planForm.name.trim(),
+      price: price,
+      minutesLimit: minutesLimit,
+      features: featuresArray
+    };
+
+    setSavingPlan(true);
+    try {
+      const response = await planApi.upsertPlan(payload, !!editingPlan);
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to save plan');
+      }
+      
+      toast({
+        title: editingPlan ? "Plan Updated" : "Plan Created",
+        description: `"${planForm.name}" has been ${editingPlan ? 'updated' : 'created'} successfully.`
+      });
+
+      await fetchPlans();
+      closePlanModal();
+    } catch (error) {
+      console.error('Error saving plan:', error);
+      if (await handleAuthError(error, navigate)) {
+        toast({
+          title: "Session Expired",
+          description: "Please log in again to continue",
+          variant: "destructive"
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: error?.response?.data?.message || (editingPlan ? 'Failed to update plan' : 'Failed to create plan'),
+          variant: "destructive"
+        });
+      }
+    } finally {
+      setSavingPlan(false);
+    }
+  };
+
+  const handleDeletePlan = async (planKey, planName) => {
+    if (!confirm(`Are you sure you want to delete "${planName}"?`)) return;
+
+    try {
+      const response = await planApi.deletePlan(planKey);
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to delete plan');
+      }
+
+      toast({
+        title: "Plan Deleted",
+        description: `"${planName}" has been removed.`
+      });
+      await fetchPlans();
+    } catch (error) {
+      console.error('Error deleting plan:', error);
+      if (await handleAuthError(error, navigate)) {
+        toast({
+          title: "Session Expired",
+          description: "Please log in again to continue",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      toast({
+        title: "Error",
+        description: error?.response?.data?.message || "Failed to delete plan",
+        variant: "destructive"
+      });
+    }
+  };
+
   const refreshData = useCallback(async () => {
     if (!isAdmin) return;
     setRefreshing(true);
     await Promise.all([
       fetchUsers(false),
       fetchUserStats(),
-      fetchTemplates(false)
+      fetchTemplates(false),
+      fetchPlans(false)
     ]);
     setRefreshing(false);
-  }, [fetchTemplates, fetchUserStats, fetchUsers, isAdmin]);
+  }, [fetchTemplates, fetchUserStats, fetchUsers, fetchPlans, isAdmin]);
 
   // Real-time polling effect
   useEffect(() => {
@@ -392,13 +651,14 @@ const AdminPanel = () => {
     fetchUsers();
     fetchUserStats();
     fetchTemplates();
+    fetchPlans();
 
     const interval = setInterval(() => {
       refreshData();
     }, 10000);
 
     return () => clearInterval(interval);
-  }, [fetchTemplates, fetchUserStats, fetchUsers, isAdmin, refreshData]);
+  }, [fetchTemplates, fetchUserStats, fetchUsers, fetchPlans, isAdmin, refreshData]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -537,7 +797,10 @@ const AdminPanel = () => {
           totalDuration: "0:00",
           avgCallDuration: "0:00",
           successRate: "0%",
-          lastActivity: "Never"
+        lastActivity: "Never",
+        minutesLimit: 0,
+        minutesUsed: 0,
+        minutesRemaining: 0
         }
       });
     }
@@ -581,38 +844,15 @@ const AdminPanel = () => {
       </div>
 
       <Tabs defaultValue="users" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className={`grid w-full ${isMainAdmin ? 'grid-cols-3' : 'grid-cols-2'}`}>
           <TabsTrigger value="users">User Management</TabsTrigger>
-          <TabsTrigger value="templates">Assistant Templates</TabsTrigger>
+          {isMainAdmin && (
+            <TabsTrigger value="templates">Assistant Templates</TabsTrigger>
+          )}
+          <TabsTrigger value="plans">Plans & Pricing</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="space-y-6">
-          {/* User Statistics */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Card className="shadow-lg">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total Users</p>
-                    <p className="text-2xl font-bold">{userStats?.totalUsers || 0}</p>
-                  </div>
-                  <Users className="w-8 h-8 text-blue-600" />
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="shadow-lg">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Active Users</p>
-                    <p className="text-2xl font-bold text-green-600">{userStats?.activeUsers || 0}</p>
-                  </div>
-                  <Users className="w-8 h-8 text-green-600" />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
           {/* User Management */}
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-4">
@@ -771,7 +1011,8 @@ const AdminPanel = () => {
           </Card>
         </TabsContent>
 
-        <TabsContent value="templates" className="space-y-6">
+        {isMainAdmin && (
+          <TabsContent value="templates" className="space-y-6">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
               <h2 className="text-2xl font-semibold">Assistant Templates Library</h2>
@@ -874,6 +1115,119 @@ const AdminPanel = () => {
                           </span>
                           <span>Timezone: {template.cal_timezone || 'UTC'}</span>
                         </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+        )}
+
+        <TabsContent value="plans" className="space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-semibold">Plans & Pricing Management</h2>
+              <p className="text-muted-foreground">
+                Manage subscription plans, pricing, and minutes allocation for your platform.
+              </p>
+            </div>
+            <Button
+              onClick={openCreatePlanModal}
+              className="bg-gradient-to-r from-primary to-accent"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              New Plan
+            </Button>
+          </div>
+
+          <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CreditCard className="w-5 h-5" />
+                Available Plans
+                {plansLoading && <RefreshCw className="w-4 h-4 animate-spin" />}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {plansLoading ? (
+                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                  <RefreshCw className="w-6 h-6 animate-spin mb-3" />
+                  <span>Loading plans...</span>
+                </div>
+              ) : plans.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+                  <CreditCard className="w-12 h-12 mb-4 opacity-50" />
+                  <p className="text-lg font-medium mb-2">No plans configured yet</p>
+                  <p className="text-sm mb-4">Create your first plan to start offering subscriptions.</p>
+                  <Button onClick={openCreatePlanModal} className="bg-gradient-to-r from-primary to-accent">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create Plan
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {plans.map((plan) => (
+                    <div
+                      key={plan.plan_key || plan.id}
+                      className="rounded-lg border border-border/60 bg-muted/40 p-5 transition-colors hover:border-primary/50 hover:bg-muted"
+                    >
+                      <div className="flex items-start justify-between gap-4 mb-3">
+                        <div>
+                          <h3 className="text-lg font-semibold">{plan.name}</h3>
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground mt-1">
+                            {plan.plan_key}
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEditPlan(plan)}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            onClick={() => handleDeletePlan(plan.plan_key, plan.name)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-2xl font-bold">${plan.price}</span>
+                          <span className="text-sm text-muted-foreground">/month</span>
+                        </div>
+                        <div className="text-sm">
+                          <span className="font-medium">Minutes: </span>
+                          <span className="text-muted-foreground">
+                            {plan.minutes_limit === 0 ? 'Unlimited' : `${plan.minutes_limit.toLocaleString()}`}
+                          </span>
+                        </div>
+                        {Array.isArray(plan.features) && plan.features.length > 0 && (
+                          <div className="mt-3">
+                            <p className="text-xs font-medium text-muted-foreground mb-2">Features:</p>
+                            <ul className="space-y-1">
+                              {plan.features.slice(0, 3).map((feature, idx) => (
+                                <li key={idx} className="text-xs text-muted-foreground flex items-start gap-1">
+                                  <span className="text-primary">•</span>
+                                  <span className="line-clamp-1">{feature}</span>
+                                </li>
+                              ))}
+                              {plan.features.length > 3 && (
+                                <li className="text-xs text-muted-foreground">
+                                  +{plan.features.length - 3} more
+                                </li>
+                              )}
+                            </ul>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1042,7 +1396,7 @@ const AdminPanel = () => {
               </div>
 
               {/* Statistics Overview */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                 <Card>
                   <CardContent className="p-4 text-center">
                     <div className="text-2xl font-bold text-blue-600">{userDetails.stats.totalCalls}</div>
@@ -1065,6 +1419,21 @@ const AdminPanel = () => {
                   <CardContent className="p-4 text-center">
                     <div className="text-2xl font-bold text-orange-600">{userDetails.stats.avgCallDuration}</div>
                     <div className="text-sm text-muted-foreground">Avg Duration</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <div className="text-2xl font-bold text-teal-600">
+                      {userDetails.stats.minutesLimit === 0
+                        ? 'Unlimited'
+                        : `${Math.max(userDetails.stats.minutesRemaining || 0, 0).toLocaleString()} min`}
+                    </div>
+                    <div className="text-sm text-muted-foreground">Minutes Remaining</div>
+                    {userDetails.stats.minutesLimit !== 0 && (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Used {userDetails.stats.minutesUsed?.toLocaleString()} of {userDetails.stats.minutesLimit?.toLocaleString()}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
@@ -1208,6 +1577,149 @@ const AdminPanel = () => {
             </Button>
             <Button onClick={handleSaveUser}>
               Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Plan Modal */}
+      <Dialog open={planModalOpen} onOpenChange={(open) => (open ? setPlanModalOpen(true) : closePlanModal())}>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingPlan ? 'Edit Plan' : 'New Plan'}</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-5 py-2">
+            <div className="grid gap-2">
+              <Label htmlFor="plan-key">Plan Key<span className="text-red-500"> *</span></Label>
+              <Input
+                id="plan-key"
+                placeholder="e.g., starter, professional, enterprise"
+                value={planForm.planKey}
+                onChange={(e) => handlePlanFormChange('planKey', e.target.value)}
+                disabled={!!editingPlan}
+              />
+              <p className="text-xs text-muted-foreground">
+                Unique identifier for the plan (lowercase, no spaces). Cannot be changed after creation.
+              </p>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="plan-name">Plan Name<span className="text-red-500"> *</span></Label>
+              <Input
+                id="plan-name"
+                placeholder="e.g., Starter Plan"
+                value={planForm.name}
+                onChange={(e) => handlePlanFormChange('name', e.target.value)}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="plan-price">Price ($)<span className="text-red-500"> *</span></Label>
+                <Input
+                  id="plan-price"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="29.00"
+                  value={planForm.price}
+                  onChange={(e) => handlePlanFormChange('price', e.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="plan-minutes">Minutes Limit<span className="text-red-500"> *</span></Label>
+                <Input
+                  id="plan-minutes"
+                  type="number"
+                  min="0"
+                  max={(() => {
+                    if (isWhitelabelAdmin && currentUser?.minutesLimit && currentUser.minutesLimit > 0 && minutesAllocation.available !== null) {
+                      const { available } = minutesAllocation;
+                      const currentMinutes = parseInt(planForm.minutesLimit) || 0;
+                      // If editing, add back the current plan's minutes to available
+                      const maxValue = editingPlan 
+                        ? available + (editingPlan.minutes_limit || 0)
+                        : available;
+                      return maxValue > 0 ? maxValue : undefined;
+                    }
+                    return undefined;
+                  })()}
+                  placeholder="1000 (0 = unlimited)"
+                  value={planForm.minutesLimit}
+                  onChange={(e) => handlePlanFormChange('minutesLimit', e.target.value)}
+                />
+                {isWhitelabelAdmin && currentUser?.minutesLimit && currentUser.minutesLimit > 0 && minutesAllocation.totalLimit !== null ? (
+                  <div className="space-y-1">
+                    {(() => {
+                      const { allocated, available, totalLimit } = minutesAllocation;
+                      const currentMinutes = parseInt(planForm.minutesLimit) || 0;
+                      const newTotal = allocated + currentMinutes;
+                      const remainingAfter = totalLimit - newTotal;
+                      const isExceeding = newTotal > totalLimit;
+                      
+                      return (
+                        <>
+                          <p className="text-xs text-muted-foreground">
+                            Your plan limit: {totalLimit.toLocaleString()} minutes
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Already allocated: {allocated.toLocaleString()} minutes
+                          </p>
+                          <p className={`text-xs ${isExceeding ? 'text-red-500 font-medium' : 'text-muted-foreground'}`}>
+                            {isExceeding 
+                              ? `⚠️ Exceeds limit by ${(newTotal - totalLimit).toLocaleString()} minutes`
+                              : `Available: ${available.toLocaleString()} minutes`
+                            }
+                          </p>
+                          {currentMinutes > 0 && (
+                            <p className={`text-xs ${isExceeding ? 'text-red-500 font-medium' : 'text-green-600'}`}>
+                              {isExceeding 
+                                ? `Total would be: ${newTotal.toLocaleString()} minutes`
+                                : `Remaining after this plan: ${remainingAfter.toLocaleString()} minutes`
+                              }
+                            </p>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Enter 0 for unlimited minutes
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="plan-features">Features (one per line)</Label>
+              <Textarea
+                id="plan-features"
+                placeholder="Up to 1,000 calls/month&#10;Basic AI agents&#10;Email support&#10;Call analytics"
+                value={planForm.features}
+                onChange={(e) => handlePlanFormChange('features', e.target.value)}
+                className="min-h-[120px]"
+              />
+              <p className="text-xs text-muted-foreground">
+                Enter each feature on a new line. These will be displayed to users.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closePlanModal} disabled={savingPlan}>
+              Cancel
+            </Button>
+            <Button onClick={handleSubmitPlan} disabled={savingPlan} className="bg-gradient-to-r from-primary to-accent">
+              {savingPlan ? (
+                <div className="flex items-center gap-2">
+                  <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-white" />
+                  Saving...
+                </div>
+              ) : (
+                editingPlan ? 'Update Plan' : 'Create Plan'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

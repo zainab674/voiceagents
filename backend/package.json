@@ -22,6 +22,7 @@
     "ngrok": "node ngrok-service.js",
     "setup-db": "node setup-database.js",
     "setup-calls": "node setup-calls-table.js",
+    "seed-plans": "node scripts/seed-default-plans.js",
     "check-env": "node check-env.js"
   },
   "author": "",

@@ -16,7 +16,9 @@ import knowledgeBaseRoute from "#routes/knowledgeBaseRoute.js";
 import userRoute from "#routes/userRoute.js";
 import crmRoute from "#routes/crmRoute.js";
 import agentTemplateRoute from "#routes/agentTemplateRoute.js";
+import planRoute from "#routes/planRoute.js";
 import { recordingWebhookRouter } from "#services/recordingService.js";
+import whitelabelRoute from "#routes/whitelabelRoute.js";
 
 const router = express.Router();
 
@@ -37,6 +39,8 @@ router.use("/knowledge-base", knowledgeBaseRoute);
 router.use("/users", userRoute);
 router.use("/crm", crmRoute);
 router.use("/agent-templates", agentTemplateRoute);
+router.use("/plans", planRoute);
 router.use("/recording", recordingWebhookRouter);
+router.use("/whitelabel", whitelabelRoute);
 
 export default router;

@@ -39,7 +39,7 @@ export const authenticateToken = async (req, res, next) => {
 
     const { data: userProfile, error: userProfileError } = await supabase
       .from('users')
-      .select('id, role, status')
+      .select('id, role, status, slug_name, tenant, is_whitelabel, minutes_limit')
       .eq('id', user.id)
       .single();
 
@@ -61,13 +61,21 @@ export const authenticateToken = async (req, res, next) => {
     }
 
     const role = userProfile?.role || user?.user_metadata?.role || 'user';
+    const tenant = userProfile?.tenant || user?.user_metadata?.tenant || 'main';
+    const slugName = userProfile?.slug_name || user?.user_metadata?.slug || null;
+    const isWhitelabel = userProfile?.is_whitelabel || user?.user_metadata?.whitelabel || false;
+    const minutesLimit = userProfile?.minutes_limit ?? null;
 
     console.log('Auth middleware - User authenticated:', user.id, 'role:', role);
     req.user = {
       userId: user.id,
       email: user.email,
       role,
-      status: userProfile?.status || 'Active'
+      status: userProfile?.status || 'Active',
+      tenant,
+      slugName,
+      isWhitelabel,
+      minutesLimit
     };
     next();
 
@@ -90,7 +98,7 @@ export const optionalAuth = async (req, res, next) => {
       if (!error && user) {
         const { data: userProfile } = await supabase
           .from('users')
-          .select('id, role, status')
+          .select('id, role, status, slug_name, tenant, is_whitelabel, minutes_limit')
           .eq('id', user.id)
           .single();
 
@@ -98,7 +106,11 @@ export const optionalAuth = async (req, res, next) => {
           userId: user.id,
           email: user.email,
           role: userProfile?.role || user?.user_metadata?.role || 'user',
-          status: userProfile?.status || 'Active'
+          status: userProfile?.status || 'Active',
+          tenant: userProfile?.tenant || user?.user_metadata?.tenant || 'main',
+          slugName: userProfile?.slug_name || user?.user_metadata?.slug || null,
+          isWhitelabel: userProfile?.is_whitelabel || user?.user_metadata?.whitelabel || false,
+          minutesLimit: userProfile?.minutes_limit ?? null
         };
       }
     }

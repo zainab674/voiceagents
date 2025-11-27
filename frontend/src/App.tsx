@@ -5,6 +5,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AppLayout } from "./components/layout/AppLayout";
 import { AuthProvider } from "./contexts/AuthContext";
+import { OnboardingProvider } from "./contexts/OnboardingContext";
+import { WebsiteSettingsProvider } from "./contexts/WebsiteSettingsContext";
+import { OnboardingWizard } from "./components/onboarding/OnboardingWizard";
 import LandingPage from "./pages/LandingPage";
 import Dashboard from "./pages/Dashboard";
 import CreateAgent from "./pages/CreateAgent";
@@ -23,6 +26,7 @@ import Conversations from "./pages/Conversations";
 import Campaigns from "./pages/Campaigns";
 import Contacts from "./pages/Contacts";
 import KnowledgeBase from "./pages/KnowledgeBase";
+import { WebsiteSettings } from "./pages/WebsiteSettings";
 
 const queryClient = new QueryClient();
 
@@ -30,15 +34,20 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <AuthProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
+        <OnboardingProvider>
+          <WebsiteSettingsProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
           <Routes>
             {/* Landing page route */}
             <Route path="/" element={<LandingPage />} />
             
             {/* Authentication routes */}
             <Route path="/auth" element={<AuthPage />} />
+            
+            {/* Onboarding route */}
+            <Route path="/onboarding" element={<OnboardingWizard />} />
             
             {/* App routes with layout - Protected */}
             <Route path="/dashboard" element={<ProtectedRoute><AppLayout><Dashboard /></AppLayout></ProtectedRoute>} />
@@ -55,7 +64,7 @@ const App = () => (
             <Route path="/knowledge-base" element={<ProtectedRoute><AppLayout><KnowledgeBase /></AppLayout></ProtectedRoute>} />
             <Route path="/bookings" element={<ProtectedRoute><AppLayout><div className="p-6"><h1 className="text-2xl font-bold">Bookings - Coming Soon</h1></div></AppLayout></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute><AppLayout><AdminPanel /></AppLayout></ProtectedRoute>} />
-            <Route path="/white-label" element={<ProtectedRoute><AppLayout><div className="p-6"><h1 className="text-2xl font-bold">White Label - Coming Soon</h1></div></AppLayout></ProtectedRoute>} />
+            <Route path="/white-label" element={<ProtectedRoute><AppLayout><WebsiteSettings /></AppLayout></ProtectedRoute>} />
             <Route path="/users" element={<ProtectedRoute><AppLayout><div className="p-6"><h1 className="text-2xl font-bold">User Management - Coming Soon</h1></div></AppLayout></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><AppLayout><UserProfile /></AppLayout></ProtectedRoute>} />
             
@@ -63,6 +72,8 @@ const App = () => (
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
+          </WebsiteSettingsProvider>
+        </OnboardingProvider>
       </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>

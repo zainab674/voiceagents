@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { validateSlug } from '#utils/whitelabel.js';
+import { initializePlansForTenant } from '#utils/planInitializer.js';
 
 dotenv.config();
 
@@ -20,7 +22,18 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 export const registerUser = async (req, res) => {
   try {
-    const { email, password, firstName, lastName, phone } = req.body;
+    const {
+      email,
+      password,
+      firstName,
+      lastName,
+      phone,
+      whitelabel = false,
+      slug,
+      tenant: requestedTenant,
+      planKey,
+      industry
+    } = req.body;
 
     console.log('📝 Registration attempt for:', { email, firstName, lastName, hasPassword: !!password });
 
@@ -30,6 +43,113 @@ export const registerUser = async (req, res) => {
         success: false,
         message: 'Please provide email, password, firstName, and lastName'
       });
+    }
+
+    let normalizedSlug = null;
+    if (whitelabel) {
+      if (!slug) {
+        return res.status(400).json({
+          success: false,
+          message: 'Slug is required for white label accounts'
+        });
+      }
+
+      const validation = validateSlug(slug);
+      if (!validation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: validation.message
+        });
+      }
+
+      normalizedSlug = validation.slug;
+
+      const { data: existingSlug } = await supabase
+        .from('users')
+        .select('id')
+        .eq('slug_name', normalizedSlug)
+        .maybeSingle();
+
+      if (existingSlug) {
+        return res.status(400).json({
+          success: false,
+          message: 'Slug is already taken'
+        });
+      }
+    }
+
+    const tenant = normalizedSlug || requestedTenant || 'main';
+
+    // Validate plan selection for whitelabel tenants
+    let selectedPlanMinutes = 0;
+    if (planKey && tenant !== 'main') {
+      // Get the plan configuration for this tenant
+      const { data: planConfig } = await supabase
+        .from('plan_configs')
+        .select('minutes_limit')
+        .eq('plan_key', planKey)
+        .eq('tenant', tenant)
+        .maybeSingle();
+
+      if (!planConfig) {
+        return res.status(400).json({
+          success: false,
+          message: 'Selected plan not found for this tenant'
+        });
+      }
+
+      selectedPlanMinutes = planConfig.minutes_limit || 0;
+
+      // Get whitelabel admin for this tenant
+      const { data: adminData } = await supabase
+        .from('users')
+        .select('id, minutes_limit, slug_name')
+        .eq('slug_name', tenant)
+        .eq('is_whitelabel', true)
+        .eq('role', 'admin')
+        .maybeSingle();
+
+      if (!adminData) {
+        return res.status(404).json({
+          success: false,
+          message: 'Whitelabel admin not found for this tenant'
+        });
+      }
+
+      const adminMinutes = adminData.minutes_limit || 0;
+
+      // If admin has unlimited minutes (0), skip validation
+      if (adminMinutes > 0) {
+        // Prevent unlimited plans for limited admins
+        if (selectedPlanMinutes === 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'This plan is not available. Please contact your administrator.'
+          });
+        }
+
+        // Calculate allocated minutes: sum of all users' minutes_limit in this tenant (excluding the admin)
+        const { data: tenantUsers } = await supabase
+          .from('users')
+          .select('minutes_limit')
+          .eq('tenant', tenant)
+          .neq('id', adminData.id); // Exclude the admin
+
+        const allocated = (tenantUsers || []).reduce((sum, user) => {
+          const userMinutes = user.minutes_limit || 0;
+          return userMinutes > 0 ? sum + userMinutes : sum;
+        }, 0);
+
+        const available = adminMinutes - allocated;
+
+        // Check if there are enough available minutes
+        if (selectedPlanMinutes > available) {
+          return res.status(400).json({
+            success: false,
+            message: 'Your administrator does not have enough minutes available for this plan. Please contact your administrator.'
+          });
+        }
+      }
     }
 
     // Check if user already exists
@@ -89,20 +209,28 @@ export const registerUser = async (req, res) => {
 
     // Insert user data into users table
     console.log('💾 Inserting user data into database...');
+    const userRecord = {
+      id: authData.user.id,
+      email,
+      first_name: firstName,
+      last_name: lastName,
+      phone: phone || null,
+      role: whitelabel ? 'admin' : 'user',
+      status: 'Active',
+      tenant,
+      slug_name: normalizedSlug,
+      is_whitelabel: !!whitelabel,
+      minutes_used: 0,
+      minutes_limit: whitelabel
+        ? parseInt(process.env.DEFAULT_TENANT_MINUTES_LIMIT || '0', 10) || 0
+        : (planKey && selectedPlanMinutes > 0 ? selectedPlanMinutes : 0),
+      landing_category: whitelabel ? industry || null : null,
+      created_at: new Date().toISOString()
+    };
+
     const { data: userData, error: insertError } = await supabase
       .from('users')
-      .insert([
-        {
-          id: authData.user.id,
-          email,
-          first_name: firstName,
-          last_name: lastName,
-          phone: phone || null,
-          role: 'user', // Default role for new users
-          status: 'Active',
-          created_at: new Date().toISOString()
-        }
-      ])
+      .insert([userRecord])
       .select()
       .single();
 
@@ -133,6 +261,23 @@ export const registerUser = async (req, res) => {
     }
 
     console.log('✅ User data inserted successfully:', userData.id);
+
+    // Initialize default plans for whitelabel admins
+    if (whitelabel && normalizedSlug) {
+      try {
+        console.log(`🌱 Initializing default plans for whitelabel admin: ${normalizedSlug}`);
+        const planResult = await initializePlansForTenant(normalizedSlug);
+        if (planResult.success) {
+          console.log(`✅ Plans initialized: ${planResult.created} created, ${planResult.skipped} skipped`);
+        } else {
+          console.warn(`⚠️ Plan initialization had errors:`, planResult.errors);
+          // Don't fail registration if plan initialization fails
+        }
+      } catch (planError) {
+        console.error('❌ Error initializing plans (non-fatal):', planError);
+        // Don't fail registration if plan initialization fails
+      }
+    }
 
     // Generate JWT token
     const token = jwt.sign(
@@ -281,6 +426,10 @@ export const getCurrentUser = async (req, res) => {
           phone: userData.phone,
           role: userData.role,
           status: userData.status,
+          tenant: userData.tenant,
+          slugName: userData.slug_name,
+          isWhitelabel: userData.is_whitelabel,
+          minutesLimit: userData.minutes_limit,
           createdAt: userData.created_at
         }
       }
