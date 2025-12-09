@@ -31,7 +31,6 @@ from cal_calendar_api import CalComCalendar, AvailableSlot, CalendarResult, Cale
 
 # ⬇️ OpenAI + VAD plugins
 from livekit.plugins import openai as lk_openai  # LLM, TTS
-from livekit.plugins.groq import LLM as lk_groq  # Groq LLM
 from livekit.plugins import silero              # VAD
 from livekit.plugins import rime as lk_rime     # Rime TTS
 from livekit.plugins import deepgram            # Deepgram STT
@@ -1076,47 +1075,34 @@ class EnhancedVoiceAgent:
         )
         self.logger.info(f"DEEPGRAM_STT_CONFIGURED | model=nova-3 | language=en | api_key={'SET' if settings.deepgram.api_key else 'NOT_SET'}")
         
-        # Choose LLM provider with Groq as primary and OpenAI as fallback
+        # Configure LLM provider - OpenAI only
         llm = None
-        llm_provider_used = None
+        llm_provider_used = "openai"
         
-        # Try Groq first (primary provider)
-        if settings.groq.api_key:
-            try:
-                llm = lk_groq.LLM(
-                    model=settings.groq.model,
-                    api_key=settings.groq.api_key,
-                    temperature=settings.groq.temperature,
-                    parallel_tool_calls=True,
-                    tool_choice="auto",
-                )
-                llm_provider_used = "groq"
-                self.logger.info(f"GROQ_LLM_CONFIGURED | model={settings.groq.model} | temperature={settings.groq.temperature}")
-            except Exception as e:
-                self.logger.warning(f"GROQ_LLM_FAILED | {str(e)} | falling back to OpenAI")
-                llm = None
-        
-        # Fallback to OpenAI if Groq failed or not configured
-        if llm is None and settings.openai.api_key:
+        # Use OpenAI LLM
+        if settings.openai.api_key:
             try:
                 llm = lk_openai.LLM(
                     model=settings.openai.model,
                     temperature=settings.openai.temperature,
                 )
-                llm_provider_used = "openai"
                 self.logger.info(f"OPENAI_LLM_CONFIGURED | model={settings.openai.model} | temperature={settings.openai.temperature}")
             except Exception as e:
                 self.logger.error(f"OPENAI_LLM_FAILED | {str(e)} | no LLM provider available")
-                raise RuntimeError("No LLM provider available - both Groq and OpenAI failed")
-        
-        # Final fallback - use default OpenAI configuration
-        if llm is None:
+                raise RuntimeError("No LLM provider available - OpenAI failed")
+        else:
+            # Fallback - use default OpenAI configuration (will use OPENAI_API_KEY from environment)
             self.logger.warning("LLM_FALLBACK_TO_DEFAULT | using default OpenAI configuration")
-            llm = lk_openai.LLM(
-                model="gpt-4o-mini",
-                temperature=0.1,
-            )
-            llm_provider_used = "openai_default"
+            try:
+                llm = lk_openai.LLM(
+                    model="gpt-4o-mini",
+                    temperature=0.1,
+                )
+                llm_provider_used = "openai_default"
+                self.logger.info("OPENAI_LLM_CONFIGURED | using default configuration")
+            except Exception as e:
+                self.logger.error(f"OPENAI_LLM_FAILED | {str(e)} | no LLM provider available")
+                raise RuntimeError("No LLM provider available - OpenAI failed (no API key configured)")
         
         self.logger.info(f"LLM_PROVIDER_SELECTED | provider={llm_provider_used} | model={getattr(llm, 'model', 'unknown')}")
         

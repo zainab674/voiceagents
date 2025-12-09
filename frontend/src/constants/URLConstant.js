@@ -11,3 +11,5 @@ export const AGENT_TEMPLATES_ENDPOINT = `${API_BASE_URL}/agent-templates`;
 export const ANALYTICS_ENDPOINT = `${API_BASE_URL}/analytics`;
 export const CALLS_ENDPOINT = `${API_BASE_URL}/calls`;
 export const PLANS_ENDPOINT = `${API_BASE_URL}/plans`;
+export const INSTAGRAM_ENDPOINT = `${API_BASE_URL}/instagram`;
+export const SOCIAL_ENDPOINT = `${API_BASE_URL}/social`;

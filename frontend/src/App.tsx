@@ -27,6 +27,8 @@ import Campaigns from "./pages/Campaigns";
 import Contacts from "./pages/Contacts";
 import KnowledgeBase from "./pages/KnowledgeBase";
 import { WebsiteSettings } from "./pages/WebsiteSettings";
+import InstagramIntegration from "./pages/InstagramIntegration";
+import SocialIntegrations from "./pages/SocialIntegrations";
 
 const queryClient = new QueryClient();
 
@@ -62,9 +64,11 @@ const App = () => (
             <Route path="/campaigns" element={<ProtectedRoute><AppLayout><Campaigns /></AppLayout></ProtectedRoute>} />
             <Route path="/contacts" element={<ProtectedRoute><AppLayout><Contacts /></AppLayout></ProtectedRoute>} />
             <Route path="/knowledge-base" element={<ProtectedRoute><AppLayout><KnowledgeBase /></AppLayout></ProtectedRoute>} />
+            <Route path="/social-integrations" element={<ProtectedRoute><AppLayout><SocialIntegrations /></AppLayout></ProtectedRoute>} />
             <Route path="/bookings" element={<ProtectedRoute><AppLayout><div className="p-6"><h1 className="text-2xl font-bold">Bookings - Coming Soon</h1></div></AppLayout></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute><AppLayout><AdminPanel /></AppLayout></ProtectedRoute>} />
             <Route path="/white-label" element={<ProtectedRoute><AppLayout><WebsiteSettings /></AppLayout></ProtectedRoute>} />
+            <Route path="/instagram" element={<ProtectedRoute><AppLayout><InstagramIntegration /></AppLayout></ProtectedRoute>} />
             <Route path="/users" element={<ProtectedRoute><AppLayout><div className="p-6"><h1 className="text-2xl font-bold">User Management - Coming Soon</h1></div></AppLayout></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><AppLayout><UserProfile /></AppLayout></ProtectedRoute>} />
             

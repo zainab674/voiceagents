@@ -48,16 +48,10 @@ def validate_environment():
         "SUPABASE_SERVICE_ROLE_KEY"
     ]
     
-    # Check for at least one LLM provider
-    llm_provider = os.getenv("LLM_PROVIDER", "openai")
-    if llm_provider.lower() == "groq":
-        if not os.getenv("GROQ_API_KEY"):
-            logger.error("❌ GROQ_API_KEY is required when LLM_PROVIDER=groq")
-            sys.exit(1)
-    else:
-        if not os.getenv("OPENAI_API_KEY"):
-            logger.error("❌ OPENAI_API_KEY is required when LLM_PROVIDER=openai")
-            sys.exit(1)
+    # Check for OpenAI API key (required)
+    if not os.getenv("OPENAI_API_KEY"):
+        logger.error("❌ OPENAI_API_KEY is required")
+        sys.exit(1)
     
     missing_vars = [var for var in required_vars if not os.getenv(var)]
     
@@ -74,15 +68,10 @@ if __name__ == "__main__":
     
     # Log configuration
     agent_name = os.getenv("LK_AGENT_NAME", "ai")
-    llm_provider = os.getenv("LLM_PROVIDER", "openai")
     logger.info("STARTING_LIVEKIT_AGENT")
     logger.info(f"LIVEKIT_URL={os.getenv('LIVEKIT_URL')}")
-    logger.info(f"LLM_PROVIDER={llm_provider}")
-    
-    if llm_provider.lower() == "groq":
-        logger.info(f"GROQ_MODEL={os.getenv('GROQ_LLM_MODEL', 'llama-4-maverick-17b-128e-instruct')}")
-    else:
-        logger.info(f"OPENAI_MODEL={os.getenv('OPENAI_LLM_MODEL', 'gpt-4o-mini')}")
+    logger.info(f"LLM_PROVIDER=openai")
+    logger.info(f"OPENAI_MODEL={os.getenv('OPENAI_LLM_MODEL', 'gpt-4o-mini')}")
     
     logger.info(f"🤖 Agent name: {agent_name}")
     

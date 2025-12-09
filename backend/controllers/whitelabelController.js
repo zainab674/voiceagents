@@ -12,7 +12,9 @@ const WEBSITE_FIELDS = [
   'live_demo_agent_id',
   'live_demo_phone_number',
   'policy_text',
-  'landing_category'
+  'landing_category',
+  'unipile_dsn',
+  'unipile_access_token'
 ];
 
 const DEFAULT_SETTINGS = {
@@ -25,7 +27,9 @@ const DEFAULT_SETTINGS = {
   live_demo_agent_id: null,
   live_demo_phone_number: null,
   policy_text: null,
-  landing_category: null
+  landing_category: null,
+  unipile_dsn: null,
+  unipile_access_token: null
 };
 
 export const checkSlugAvailability = async (req, res) => {
@@ -95,7 +99,9 @@ const mapWebsiteSettings = (settings = DEFAULT_SETTINGS) => ({
   liveDemoPhoneNumber: settings.live_demo_phone_number,
   policyText: settings.policy_text,
   landingCategory: settings.landing_category,
-  landing_category: settings.landing_category
+  landing_category: settings.landing_category,
+  unipileDsn: settings.unipile_dsn,
+  unipileAccessToken: settings.unipile_access_token
 });
 
 export const getWebsiteSettings = async (req, res) => {
@@ -174,7 +180,9 @@ export const updateWebsiteSettings = async (req, res) => {
       liveDemoAgentId,
       liveDemoPhoneNumber,
       policyText,
-      landingCategory
+      landingCategory,
+      unipileDsn,
+      unipileAccessToken
     } = req.body;
 
     const updatePayload = {
@@ -187,6 +195,8 @@ export const updateWebsiteSettings = async (req, res) => {
       live_demo_phone_number: liveDemoPhoneNumber ?? null,
       policy_text: policyText ?? null,
       landing_category: landingCategory ?? null,
+      unipile_dsn: unipileDsn ?? null,
+      unipile_access_token: unipileAccessToken ?? null,
       updated_at: new Date().toISOString()
     };
 

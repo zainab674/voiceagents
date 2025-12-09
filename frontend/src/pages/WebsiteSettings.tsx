@@ -19,7 +19,9 @@ export const WebsiteSettings: React.FC = () => {
     meta_description: '',
     policy_text: '',
     logo: '',
-    landing_category: ''
+    landing_category: '',
+    unipile_dsn: '',
+    unipile_access_token: ''
   });
 
   React.useEffect(() => {
@@ -30,7 +32,9 @@ export const WebsiteSettings: React.FC = () => {
         meta_description: settings.meta_description || (settings as { metaDescription?: string | null }).metaDescription || '',
         policy_text: settings.policy_text || '',
         logo: settings.logo || '',
-        landing_category: settings.landing_category || (settings as { landingCategory?: string | null }).landingCategory || ''
+        landing_category: settings.landing_category || (settings as { landingCategory?: string | null }).landingCategory || '',
+        unipile_dsn: (settings as { unipileDsn?: string | null }).unipileDsn || '',
+        unipile_access_token: (settings as { unipileAccessToken?: string | null }).unipileAccessToken || ''
       });
     }
   }, [settings]);
@@ -46,7 +50,9 @@ export const WebsiteSettings: React.FC = () => {
         metaDescription: formData.meta_description || null,
         policyText: formData.policy_text || null,
         logo: formData.logo || null,
-        landingCategory: formData.landing_category || null
+        landingCategory: formData.landing_category || null,
+        unipileDsn: formData.unipile_dsn || null,
+        unipileAccessToken: formData.unipile_access_token || null
       });
       toast({
         title: 'Settings saved',
@@ -255,6 +261,38 @@ export const WebsiteSettings: React.FC = () => {
               <p className="text-xs text-muted-foreground">
                 Controls which tailored marketing copy appears on your whitelabel landing page.
               </p>
+            </div>
+
+            <div className="space-y-4 border-t pt-4">
+              <h3 className="text-sm font-semibold">Unipile Settings (Social Integrations)</h3>
+              <p className="text-xs text-muted-foreground">
+                Configure your Unipile credentials so you can connect WhatsApp, Instagram, LinkedIn and other channels.
+                These values are stored securely in your tenant settings instead of environment variables.
+              </p>
+
+              <div className="space-y-2">
+                <Label htmlFor="unipile_dsn">Unipile DSN</Label>
+                <Input
+                  id="unipile_dsn"
+                  value={formData.unipile_dsn}
+                  onChange={(e) => handleInputChange('unipile_dsn', e.target.value)}
+                  placeholder="https://xxx.unipile.io"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="unipile_access_token">Unipile Access Token</Label>
+                <Input
+                  id="unipile_access_token"
+                  type="password"
+                  value={formData.unipile_access_token}
+                  onChange={(e) => handleInputChange('unipile_access_token', e.target.value)}
+                  placeholder="Server-side Unipile API token"
+                />
+                <p className="text-xs text-muted-foreground">
+                  This token is never exposed to end-users. Only admins should change it.
+                </p>
+              </div>
             </div>
 
             <div className="flex justify-end">

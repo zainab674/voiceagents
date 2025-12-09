@@ -2,9 +2,6 @@
 # Core LiveKit Agents Framework (Official)
 livekit-agents[openai,silero,deepgram,rime]~=1.2
 
-# LiveKit Plugins
-livekit-plugins-groq~=1.2
-
 # Environment and configuration
 python-dotenv
 aiohttp
@@ -12,7 +9,6 @@ aiohttp
 # Database and integrations
 supabase>=2.4.0
 pinecone>=7.0.0
-groq>=0.4.0
 
 # Additional utilities
 requests>=2.31.0

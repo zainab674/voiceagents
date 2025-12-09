@@ -19,6 +19,8 @@ import agentTemplateRoute from "#routes/agentTemplateRoute.js";
 import planRoute from "#routes/planRoute.js";
 import { recordingWebhookRouter } from "#services/recordingService.js";
 import whitelabelRoute from "#routes/whitelabelRoute.js";
+import instagramRoute from "#routes/instagramRoute.js";
+import socialRoute from "#routes/socialRoute.js";
 
 const router = express.Router();
 
@@ -42,5 +44,7 @@ router.use("/agent-templates", agentTemplateRoute);
 router.use("/plans", planRoute);
 router.use("/recording", recordingWebhookRouter);
 router.use("/whitelabel", whitelabelRoute);
+router.use("/instagram", instagramRoute);
+router.use("/social", socialRoute);
 
 export default router;

@@ -44,15 +44,6 @@ class OpenAISettings:
         self.max_tokens: int = int(os.getenv("OPENAI_MAX_TOKENS", "250"))
 
 
-class GroqSettings:
-    """Groq configuration."""
-    def __init__(self):
-        self.api_key: str = os.getenv("GROQ_API_KEY", "")
-        self.model: str = "meta-llama/llama-4-maverick-17b-128e-instruct"  # Correct format matching sass-livekit
-        self.temperature: float = 0.1  # Hardcoded optimal temperature
-        self.max_tokens: int = 250  # Hardcoded token limit
-
-
 class RimeSettings:
     """Rime TTS configuration."""
     def __init__(self):
@@ -80,7 +71,6 @@ class Settings:
         self.calendar: CalendarSettings = CalendarSettings()
         self.livekit: LiveKitSettings = LiveKitSettings()
         self.openai: OpenAISettings = OpenAISettings()
-        self.groq: GroqSettings = GroqSettings()
         self.rime: RimeSettings = RimeSettings()
         self.deepgram: DeepgramSettings = DeepgramSettings()
         
@@ -90,7 +80,7 @@ class Settings:
         self.backend_url: str = os.getenv("BACKEND_URL", "http://localhost:3001")
         self.enable_rag: bool = os.getenv("ENABLE_RAG", "true").lower() == "true"
         self.enable_recording: bool = os.getenv("ENABLE_RECORDING", "true").lower() == "true"
-        self.llm_provider: str = "groq"  # Hardcoded to use Groq as primary
+        self.llm_provider: str = "openai"  # Use OpenAI as LLM provider
         self.preemptive_generation: bool = os.getenv("PREEMPTIVE_GENERATION", "true").lower() == "true"
         self.participant_timeout: float = float(os.getenv("PARTICIPANT_TIMEOUT", "60.0"))  # Timeout in seconds for waiting for participants
         

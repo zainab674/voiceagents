@@ -4,3 +4,5 @@ ALTER TABLE IF EXISTS users
 
 CREATE INDEX IF NOT EXISTS idx_users_landing_category ON users(landing_category);
 
+
+
