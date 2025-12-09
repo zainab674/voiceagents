@@ -18,31 +18,16 @@ from utils.latency_logger import (
     measure_call_processing, measure_room_connection,
     get_tracker, clear_tracker
 )
-from livekit.plugins import openai, rime
+from livekit.plugins import openai
 
 
 def create_tts_instance(settings):
-    """Create TTS instance with Rime or OpenAI fallback."""
+    """Create TTS instance using OpenAI TTS."""
     logger = get_logger(__name__)
-    if settings.rime.api_key:
-        try:
-            tts = rime.TTS(
-                model=settings.rime.model,
-                speaker=settings.rime.speaker,
-                speed_alpha=settings.rime.speed_alpha,
-                reduce_latency=settings.rime.reduce_latency,
-                api_key=settings.rime.api_key,
-            )
-            logger.info(f"RIME_TTS_CONFIGURED | model={settings.rime.model} | speaker={settings.rime.speaker}")
-            return tts
-        except Exception as e:
-            logger.warning(f"RIME_TTS_FAILED | {str(e)} | falling back to OpenAI TTS")
-    
-    # Fallback to OpenAI TTS
     import os
     openai_api_key = os.getenv("OPENAI_API_KEY")
     tts = openai.TTS(model="tts-1", voice="alloy", api_key=openai_api_key)
-    logger.info("OPENAI_TTS_CONFIGURED | using OpenAI TTS")
+    logger.info("OPENAI_TTS_CONFIGURED | model=tts-1 | voice=alloy")
     return tts
 
 

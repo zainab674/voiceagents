@@ -44,16 +44,6 @@ class OpenAISettings:
         self.max_tokens: int = int(os.getenv("OPENAI_MAX_TOKENS", "250"))
 
 
-class RimeSettings:
-    """Rime TTS configuration."""
-    def __init__(self):
-        self.api_key: str = os.getenv("RIME_API_KEY", "")
-        self.model: str = os.getenv("RIME_MODEL", "mistv2")
-        self.speaker: str = os.getenv("RIME_SPEAKER", "rainforest")
-        self.speed_alpha: float = float(os.getenv("RIME_SPEED_ALPHA", "0.9"))
-        self.reduce_latency: bool = os.getenv("RIME_REDUCE_LATENCY", "true").lower() == "true"
-
-
 class DeepgramSettings:
     """Deepgram STT configuration."""
     def __init__(self):
@@ -71,7 +61,6 @@ class Settings:
         self.calendar: CalendarSettings = CalendarSettings()
         self.livekit: LiveKitSettings = LiveKitSettings()
         self.openai: OpenAISettings = OpenAISettings()
-        self.rime: RimeSettings = RimeSettings()
         self.deepgram: DeepgramSettings = DeepgramSettings()
         
         # General settings

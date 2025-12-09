@@ -32,7 +32,6 @@ from cal_calendar_api import CalComCalendar, AvailableSlot, CalendarResult, Cale
 # ⬇️ OpenAI + VAD plugins
 from livekit.plugins import openai as lk_openai  # LLM, TTS
 from livekit.plugins import silero              # VAD
-from livekit.plugins import rime as lk_rime     # Rime TTS
 from livekit.plugins import deepgram            # Deepgram STT
 
 # ⬇️ AI Analysis Service
@@ -1106,29 +1105,12 @@ class EnhancedVoiceAgent:
         
         self.logger.info(f"LLM_PROVIDER_SELECTED | provider={llm_provider_used} | model={getattr(llm, 'model', 'unknown')}")
         
-        # Configure TTS - Use Rime with OpenAI fallback
-        if settings.rime.api_key:
-            try:
-                tts = lk_rime.TTS(
-                    model=settings.rime.model,
-                    speaker=settings.rime.speaker,
-                    speed_alpha=settings.rime.speed_alpha,
-                    reduce_latency=settings.rime.reduce_latency,
-                    api_key=settings.rime.api_key,
-                )
-                self.logger.info(f"RIME_TTS_CONFIGURED | model={settings.rime.model} | speaker={settings.rime.speaker}")
-            except Exception as e:
-                self.logger.warning(f"RIME_TTS_FAILED | {str(e)} | falling back to OpenAI TTS")
-                tts = lk_openai.TTS(
-                    model="tts-1",
-                    voice="alloy",
-                )
-        else:
-            self.logger.info("RIME_API_KEY_NOT_SET | using OpenAI TTS")
-            tts = lk_openai.TTS(
-                model="tts-1",
-                voice="alloy",
-            )
+        # Configure TTS - Use OpenAI TTS only
+        tts = lk_openai.TTS(
+            model="tts-1",
+            voice="alloy",
+        )
+        self.logger.info("OPENAI_TTS_CONFIGURED | model=tts-1 | voice=alloy")
         
         session = AgentSession(
             vad=vad,
