@@ -26,7 +26,7 @@ from zoneinfo import ZoneInfo
 
 from livekit import agents, api
 from livekit.agents.voice import Agent, AgentSession, RunContext
-from livekit.agents import function_tool
+from livekit.agents import function_tool, cli, JobContext, WorkerOptions, RoomInputOptions, RoomOutputOptions
 from cal_calendar_api import CalComCalendar, AvailableSlot, CalendarResult, CalendarError
 
 # ⬇️ OpenAI + VAD plugins
@@ -773,6 +773,37 @@ def create_agent() -> UnifiedAgent:
         calendar=calendar
     )
 
+async def entrypoint(ctx: JobContext):
+    """
+    Entrypoint function for LiveKit voice agent.
+    This is called when a new job/session starts.
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(f"ENTRYPOINT_CALLED | job_id={ctx.job.id} | room={ctx.room.name}")
+    
+    try:
+        # Create the agent instance
+        agent = create_agent()
+        
+        # Create and start the agent session
+        session = AgentSession()
+        await session.start(
+            agent=agent,
+            room=ctx.room,
+            room_input_options=RoomInputOptions(close_on_disconnect=False),
+            room_output_options=RoomOutputOptions(transcription_enabled=True)
+        )
+        logger.info(f"AGENT_SESSION_STARTED | job_id={ctx.job.id}")
+        
+    except Exception as e:
+        logger.error(f"ENTRYPOINT_ERROR | job_id={ctx.job.id} | error={str(e)}", exc_info=True)
+        raise
+
 if __name__ == "__main__":
-    # Run the agent using the new unified voice API (1.3+)
-    agents.cli.run_voice_agent(create_agent)
+    # Run the agent using WorkerOptions with entrypoint
+    agent_name = os.getenv("LK_AGENT_NAME", "ai")
+    worker_options = WorkerOptions(
+        entrypoint_fnc=entrypoint,
+        agent_name=agent_name,
+    )
+    cli.run_app(worker_options)
