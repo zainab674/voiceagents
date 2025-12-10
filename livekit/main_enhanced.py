@@ -48,8 +48,13 @@ class UnifiedAgent(Agent):
     This follows the sass-livekit pattern for modern LiveKit Agents.
     """
     
-    def __init__(self, instructions: str, first_message: Optional[str] = None, knowledge_base_id: Optional[str] = None, calendar: Optional[CalComCalendar] = None) -> None:
-        super().__init__(instructions=instructions)
+    def __init__(self, instructions: str, first_message: Optional[str] = None, knowledge_base_id: Optional[str] = None, calendar: Optional[CalComCalendar] = None, stt=None, tts=None, llm=None) -> None:
+        super().__init__(
+            instructions=instructions,
+            stt=stt,
+            tts=tts,
+            llm=llm
+        )
         self.logger = logging.getLogger(__name__)
         self.first_message = first_message
         self.knowledge_base_id = knowledge_base_id
@@ -743,6 +748,64 @@ def create_agent() -> UnifiedAgent:
     first_message = os.getenv("AGENT_FIRST_MESSAGE", None)
     knowledge_base_id = os.getenv("KNOWLEDGE_BASE_ID", None)
     
+    # Initialize TTS and STT
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
+    
+    # Validate API keys are set
+    if not deepgram_api_key:
+        logger.warning("DEEPGRAM_API_KEY not set - TTS/STT will fallback to OpenAI (may have permission issues)")
+    if not openai_api_key:
+        logger.error(
+            "OPENAI_API_KEY not set - LLM will not work. "
+            "Please set OPENAI_API_KEY in your environment. "
+            "The key must have 'model.request' scope enabled. "
+            "Check permissions at: https://platform.openai.com/api-keys"
+        )
+    
+    # Create TTS instance - prefer Deepgram if available, fallback to OpenAI
+    if deepgram_api_key:
+        tts = deepgram.TTS(model="aura-2-andromeda-en", api_key=deepgram_api_key)
+        tts_provider = "deepgram"
+        tts_model = "aura-2-andromeda-en"
+        logger.info("DEEPGRAM_TTS_CONFIGURED | using Deepgram for TTS")
+    elif openai_api_key:
+        tts = lk_openai.TTS(model="tts-1", voice="alloy", api_key=openai_api_key)
+        tts_provider = "openai"
+        tts_model = "tts-1"
+        logger.warning("OPENAI_TTS_CONFIGURED | using OpenAI for TTS (consider using Deepgram)")
+    else:
+        raise ValueError("Either DEEPGRAM_API_KEY or OPENAI_API_KEY must be set for TTS")
+    
+    # Create STT instance - prefer Deepgram if available, fallback to OpenAI
+    if deepgram_api_key:
+        stt = deepgram.STT(model="nova-3", api_key=deepgram_api_key)
+        stt_provider = "deepgram"
+        stt_model = "nova-3"
+        logger.info("DEEPGRAM_STT_CONFIGURED | using Deepgram for STT")
+    elif openai_api_key:
+        stt = lk_openai.STT(model="whisper-1", api_key=openai_api_key)
+        stt_provider = "openai"
+        stt_model = "whisper-1"
+        logger.warning("OPENAI_STT_CONFIGURED | using OpenAI for STT (consider using Deepgram)")
+    else:
+        raise ValueError("Either DEEPGRAM_API_KEY or OPENAI_API_KEY must be set for STT")
+    
+    # Create LLM instance
+    # Note: LLM currently requires OpenAI - Deepgram doesn't provide LLM services
+    llm_model = os.getenv("OPENAI_LLM_MODEL", "gpt-4o-mini")
+    if not openai_api_key:
+        raise ValueError(
+            "OPENAI_API_KEY is required for LLM. "
+            "Please set OPENAI_API_KEY in your environment. "
+            "Note: The API key must have 'model.request' scope enabled. "
+            "Check your OpenAI API key permissions at https://platform.openai.com/api-keys"
+        )
+    llm = lk_openai.LLM(model=llm_model, api_key=openai_api_key)
+    logger.info(f"OPENAI_LLM_CONFIGURED | model={llm_model} | Note: API key must have 'model.request' scope")
+    
+    logger.info(f"TTS_STT_LLM_CONFIGURED | tts_provider={tts_provider} | tts_model={tts_model} | stt_provider={stt_provider} | stt_model={stt_model} | llm_model={llm_model}")
+    
     # Initialize calendar if configured
     calendar = None
     cal_api_key = os.getenv("CAL_API_KEY")
@@ -770,7 +833,10 @@ def create_agent() -> UnifiedAgent:
         instructions=instructions,
         first_message=first_message,
         knowledge_base_id=knowledge_base_id,
-        calendar=calendar
+        calendar=calendar,
+        stt=stt,
+        tts=tts,
+        llm=llm
     )
 
 async def entrypoint(ctx: JobContext):
@@ -785,8 +851,59 @@ async def entrypoint(ctx: JobContext):
         # Create the agent instance
         agent = create_agent()
         
-        # Create and start the agent session
-        session = AgentSession()
+        # Get API keys for session components
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
+        
+        # Create TTS instance - use same provider as agent
+        if deepgram_api_key:
+            session_tts = deepgram.TTS(model="aura-2-andromeda-en", api_key=deepgram_api_key)
+            logger.info("SESSION_DEEPGRAM_TTS_CONFIGURED | using Deepgram for TTS")
+        elif openai_api_key:
+            session_tts = lk_openai.TTS(model="tts-1", voice="alloy", api_key=openai_api_key)
+            logger.warning("SESSION_OPENAI_TTS_CONFIGURED | using OpenAI for TTS")
+        else:
+            raise ValueError("Either DEEPGRAM_API_KEY or OPENAI_API_KEY must be set for TTS")
+        
+        # Create STT instance - use same provider as agent
+        if deepgram_api_key:
+            session_stt = deepgram.STT(model="nova-3", api_key=deepgram_api_key)
+            logger.info("SESSION_DEEPGRAM_STT_CONFIGURED | using Deepgram for STT")
+            # Deepgram STT supports streaming, but VAD is still recommended for better interruption handling
+            use_vad = True
+        elif openai_api_key:
+            session_stt = lk_openai.STT(model="whisper-1", api_key=openai_api_key)
+            logger.warning("SESSION_OPENAI_STT_CONFIGURED | using OpenAI for STT")
+            # VAD is required for non-streaming STT (like OpenAI Whisper)
+            use_vad = True
+        else:
+            raise ValueError("Either DEEPGRAM_API_KEY or OPENAI_API_KEY must be set for STT")
+        
+        # Create session components with VAD for better interruption handling
+        # VAD is recommended for both streaming and non-streaming STT
+        if not openai_api_key:
+            raise ValueError(
+                "OPENAI_API_KEY is required for LLM. "
+                "Please set OPENAI_API_KEY in your environment. "
+                "Note: The API key must have 'model.request' scope enabled. "
+                "Check your OpenAI API key permissions at https://platform.openai.com/api-keys"
+            )
+        
+        llm_model = os.getenv("OPENAI_LLM_MODEL", "gpt-4o-mini")
+        session_llm = lk_openai.LLM(model=llm_model, api_key=openai_api_key)
+        logger.info(f"SESSION_OPENAI_LLM_CONFIGURED | model={llm_model} | Note: API key must have 'model.request' scope")
+        
+        session = AgentSession(
+            vad=silero.VAD.load() if use_vad else None,  # VAD recommended for better interruption handling
+            stt=session_stt,
+            llm=session_llm,
+            tts=session_tts,
+            allow_interruptions=True,
+            preemptive_generation=True,
+            resume_false_interruption=True
+        )
+        
+        # Start the agent session
         await session.start(
             agent=agent,
             room=ctx.room,
