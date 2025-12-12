@@ -2,8 +2,15 @@ import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { spawn } from 'child_process';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { validateSlug } from '#utils/whitelabel.js';
 import { initializePlansForTenant } from '#utils/planInitializer.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
@@ -276,6 +283,60 @@ export const registerUser = async (req, res) => {
       } catch (planError) {
         console.error('❌ Error initializing plans (non-fatal):', planError);
         // Don't fail registration if plan initialization fails
+      }
+
+      // Setup Nginx reverse proxy for the whitelabel domain
+      try {
+        // Construct full domain from slug
+        const mainDomain = process.env.MAIN_DOMAIN || 'aiassistant.net';
+        const fullDomain = `${normalizedSlug}.${mainDomain}`;
+        const frontendPort = process.env.FRONTEND_PORT || '8080';
+
+        // Path to script: verify relative path from controllers to scripts
+        // controllers/authController.js -> ../scripts/setup_reverse_proxy.sh
+        const scriptPath = path.join(__dirname, '..', 'scripts', 'setup_reverse_proxy.sh');
+
+        // Check if script exists
+        if (!fs.existsSync(scriptPath)) {
+          console.error('⚠️ Nginx setup script not found:', scriptPath);
+        } else {
+          console.log(`🚀 Setting up Nginx reverse proxy for ${fullDomain} on port ${frontendPort}`);
+
+          // Execute script asynchronously (don't block signup response)
+          const script = spawn('sudo', [
+            'bash',
+            scriptPath,
+            fullDomain,
+            frontendPort
+          ]);
+
+          let output = '';
+
+          script.stdout.on('data', (data) => {
+            output += data.toString();
+            console.log(`[Nginx Setup ${fullDomain}]:`, data.toString().trim());
+          });
+
+          script.stderr.on('data', (data) => {
+            output += data.toString();
+            console.error(`[Nginx Setup Error ${fullDomain}]:`, data.toString().trim());
+          });
+
+          script.on('close', (code) => {
+            if (code === 0) {
+              console.log(`✅ Nginx reverse proxy setup completed for ${fullDomain}`);
+            } else {
+              console.error(`❌ Nginx setup failed for ${fullDomain} with code ${code}`);
+            }
+          });
+
+          script.on('error', (error) => {
+            console.error('Error executing Nginx setup script:', error);
+          });
+        }
+      } catch (error) {
+        console.error('Error setting up Nginx reverse proxy:', error);
+        // Don't fail signup if Nginx setup fails
       }
     }
 
