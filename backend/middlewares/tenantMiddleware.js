@@ -22,7 +22,8 @@ export const tenantMiddleware = (req, _res, next) => {
     if (host && host !== mainDomain) {
       if (host.endsWith(`.${mainDomain}`)) {
         const slugCandidate = host.slice(0, -(mainDomain.length + 1));
-        if (slugCandidate) {
+        const reservedSubdomains = ['backend', 'api', 'www', 'app'];
+        if (slugCandidate && !reservedSubdomains.includes(slugCandidate)) {
           tenant = slugCandidate;
           source = 'subdomain';
         }
