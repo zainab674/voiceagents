@@ -1,8 +1,8 @@
-import { 
-  Home, 
-  Phone, 
-  Database, 
-  MessageSquare, 
+import {
+  Home,
+  Phone,
+  Database,
+  MessageSquare,
   BarChart3,
   Settings,
   Users,
@@ -17,7 +17,8 @@ import {
   UserCheck,
   Brain,
   Bot,
-  Instagram
+  Instagram,
+  Key
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -44,6 +45,8 @@ const navigationItems = [
   { title: "Contacts", url: "/contacts", icon: UserCheck },
   { title: "Knowledge Base", url: "/knowledge-base", icon: Brain },
   { title: "Phone Management", url: "/trunk-management", icon: Network },
+  { title: "Twilio Credentials", url: "/trunk-management?tab=credentials", icon: Key },
+  { title: "Email Automation", url: "/email-automation", icon: Mail },
   { title: "CRM Integration", url: "/crm", icon: Database },
   { title: "Social Integrations", url: "/social-integrations", icon: MessageSquare },
   { title: "Analytics", url: "/analytics", icon: BarChart3 },

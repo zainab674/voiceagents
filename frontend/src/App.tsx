@@ -29,6 +29,7 @@ import KnowledgeBase from "./pages/KnowledgeBase";
 import { WebsiteSettings } from "./pages/WebsiteSettings";
 import InstagramIntegration from "./pages/InstagramIntegration";
 import SocialIntegrations from "./pages/SocialIntegrations";
+import EmailAutomation from "./pages/EmailAutomation";
 
 const queryClient = new QueryClient();
 
@@ -41,41 +42,42 @@ const App = () => (
             <Toaster />
             <Sonner />
             <BrowserRouter>
-          <Routes>
-            {/* Landing page route */}
-            <Route path="/" element={<LandingPage />} />
-            
-            {/* Authentication routes */}
-            <Route path="/auth" element={<AuthPage />} />
-            
-            {/* Onboarding route */}
-            <Route path="/onboarding" element={<OnboardingWizard />} />
-            
-            {/* App routes with layout - Protected */}
-            <Route path="/dashboard" element={<ProtectedRoute><AppLayout><Dashboard /></AppLayout></ProtectedRoute>} />
-            <Route path="/create-agent" element={<ProtectedRoute><AppLayout><CreateAgent /></AppLayout></ProtectedRoute>} />
-            <Route path="/all-agents" element={<ProtectedRoute><AppLayout><AllAgents /></AppLayout></ProtectedRoute>} />
-            <Route path="/voice-calls" element={<ProtectedRoute><AppLayout><AICallInterface /></AppLayout></ProtectedRoute>} />
-            <Route path="/communication" element={<ProtectedRoute><AppLayout><CommunicationHub /></AppLayout></ProtectedRoute>} />
-            <Route path="/crm" element={<ProtectedRoute><AppLayout><CRMIntegration /></AppLayout></ProtectedRoute>} />
-            <Route path="/analytics" element={<ProtectedRoute><AppLayout><Analytics /></AppLayout></ProtectedRoute>} />
-            <Route path="/trunk-management" element={<ProtectedRoute><AppLayout><TrunkManagement /></AppLayout></ProtectedRoute>} />
-            <Route path="/conversations" element={<ProtectedRoute><AppLayout><Conversations /></AppLayout></ProtectedRoute>} />
-            <Route path="/campaigns" element={<ProtectedRoute><AppLayout><Campaigns /></AppLayout></ProtectedRoute>} />
-            <Route path="/contacts" element={<ProtectedRoute><AppLayout><Contacts /></AppLayout></ProtectedRoute>} />
-            <Route path="/knowledge-base" element={<ProtectedRoute><AppLayout><KnowledgeBase /></AppLayout></ProtectedRoute>} />
-            <Route path="/social-integrations" element={<ProtectedRoute><AppLayout><SocialIntegrations /></AppLayout></ProtectedRoute>} />
-            <Route path="/bookings" element={<ProtectedRoute><AppLayout><div className="p-6"><h1 className="text-2xl font-bold">Bookings - Coming Soon</h1></div></AppLayout></ProtectedRoute>} />
-            <Route path="/admin" element={<ProtectedRoute><AppLayout><AdminPanel /></AppLayout></ProtectedRoute>} />
-            <Route path="/white-label" element={<ProtectedRoute><AppLayout><WebsiteSettings /></AppLayout></ProtectedRoute>} />
-            <Route path="/instagram" element={<ProtectedRoute><AppLayout><InstagramIntegration /></AppLayout></ProtectedRoute>} />
-            <Route path="/users" element={<ProtectedRoute><AppLayout><div className="p-6"><h1 className="text-2xl font-bold">User Management - Coming Soon</h1></div></AppLayout></ProtectedRoute>} />
-            <Route path="/settings" element={<ProtectedRoute><AppLayout><UserProfile /></AppLayout></ProtectedRoute>} />
-            
-            {/* Catch-all route */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
+              <Routes>
+                {/* Landing page route */}
+                <Route path="/" element={<LandingPage />} />
+
+                {/* Authentication routes */}
+                <Route path="/auth" element={<AuthPage />} />
+
+                {/* Onboarding route */}
+                <Route path="/onboarding" element={<OnboardingWizard />} />
+
+                {/* App routes with layout - Protected */}
+                <Route path="/dashboard" element={<ProtectedRoute><AppLayout><Dashboard /></AppLayout></ProtectedRoute>} />
+                <Route path="/create-agent" element={<ProtectedRoute><AppLayout><CreateAgent /></AppLayout></ProtectedRoute>} />
+                <Route path="/all-agents" element={<ProtectedRoute><AppLayout><AllAgents /></AppLayout></ProtectedRoute>} />
+                <Route path="/voice-calls" element={<ProtectedRoute><AppLayout><AICallInterface /></AppLayout></ProtectedRoute>} />
+                <Route path="/communication" element={<ProtectedRoute><AppLayout><CommunicationHub /></AppLayout></ProtectedRoute>} />
+                <Route path="/crm" element={<ProtectedRoute><AppLayout><CRMIntegration /></AppLayout></ProtectedRoute>} />
+                <Route path="/analytics" element={<ProtectedRoute><AppLayout><Analytics /></AppLayout></ProtectedRoute>} />
+                <Route path="/trunk-management" element={<ProtectedRoute><AppLayout><TrunkManagement /></AppLayout></ProtectedRoute>} />
+                <Route path="/conversations" element={<ProtectedRoute><AppLayout><Conversations /></AppLayout></ProtectedRoute>} />
+                <Route path="/campaigns" element={<ProtectedRoute><AppLayout><Campaigns /></AppLayout></ProtectedRoute>} />
+                <Route path="/contacts" element={<ProtectedRoute><AppLayout><Contacts /></AppLayout></ProtectedRoute>} />
+                <Route path="/knowledge-base" element={<ProtectedRoute><AppLayout><KnowledgeBase /></AppLayout></ProtectedRoute>} />
+                <Route path="/social-integrations" element={<ProtectedRoute><AppLayout><SocialIntegrations /></AppLayout></ProtectedRoute>} />
+                <Route path="/bookings" element={<ProtectedRoute><AppLayout><div className="p-6"><h1 className="text-2xl font-bold">Bookings - Coming Soon</h1></div></AppLayout></ProtectedRoute>} />
+                <Route path="/admin" element={<ProtectedRoute><AppLayout><AdminPanel /></AppLayout></ProtectedRoute>} />
+                <Route path="/white-label" element={<ProtectedRoute><AppLayout><WebsiteSettings /></AppLayout></ProtectedRoute>} />
+                <Route path="/instagram" element={<ProtectedRoute><AppLayout><InstagramIntegration /></AppLayout></ProtectedRoute>} />
+                <Route path="/email-automation" element={<ProtectedRoute><AppLayout><EmailAutomation /></AppLayout></ProtectedRoute>} />
+                <Route path="/users" element={<ProtectedRoute><AppLayout><div className="p-6"><h1 className="text-2xl font-bold">User Management - Coming Soon</h1></div></AppLayout></ProtectedRoute>} />
+                <Route path="/settings" element={<ProtectedRoute><AppLayout><UserProfile /></AppLayout></ProtectedRoute>} />
+
+                {/* Catch-all route */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </BrowserRouter>
           </WebsiteSettingsProvider>
         </OnboardingProvider>
       </AuthProvider>

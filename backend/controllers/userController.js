@@ -107,7 +107,8 @@ export const getAllUsers = async (req, res) => {
       createdAt: user.created_at,
       loginCount: user.login_count || 0,
       tenant: user.tenant,
-      slug_name: user.slug_name
+      slug_name: user.slug_name,
+      is_whitelabel: user.is_whitelabel
     }));
 
     console.log('✅ Users fetched successfully:', formattedUsers.length);

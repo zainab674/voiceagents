@@ -143,7 +143,7 @@ const CreateAgent = () => {
     setFirstMessage(template.first_message || '');
     setCalEventTypeSlug(template.cal_event_type_slug || '');
     setCalEventTypeId(template.cal_event_type_id || '');
-    setCalTimezone(template.cal_timezone || 'UTC');
+    setCalTimezone('UTC');
     setSelectedTemplateId(template.id);
 
     if (template.knowledge_base_id && knowledgeBases.some((kb) => kb.id === template.knowledge_base_id)) {
@@ -393,213 +393,145 @@ const CreateAgent = () => {
                 </TabsList>
 
                 <TabsContent value="basic" className="space-y-6">
-              {/* Title Field */}
-              <div className="space-y-2">
-                <Label htmlFor="title" className="text-base font-medium">
-                  Agent Title <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  id="title"
-                  placeholder="Enter a descriptive name for your agent (e.g., Customer Service Bot, Sales Assistant)"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="text-base"
-                  disabled={isCreating}
-                />
-                <p className="text-sm text-muted-foreground">
-                  Choose a clear, descriptive name that reflects the agent's purpose
-                </p>
-              </div>
-
-              {/* Description Field */}
-              <div className="space-y-2">
-                <Label htmlFor="description" className="text-base font-medium">
-                  Description <span className="text-red-500">*</span>
-                </Label>
-                <Textarea
-                  id="description"
-                  placeholder="Briefly describe what this agent does and its main responsibilities"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="min-h-[100px] text-base"
-                  disabled={isCreating}
-                />
-                <p className="text-sm text-muted-foreground">
-                  Provide a concise overview of the agent's role and capabilities
-                </p>
-              </div>
-
-              {/* Prompt Field */}
-              <div className="space-y-2">
-                <Label htmlFor="prompt" className="text-base font-medium">
-                  Voice Call AI Prompt <span className="text-red-500">*</span>
-                </Label>
-                <Textarea
-                  id="prompt"
-                  placeholder="Define your AI assistant's personality, role, and instructions for voice calls. For example: 'You are a helpful customer service representative for a tech company. Be professional, friendly, and knowledgeable about our products. Your goal is to help customers with their inquiries and provide excellent service.'"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  className="min-h-[150px] text-base"
-                  disabled={isCreating}
-                />
-                <p className="text-sm text-muted-foreground">
-                  This is the core instruction that defines how your AI agent will behave during voice calls
-                </p>
-              </div>
-
-              {/* SMS Prompt Field */}
-              <div className="space-y-2">
-                <Label htmlFor="smsPrompt" className="text-base font-medium">
-                  SMS AI Prompt (Optional)
-                </Label>
-                <Textarea
-                  id="smsPrompt"
-                  placeholder="Define your AI assistant's personality and instructions specifically for SMS conversations. Keep it concise and SMS-friendly. For example: 'You are a helpful customer service rep. Keep responses short and clear. Be friendly but professional in text messages.'"
-                  value={smsPrompt}
-                  onChange={(e) => setSmsPrompt(e.target.value)}
-                  className="min-h-[120px] text-base"
-                  disabled={isCreating}
-                />
-                <p className="text-sm text-muted-foreground">
-                  Optional: Custom prompt for SMS conversations. If left empty, the voice call prompt will be used for SMS as well.
-                </p>
-              </div>
-
-              {/* First Message Field */}
-              <div className="space-y-2">
-                <Label htmlFor="firstMessage" className="text-base font-medium">
-                  First Message (Optional)
-                </Label>
-                <Input
-                  id="firstMessage"
-                  placeholder="Enter the greeting message for your agent (e.g., 'Hi! You've reached ABC Company. How can I help you today?')"
-                  value={firstMessage}
-                  onChange={(e) => setFirstMessage(e.target.value)}
-                  className="text-base"
-                  disabled={isCreating}
-                />
-                <p className="text-sm text-muted-foreground">
-                  Custom greeting message that will be spoken when the call starts. If left empty, a default greeting will be used.
-                </p>
-              </div>
-
-              {/* Cal.com Integration Section */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-primary" />
-                  <Label className="text-base font-medium">Cal.com Integration (Optional)</Label>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Enable your agent to schedule appointments using Cal.com
-                </p>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Title Field */}
                   <div className="space-y-2">
-                    <Label htmlFor="calApiKey" className="text-sm font-medium">
-                      Cal.com API Key
+                    <Label htmlFor="title" className="text-base font-medium">
+                      Agent Title <span className="text-red-500">*</span>
                     </Label>
                     <Input
-                      id="calApiKey"
-                      type="password"
-                      placeholder="cal_live_..."
-                      value={calApiKey}
-                      onChange={(e) => setCalApiKey(e.target.value)}
+                      id="title"
+                      placeholder="Enter a descriptive name for your agent (e.g., Customer Service Bot, Sales Assistant)"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      className="text-base"
                       disabled={isCreating}
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Get this from your Cal.com account settings
+                    <p className="text-sm text-muted-foreground">
+                      Choose a clear, descriptive name that reflects the agent's purpose
                     </p>
                   </div>
 
+                  {/* Description Field */}
                   <div className="space-y-2">
-                    <Label htmlFor="calEventTypeSlug" className="text-sm font-medium">
-                      Event Type Slug
+                    <Label htmlFor="description" className="text-base font-medium">
+                      Description <span className="text-red-500">*</span>
+                    </Label>
+                    <Textarea
+                      id="description"
+                      placeholder="Briefly describe what this agent does and its main responsibilities"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      className="min-h-[100px] text-base"
+                      disabled={isCreating}
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      Provide a concise overview of the agent's role and capabilities
+                    </p>
+                  </div>
+
+                  {/* Prompt Field */}
+                  <div className="space-y-2">
+                    <Label htmlFor="prompt" className="text-base font-medium">
+                      Voice Call AI Prompt <span className="text-red-500">*</span>
+                    </Label>
+                    <Textarea
+                      id="prompt"
+                      placeholder="Define your AI assistant's personality, role, and instructions for voice calls. For example: 'You are a helpful customer service representative for a tech company. Be professional, friendly, and knowledgeable about our products. Your goal is to help customers with their inquiries and provide excellent service.'"
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      className="min-h-[150px] text-base"
+                      disabled={isCreating}
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      This is the core instruction that defines how your AI agent will behave during voice calls
+                    </p>
+                  </div>
+
+                  {/* SMS Prompt Field */}
+                  <div className="space-y-2">
+                    <Label htmlFor="smsPrompt" className="text-base font-medium">
+                      SMS AI Prompt (Optional)
+                    </Label>
+                    <Textarea
+                      id="smsPrompt"
+                      placeholder="Define your AI assistant's personality and instructions specifically for SMS conversations. Keep it concise and SMS-friendly. For example: 'You are a helpful customer service rep. Keep responses short and clear. Be friendly but professional in text messages.'"
+                      value={smsPrompt}
+                      onChange={(e) => setSmsPrompt(e.target.value)}
+                      className="min-h-[120px] text-base"
+                      disabled={isCreating}
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      Optional: Custom prompt for SMS conversations. If left empty, the voice call prompt will be used for SMS as well.
+                    </p>
+                  </div>
+
+                  {/* First Message Field */}
+                  <div className="space-y-2">
+                    <Label htmlFor="firstMessage" className="text-base font-medium">
+                      First Message (Optional)
                     </Label>
                     <Input
-                      id="calEventTypeSlug"
-                      placeholder="e.g., consultation, meeting"
-                      value={calEventTypeSlug}
-                      onChange={(e) => setCalEventTypeSlug(e.target.value)}
+                      id="firstMessage"
+                      placeholder="Enter the greeting message for your agent (e.g., 'Hi! You've reached ABC Company. How can I help you today?')"
+                      value={firstMessage}
+                      onChange={(e) => setFirstMessage(e.target.value)}
+                      className="text-base"
                       disabled={isCreating}
                     />
-                    <p className="text-xs text-muted-foreground">
-                      The slug of your Cal.com event type
+                    <p className="text-sm text-muted-foreground">
+                      Custom greeting message that will be spoken when the call starts. If left empty, a default greeting will be used.
                     </p>
                   </div>
-                </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="calTimezone" className="text-sm font-medium">
-                    Timezone
-                  </Label>
-                  <Select value={calTimezone} onValueChange={setCalTimezone} disabled={isCreating}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="UTC">UTC</SelectItem>
-                      <SelectItem value="America/New_York">Eastern Time</SelectItem>
-                      <SelectItem value="America/Chicago">Central Time</SelectItem>
-                      <SelectItem value="America/Denver">Mountain Time</SelectItem>
-                      <SelectItem value="America/Los_Angeles">Pacific Time</SelectItem>
-                      <SelectItem value="Europe/London">London</SelectItem>
-                      <SelectItem value="Europe/Paris">Paris</SelectItem>
-                      <SelectItem value="Asia/Tokyo">Tokyo</SelectItem>
-                      <SelectItem value="Asia/Shanghai">Shanghai</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Timezone for appointment scheduling
-                  </p>
-                </div>
-              </div>
-
-              {/* CRM Contact Integration Section */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <Users className="w-5 h-5 text-primary" />
-                  <Label className="text-base font-medium">Contact Source</Label>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Choose how to manage contacts for this agent
-                </p>
-
-                <div className="flex gap-4">
-                  <Button
-                    variant={contactSource === 'manual' ? 'default' : 'outline'}
-                    onClick={() => setContactSource('manual')}
-                    disabled={isCreating}
-                  >
-                    Manual Entry
-                  </Button>
-                  <Button
-                    variant={contactSource === 'crm' ? 'default' : 'outline'}
-                    onClick={() => setContactSource('crm')}
-                    disabled={isCreating}
-                  >
-                    CRM Contacts
-                  </Button>
-                </div>
-
-                {contactSource === 'crm' && (
-                  <div className="mt-4">
-                    <CRMContactSelector
-                      selectedContacts={selectedContacts}
-                      onContactsChange={setSelectedContacts}
-                      contactSource={contactSource}
-                      onSourceChange={setContactSource}
-                    />
-                  </div>
-                )}
-
-                {contactSource === 'manual' && (
-                  <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-600">
-                      Manual contact entry will be available when creating campaigns for this agent.
+                  {/* Cal.com Integration Section */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-5 h-5 text-primary" />
+                      <Label className="text-base font-medium">Cal.com Integration (Optional)</Label>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Enable your agent to schedule appointments using Cal.com
                     </p>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="calApiKey" className="text-sm font-medium">
+                          Cal.com API Key
+                        </Label>
+                        <Input
+                          id="calApiKey"
+                          type="password"
+                          placeholder="cal_live_..."
+                          value={calApiKey}
+                          onChange={(e) => setCalApiKey(e.target.value)}
+                          disabled={isCreating}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Get this from your Cal.com account settings
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="calEventTypeSlug" className="text-sm font-medium">
+                          Event Type Slug
+                        </Label>
+                        <Input
+                          id="calEventTypeSlug"
+                          placeholder="e.g., consultation, meeting"
+                          value={calEventTypeSlug}
+                          onChange={(e) => setCalEventTypeSlug(e.target.value)}
+                          disabled={isCreating}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          The slug of your Cal.com event type
+                        </p>
+                      </div>
+                    </div>
+
+
                   </div>
-                )}
-              </div>
+
+
                 </TabsContent>
 
                 <TabsContent value="knowledge" className="space-y-6">
@@ -652,7 +584,7 @@ const CreateAgent = () => {
                 </TabsContent>
 
 
-                
+
               </Tabs>
 
               {/* Action Buttons */}

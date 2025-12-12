@@ -6,7 +6,13 @@ import { SOCIAL_ENDPOINT, AGENTS_ENDPOINT } from "@/constants/URLConstant";
 import { supabase } from "@/lib/supabase";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Link2, MessageCircle, PhoneCall, AtSign, Instagram, Linkedin, Mail } from "lucide-react";
+import { Loader2, Link2, MessageCircle, PhoneCall, AtSign, Instagram, Linkedin, Mail, ExternalLink, HelpCircle } from "lucide-react";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 type Provider =
   | "WHATSAPP"
@@ -262,6 +268,47 @@ const SocialIntegrations: React.FC = () => {
           </p>
         </div>
       </div>
+
+      <Accordion type="single" collapsible className="w-full bg-muted/30 rounded-lg border px-4">
+        <AccordionItem value="instructions" className="border-none">
+          <AccordionTrigger className="hover:no-underline py-3">
+            <div className="flex items-center gap-2 text-primary font-medium">
+              <HelpCircle className="w-4 h-4" />
+              How to Connect & configure Unipile
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="pb-4 text-muted-foreground space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <h3 className="font-medium text-foreground flex items-center gap-2">
+                  1. Prerequisites: Unipile Credentials
+                </h3>
+                <p>
+                  Before connecting any social accounts, you must configure your Unipile API credentials in
+                  <a href="/white-label" className="text-primary hover:underline mx-1">Website Settings</a>.
+                </p>
+                <ul className="list-disc list-inside pl-1 space-y-1 mt-2 text-sm">
+                  <li>
+                    Go to your <a href="https://dashboard.unipile.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center">Unipile Dashboard <ExternalLink className="w-3 h-3 ml-0.5" /></a>.
+                  </li>
+                  <li>Navigate to <strong>Settings {'>'} API</strong> to copy your <strong>DSN</strong> and <strong>Access Token</strong>.</li>
+                  <li>Paste these values into the "Unipile Settings" section of your Website Settings page.</li>
+                </ul>
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="font-medium text-foreground">2. Connecting Accounts</h3>
+                <ol className="list-decimal list-inside pl-1 space-y-1 text-sm">
+                  <li><strong>Choose a Platform</strong>: Select the social channel (e.g., WhatsApp, Instagram).</li>
+                  <li><strong>Authenticate</strong>: Click "Connect" to redirect securely to the authentication provider.</li>
+                  <li><strong>Authorize</strong>: Grant necessary permissions to allow message syncing.</li>
+                  <li><strong>Assign Agent</strong>: Once connected, verify the account appears in the right panel and assign an AI Agent.</li>
+                </ol>
+              </div>
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>

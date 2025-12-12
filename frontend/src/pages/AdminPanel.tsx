@@ -8,9 +8,9 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { 
-  Shield, 
-  Users, 
+import {
+  Shield,
+  Users,
   Database,
   UserPlus,
   Edit,
@@ -37,13 +37,13 @@ import { useAuth } from "@/contexts/AuthContext";
 const AdminPanel = () => {
   const navigate = useNavigate();
   const { user: currentUser, loading: authLoading } = useAuth();
-  
+
   // Real-time user data state
   const [users, setUsers] = useState([]);
   const [userStats, setUserStats] = useState(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  
+
   // Filters and pagination
   const [filters, setFilters] = useState({
     search: '',
@@ -320,7 +320,7 @@ const AdminPanel = () => {
   const fetchUsers = useCallback(async (showLoading = true) => {
     try {
       if (showLoading) setLoading(true);
-      
+
       const params = {
         page: filters.page,
         limit: filters.limit,
@@ -330,7 +330,7 @@ const AdminPanel = () => {
       };
 
       const response = await userApi.getAllUsers(params);
-      
+
       if (response.success) {
         setUsers(response.data.users || []);
         setPagination(response.data.pagination || {
@@ -342,7 +342,7 @@ const AdminPanel = () => {
       }
     } catch (error) {
       console.error('Error fetching users:', error);
-      
+
       // Handle authentication errors
       if (await handleAuthError(error, navigate)) {
         toast({
@@ -352,13 +352,13 @@ const AdminPanel = () => {
         });
         return;
       }
-      
+
       toast({
         title: "Error",
         description: "Failed to fetch users",
         variant: "destructive"
       });
-      
+
       // Set empty state on error
       setUsers([]);
       setPagination({
@@ -380,12 +380,12 @@ const AdminPanel = () => {
       }
     } catch (error) {
       console.error('Error fetching user stats:', error);
-      
+
       // Handle authentication errors
       if (await handleAuthError(error, navigate)) {
         return;
       }
-      
+
       // Set default stats on error
       setUserStats({
         totalUsers: 0,
@@ -529,7 +529,7 @@ const AdminPanel = () => {
     // Validate minutes limit for whitelabel admins
     if (isWhitelabelAdmin && currentUser?.minutesLimit && currentUser.minutesLimit > 0) {
       const { allocated, available, totalLimit } = minutesAllocation;
-      
+
       // Prevent unlimited plans for limited admins
       if (minutesLimit === 0) {
         toast({
@@ -571,7 +571,7 @@ const AdminPanel = () => {
       if (!response.success) {
         throw new Error(response.message || 'Failed to save plan');
       }
-      
+
       toast({
         title: editingPlan ? "Plan Updated" : "Plan Created",
         description: `"${planForm.name}" has been ${editingPlan ? 'updated' : 'created'} successfully.`
@@ -689,7 +689,7 @@ const AdminPanel = () => {
   // Handle user actions
   const handleDeleteUser = async (userId) => {
     if (!confirm('Are you sure you want to delete this user?')) return;
-    
+
     try {
       const response = await userApi.deleteUser(userId);
       if (response.success) {
@@ -732,7 +732,7 @@ const AdminPanel = () => {
 
   const handleSaveUser = async () => {
     if (!editingUser) return;
-    
+
     try {
       const response = await userApi.updateUser(editingUser.id, editForm);
       if (response.success) {
@@ -758,11 +758,11 @@ const AdminPanel = () => {
   const handleViewUser = async (user) => {
     setViewingUser(user);
     setViewModalOpen(true);
-    
+
     // Fetch comprehensive user details from API
     try {
       const response = await userApi.getUserDetails(user.id);
-      
+
       if (response.success) {
         setUserDetails({
           assistants: response.data.assistants || [],
@@ -786,7 +786,7 @@ const AdminPanel = () => {
         description: "Failed to fetch user details",
         variant: "destructive"
       });
-      
+
       // Set empty data on error
       setUserDetails({
         assistants: [],
@@ -797,10 +797,10 @@ const AdminPanel = () => {
           totalDuration: "0:00",
           avgCallDuration: "0:00",
           successRate: "0%",
-        lastActivity: "Never",
-        minutesLimit: 0,
-        minutesUsed: 0,
-        minutesRemaining: 0
+          lastActivity: "Never",
+          minutesLimit: 0,
+          minutesUsed: 0,
+          minutesRemaining: 0
         }
       });
     }
@@ -858,14 +858,14 @@ const AdminPanel = () => {
             <div className="flex items-center gap-4">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                <Input 
-                  placeholder="Search users..." 
-                  className="w-64 pl-10" 
+                <Input
+                  placeholder="Search users..."
+                  className="w-64 pl-10"
                   value={filters.search}
                   onChange={(e) => handleFilterChange('search', e.target.value)}
                 />
               </div>
-              <select 
+              <select
                 className="p-2 border rounded-md"
                 value={filters.role}
                 onChange={(e) => handleFilterChange('role', e.target.value)}
@@ -874,7 +874,7 @@ const AdminPanel = () => {
                 <option>admin</option>
                 <option>user</option>
               </select>
-              <select 
+              <select
                 className="p-2 border rounded-md"
                 value={filters.status}
                 onChange={(e) => handleFilterChange('status', e.target.value)}
@@ -886,8 +886,8 @@ const AdminPanel = () => {
               </select>
             </div>
             <div className="flex items-center gap-2">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={refreshData}
                 disabled={refreshing}
               >
@@ -915,8 +915,8 @@ const AdminPanel = () => {
                 <div className="text-center py-12">
                   <Users className="w-16 h-16 mx-auto text-muted-foreground/50 mb-4" />
                   <h3 className="text-lg font-medium text-muted-foreground mb-2">
-                    {filters.search || filters.role !== 'All Roles' || filters.status !== 'All Status' 
-                      ? 'No users found matching your criteria' 
+                    {filters.search || filters.role !== 'All Roles' || filters.status !== 'All Status'
+                      ? 'No users found matching your criteria'
                       : 'No users in the system yet'
                     }
                   </h3>
@@ -940,6 +940,11 @@ const AdminPanel = () => {
                             <div className="flex items-center gap-2">
                               <p className="font-medium">{user.name}</p>
                               {user.role === "admin" && <Crown className="w-4 h-4 text-yellow-500" />}
+                              {(user.is_whitelabel || (user.slug_name && user.slug_name !== 'main')) && (
+                                <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-blue-50 text-blue-700 border-blue-200 ml-2">
+                                  Whitelabel
+                                </Badge>
+                              )}
                             </div>
                             <p className="text-sm text-muted-foreground">{user.email}</p>
                           </div>
@@ -948,22 +953,22 @@ const AdminPanel = () => {
                           <div className="text-right">
                           </div>
                           <div className="flex gap-2">
-                            <Button 
-                              variant="outline" 
+                            <Button
+                              variant="outline"
                               size="sm"
                               onClick={() => handleViewUser(user)}
                             >
                               <Eye className="w-4 h-4" />
                             </Button>
-                            <Button 
-                              variant="outline" 
+                            <Button
+                              variant="outline"
                               size="sm"
                               onClick={() => handleEditUser(user)}
                             >
                               <Edit className="w-4 h-4" />
                             </Button>
-                            <Button 
-                              variant="outline" 
+                            <Button
+                              variant="outline"
                               size="sm"
                               onClick={() => handleDeleteUser(user.id)}
                               className="text-red-600 hover:text-red-700 hover:bg-red-50"
@@ -975,7 +980,7 @@ const AdminPanel = () => {
                       </div>
                     ))}
                   </div>
-                  
+
                   {/* Pagination */}
                   {pagination.totalPages > 1 && (
                     <div className="flex items-center justify-between mt-6">
@@ -1013,116 +1018,116 @@ const AdminPanel = () => {
 
         {isMainAdmin && (
           <TabsContent value="templates" className="space-y-6">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div>
-              <h2 className="text-2xl font-semibold">Assistant Templates Library</h2>
-              <p className="text-muted-foreground">
-                Create reusable blueprints your team can use to spin up new assistants quickly.
-              </p>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-semibold">Assistant Templates Library</h2>
+                <p className="text-muted-foreground">
+                  Create reusable blueprints your team can use to spin up new assistants quickly.
+                </p>
+              </div>
+              <Button
+                onClick={openCreateTemplateModal}
+                className="bg-gradient-to-r from-primary to-accent"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                New Template
+              </Button>
             </div>
-            <Button
-              onClick={openCreateTemplateModal}
-              className="bg-gradient-to-r from-primary to-accent"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              New Template
-            </Button>
-          </div>
 
-          <Card className="shadow-lg">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Layers className="w-5 h-5" />
-                Templates Overview
-                {templatesLoading && <RefreshCw className="w-4 h-4 animate-spin" />}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {templatesLoading ? (
-                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                  <RefreshCw className="w-6 h-6 animate-spin mb-3" />
-                  <span>Loading templates...</span>
-                </div>
-              ) : templates.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
-                  <Layers className="w-12 h-12 mb-4 opacity-50" />
-                  <p className="text-lg font-medium mb-2">No templates yet</p>
-                  <p className="text-sm mb-4">Create your first template to give users a head start.</p>
-                  <Button onClick={openCreateTemplateModal} className="bg-gradient-to-r from-primary to-accent">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Create Template
-                  </Button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  {templates.map((template) => (
-                    <div
-                      key={template.id}
-                      className="rounded-lg border border-border/60 bg-muted/40 p-5 transition-colors hover:border-primary/50 hover:bg-muted"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-lg font-semibold">{template.name}</h3>
-                            <Badge variant={template.is_public ? "default" : "secondary"} className="flex items-center gap-1">
-                              {template.is_public ? <Globe className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
-                              {template.is_public ? 'Public' : 'Private'}
-                            </Badge>
+            <Card className="shadow-lg">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Layers className="w-5 h-5" />
+                  Templates Overview
+                  {templatesLoading && <RefreshCw className="w-4 h-4 animate-spin" />}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {templatesLoading ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                    <RefreshCw className="w-6 h-6 animate-spin mb-3" />
+                    <span>Loading templates...</span>
+                  </div>
+                ) : templates.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+                    <Layers className="w-12 h-12 mb-4 opacity-50" />
+                    <p className="text-lg font-medium mb-2">No templates yet</p>
+                    <p className="text-sm mb-4">Create your first template to give users a head start.</p>
+                    <Button onClick={openCreateTemplateModal} className="bg-gradient-to-r from-primary to-accent">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Create Template
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    {templates.map((template) => (
+                      <div
+                        key={template.id}
+                        className="rounded-lg border border-border/60 bg-muted/40 p-5 transition-colors hover:border-primary/50 hover:bg-muted"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-lg font-semibold">{template.name}</h3>
+                              <Badge variant={template.is_public ? "default" : "secondary"} className="flex items-center gap-1">
+                                {template.is_public ? <Globe className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                                {template.is_public ? 'Public' : 'Private'}
+                              </Badge>
+                            </div>
+                            {template.category && (
+                              <p className="text-xs uppercase tracking-wide text-muted-foreground mt-1">{template.category}</p>
+                            )}
                           </div>
-                          {template.category && (
-                            <p className="text-xs uppercase tracking-wide text-muted-foreground mt-1">{template.category}</p>
-                          )}
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleEditTemplate(template)}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => handleDeleteTemplate(template.id, template.name)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </div>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleEditTemplate(template)}
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                            onClick={() => handleDeleteTemplate(template.id, template.name)}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
+
+                        <p className="mt-3 text-sm text-muted-foreground line-clamp-3">{template.description}</p>
+
+                        {Array.isArray(template.tags) && template.tags.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {template.tags.map((tag) => (
+                              <Badge key={tag} variant="secondary" className="text-xs">
+                                {tag}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="mt-4 grid gap-2 text-xs text-muted-foreground">
+                          <div>
+                            <span className="font-medium">Prompt Preview:</span>
+                            <p className="mt-1 line-clamp-2 bg-background/60 p-2 rounded">{template.prompt}</p>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span>
+                              Updated {template.updated_at ? new Date(template.updated_at).toLocaleDateString() : '—'}
+                            </span>
+                            <span>Timezone: {template.cal_timezone || 'UTC'}</span>
+                          </div>
                         </div>
                       </div>
-
-                      <p className="mt-3 text-sm text-muted-foreground line-clamp-3">{template.description}</p>
-
-                      {Array.isArray(template.tags) && template.tags.length > 0 && (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {template.tags.map((tag) => (
-                            <Badge key={tag} variant="secondary" className="text-xs">
-                              {tag}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-
-                      <div className="mt-4 grid gap-2 text-xs text-muted-foreground">
-                        <div>
-                          <span className="font-medium">Prompt Preview:</span>
-                          <p className="mt-1 line-clamp-2 bg-background/60 p-2 rounded">{template.prompt}</p>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span>
-                            Updated {template.updated_at ? new Date(template.updated_at).toLocaleDateString() : '—'}
-                          </span>
-                          <span>Timezone: {template.cal_timezone || 'UTC'}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
         )}
 
         <TabsContent value="plans" className="space-y-6">
@@ -1374,7 +1379,7 @@ const AdminPanel = () => {
               User Details - {viewingUser?.name}
             </DialogTitle>
           </DialogHeader>
-          
+
           {viewingUser && (
             <div className="space-y-6">
               {/* User Basic Info */}
@@ -1507,7 +1512,7 @@ const AdminPanel = () => {
               </div>
             </div>
           )}
-          
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setViewModalOpen(false)}>
               Close
@@ -1638,7 +1643,7 @@ const AdminPanel = () => {
                       const { available } = minutesAllocation;
                       const currentMinutes = parseInt(planForm.minutesLimit) || 0;
                       // If editing, add back the current plan's minutes to available
-                      const maxValue = editingPlan 
+                      const maxValue = editingPlan
                         ? available + (editingPlan.minutes_limit || 0)
                         : available;
                       return maxValue > 0 ? maxValue : undefined;
@@ -1657,7 +1662,7 @@ const AdminPanel = () => {
                       const newTotal = allocated + currentMinutes;
                       const remainingAfter = totalLimit - newTotal;
                       const isExceeding = newTotal > totalLimit;
-                      
+
                       return (
                         <>
                           <p className="text-xs text-muted-foreground">
@@ -1667,14 +1672,14 @@ const AdminPanel = () => {
                             Already allocated: {allocated.toLocaleString()} minutes
                           </p>
                           <p className={`text-xs ${isExceeding ? 'text-red-500 font-medium' : 'text-muted-foreground'}`}>
-                            {isExceeding 
+                            {isExceeding
                               ? `⚠️ Exceeds limit by ${(newTotal - totalLimit).toLocaleString()} minutes`
                               : `Available: ${available.toLocaleString()} minutes`
                             }
                           </p>
                           {currentMinutes > 0 && (
                             <p className={`text-xs ${isExceeding ? 'text-red-500 font-medium' : 'text-green-600'}`}>
-                              {isExceeding 
+                              {isExceeding
                                 ? `Total would be: ${newTotal.toLocaleString()} minutes`
                                 : `Remaining after this plan: ${remainingAfter.toLocaleString()} minutes`
                               }

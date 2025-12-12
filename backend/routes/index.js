@@ -21,6 +21,7 @@ import { recordingWebhookRouter } from "#services/recordingService.js";
 import whitelabelRoute from "#routes/whitelabelRoute.js";
 import instagramRoute from "#routes/instagramRoute.js";
 import socialRoute from "#routes/socialRoute.js";
+import emailRoute from "#routes/emailRoute.js";
 
 const router = express.Router();
 
@@ -46,5 +47,6 @@ router.use("/recording", recordingWebhookRouter);
 router.use("/whitelabel", whitelabelRoute);
 router.use("/instagram", instagramRoute);
 router.use("/social", socialRoute);
+router.use("/email", emailRoute);
 
 export default router;

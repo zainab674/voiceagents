@@ -70,15 +70,27 @@ interface DispatchRule {
   };
 }
 
+import { useSearchParams } from 'react-router-dom';
+
 const TrunkManagement = () => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
 
   // State management
+  const [activeTab, setActiveTab] = useState("phone-numbers");
   const [phoneNumbers, setPhoneNumbers] = useState<PhoneNumber[]>([]);
   const [inboundTrunks, setInboundTrunks] = useState<InboundTrunk[]>([]);
   const [dispatchRules, setDispatchRules] = useState<DispatchRule[]>([]);
   const [agents, setAgents] = useState<any[]>([]);
+
+  // Effect to handle URL params
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam === 'credentials') {
+      setActiveTab('trunks');
+    }
+  }, [searchParams]);
 
   // Loading states
   const [loading, setLoading] = useState({
@@ -257,7 +269,7 @@ const TrunkManagement = () => {
 
     try {
       const token = (await supabase.auth.getSession()).data.session?.access_token;
-      
+
       // Step 1: Attach phone number to user's main trunk
       const attachResp = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'}/api/v1/twilio/trunk/attach`, {
         method: "POST",
@@ -265,7 +277,7 @@ const TrunkManagement = () => {
           "Content-Type": "application/json",
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           phoneSid: phoneObj.sid,
           phoneNumber: phoneToAssign,
           label: assistantName
@@ -324,7 +336,7 @@ const TrunkManagement = () => {
       // Refresh data
       fetchDispatchRules();
       fetchPhoneNumbers();
-      
+
       // Clear selections
       setSelectedPhoneNumber('');
       setSelectedAgent('');
@@ -486,7 +498,7 @@ const TrunkManagement = () => {
         </Button>
       </div>
 
-      <Tabs defaultValue="phone-numbers" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="phone-numbers">Phone Numbers</TabsTrigger>
           <TabsTrigger value="trunks">Credentials</TabsTrigger>
@@ -588,14 +600,14 @@ const TrunkManagement = () => {
                               </td>
                               <td className="p-3">
                                 <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${isAssigned
-                                    ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                                    : isDemoUrl || isDemoUsage
-                                      ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
-                                      : isForeignUsage
-                                        ? "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
-                                        : isUnused
-                                          ? "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
-                                          : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                                  ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                                  : isDemoUrl || isDemoUsage
+                                    ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+                                    : isForeignUsage
+                                      ? "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
+                                      : isUnused
+                                        ? "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
+                                        : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
                                   }`}>
                                   {isAssigned ? "Assigned" : isDemoUrl || isDemoUsage ? "Demo (Unused)" : isForeignUsage ? "Used (External)" : isUnused ? "Unused" : "Used"}
                                 </span>
