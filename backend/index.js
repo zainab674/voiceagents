@@ -18,8 +18,7 @@ app.use(express.urlencoded({ extended: true }));
 const allowedOrigins = [
   process.env.FRONTEND_URL || "http://localhost:8080",
   "http://localhost:5173", // Vite default port
-  "http://localhost:3000",
-  "https://*.aiassistant.net/auth"  // Alternative frontend port
+  "http://localhost:3000"
 ];
 
 // Add main domain and subdomains if MAIN_DOMAIN is set
@@ -48,7 +47,13 @@ app.use(cors({
       return callback(null, true);
     }
 
-    // Check for main domain subdomains (production whitelabel)
+    // Explicitly allow aiassistant.net subdomains (production whitelabel)
+    const productionSubdomainRegex = /^https?:\/\/[a-z0-9-]+\.aiassistant\.net(:\d+)?$/;
+    if (productionSubdomainRegex.test(origin)) {
+      return callback(null, true);
+    }
+
+    // Check for main domain subdomains (generic, if MAIN_DOMAIN is set)
     if (process.env.MAIN_DOMAIN) {
       const mainDomain = process.env.MAIN_DOMAIN.replace('.', '\\.');
       const subdomainRegex = new RegExp(`^https?://[a-z0-9-]+\\.${mainDomain}(:\\d+)?$`);
