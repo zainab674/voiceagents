@@ -89,7 +89,31 @@ export const registerUser = async (req, res) => {
 
     // Validate plan selection for whitelabel tenants
     let selectedPlanMinutes = 0;
-    if (planKey && tenant !== 'main') {
+
+    // CASE 1: New Whitelabel Admin Signup (whitelabel = true)
+    // They are selecting a SYSTEM plan (tenant is null), but 'tenant' variable holds their NEW slug.
+    if (whitelabel && planKey) {
+      // Validate against system plans (tenant IS NULL)
+      const { data: planConfig } = await supabase
+        .from('plan_configs')
+        .select('minutes_limit')
+        .eq('plan_key', planKey)
+        .is('tenant', null)
+        .maybeSingle();
+
+      if (!planConfig) {
+        return res.status(400).json({
+          success: false,
+          message: 'Selected plan not found (System Plan)'
+        });
+      }
+      selectedPlanMinutes = planConfig.minutes_limit || 0;
+
+      // Note: New admins don't need minute allocation checks against an upstream admin
+      // because they are the top-level admin.
+    }
+    // CASE 2: User Signup under a Whitelabel Tenant (whitelabel = false, tenant != 'main')
+    else if (planKey && tenant !== 'main') {
       // Get the plan configuration for this tenant
       const { data: planConfig } = await supabase
         .from('plan_configs')
