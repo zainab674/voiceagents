@@ -30,6 +30,7 @@ import { WebsiteSettings } from "./pages/WebsiteSettings";
 import InstagramIntegration from "./pages/InstagramIntegration";
 import SocialIntegrations from "./pages/SocialIntegrations";
 import EmailAutomation from "./pages/EmailAutomation";
+import Opportunities from "./pages/Opportunities";
 
 const queryClient = new QueryClient();
 
@@ -71,6 +72,7 @@ const App = () => (
                 <Route path="/white-label" element={<ProtectedRoute><AppLayout><WebsiteSettings /></AppLayout></ProtectedRoute>} />
                 <Route path="/instagram" element={<ProtectedRoute><AppLayout><InstagramIntegration /></AppLayout></ProtectedRoute>} />
                 <Route path="/email-automation" element={<ProtectedRoute><AppLayout><EmailAutomation /></AppLayout></ProtectedRoute>} />
+                <Route path="/opportunities" element={<ProtectedRoute><AppLayout><Opportunities /></AppLayout></ProtectedRoute>} />
                 <Route path="/users" element={<ProtectedRoute><AppLayout><div className="p-6"><h1 className="text-2xl font-bold">User Management - Coming Soon</h1></div></AppLayout></ProtectedRoute>} />
                 <Route path="/settings" element={<ProtectedRoute><AppLayout><UserProfile /></AppLayout></ProtectedRoute>} />
 

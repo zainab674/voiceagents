@@ -18,7 +18,8 @@ import {
   Brain,
   Bot,
   Instagram,
-  Key
+  Key,
+  Lightbulb
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -41,6 +42,7 @@ const navigationItems = [
   { title: "All Agents", url: "/all-agents", icon: Bot },
   { title: "Voice AI Calls", url: "/voice-calls", icon: Phone },
   { title: "Conversations", url: "/conversations", icon: MessageCircle },
+  { title: "Opportunities", url: "/opportunities", icon: Lightbulb },
   { title: "Campaigns", url: "/campaigns", icon: Megaphone },
   { title: "Contacts", url: "/contacts", icon: UserCheck },
   { title: "Knowledge Base", url: "/knowledge-base", icon: Brain },
