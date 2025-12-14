@@ -19,7 +19,8 @@ import {
   Bot,
   Instagram,
   Key,
-  Lightbulb
+  Lightbulb,
+  CreditCard
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -57,6 +58,7 @@ const navigationItems = [
 const adminItems = [
   { title: "Admin Panel", url: "/admin", icon: Shield },
   { title: "Website Settings", url: "/white-label", icon: FileText },
+  { title: "Stripe Config", url: "/admin?tab=stripe", icon: CreditCard },
   { title: "Instagram Integration", url: "/instagram", icon: Instagram },
   { title: "Settings", url: "/settings", icon: Settings },
 ];

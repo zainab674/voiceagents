@@ -10,6 +10,7 @@ import { Checkbox } from '../ui/checkbox';
 import { Progress } from '../ui/progress';
 import { ArrowRight, ArrowLeft, CheckCircle, Loader2, AlertCircle } from 'lucide-react';
 import { planApi } from '../../http/planHttp';
+import { paymentApi } from '../../http/paymentHttp';
 import { extractTenantFromHostname } from '../../lib/tenant-utils';
 import { useToast } from '../../hooks/use-toast';
 
@@ -103,7 +104,7 @@ export const OnboardingWizard: React.FC = () => {
     }
   }, [currentStep]);
 
-  // Handle plan selection with validation
+  // Handle plan selection with validation and payment
   const handlePlanSelect = async (planKey: string) => {
     const selectedPlan = plans.find(p => p.plan_key === planKey);
     if (!selectedPlan) {
@@ -113,7 +114,7 @@ export const OnboardingWizard: React.FC = () => {
     // Check if on whitelabel domain and if there are enough minutes
     if (isWhitelabelDomain() && availableMinutes && availableMinutes.available !== null) {
       const planMinutes = selectedPlan.minutes_limit || 0;
-      
+
       // Prevent unlimited plans for limited admins
       if (planMinutes === 0) {
         toast({
@@ -142,7 +143,7 @@ export const OnboardingWizard: React.FC = () => {
     try {
       // Get signup data from localStorage
       const signupDataStr = localStorage.getItem('signup-data');
-      
+
       if (!signupDataStr) {
         navigate('/auth');
         return;
@@ -156,7 +157,7 @@ export const OnboardingWizard: React.FC = () => {
         const selectedPlan = plans.find(p => p.plan_key === data.plan);
         if (selectedPlan && availableMinutes && availableMinutes.available !== null) {
           const planMinutes = selectedPlan.minutes_limit || 0;
-          
+
           if (planMinutes === 0) {
             toast({
               title: "Plan Not Available",
@@ -176,6 +177,88 @@ export const OnboardingWizard: React.FC = () => {
           }
         }
       }
+
+      // If plan has a price > 0, redirect to Stripe Checkout
+      const selectedPlan = plans.find(p => p.plan_key === data.plan);
+      if (selectedPlan && selectedPlan.price > 0) {
+        toast({
+          title: "Redirecting to Payment",
+          description: "Please wait while we redirect you to the secure checkout page...",
+        });
+
+        // Save current onboarding state to restore after payment if needed
+        localStorage.setItem('onboarding-state', JSON.stringify(data));
+
+        try {
+          const checkoutSession = await paymentApi.createCheckoutSession({
+            planKey: data.plan,
+            successUrl: `${window.location.origin}/auth?registered=true&payment=success`,
+            cancelUrl: window.location.href, // Return here on cancel
+            customerEmail: signupData.email,
+            // Pass temp user data if needed, or we register after success?
+            // Strategy: We can register the user NOW, but mark as inactive?
+            // OR pass metadata to Stripe and register in webhook?
+            // Simpler approach for now: Register User FIRST, then redirect to pay.
+            // If they cancel payment, they have an account but no active sub.
+          });
+
+          // Register user first
+          const tenantFromDomain = extractTenantFromHostname();
+          const requestedTenant = tenantFromDomain !== 'main' ? tenantFromDomain : undefined;
+
+          // Create auth user via backend
+          const registerResponse = await fetch(`${API_BASE_URL}/api/v1/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: signupData.email,
+              password: signupData.password,
+              firstName: signupData.firstName,
+              lastName: signupData.lastName,
+              phone: signupData.phone,
+              whitelabel: signupData.whitelabel,
+              slug: signupData.slug,
+              planKey: data.plan, // Pass the selected plan
+              industry: data.industry || null,
+              tenant: requestedTenant
+            })
+          });
+
+          const registerResult = await registerResponse.json();
+
+          if (!registerResult.success) {
+            throw new Error(registerResult.message || 'Registration failed');
+          }
+
+          // If whitelabel, complete signup
+          if (signupData.whitelabel && signupData.slug && registerResult.data?.user?.id) {
+            await fetch(`${API_BASE_URL}/api/v1/users/complete-signup`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                user_id: registerResult.data.user.id,
+                slug: signupData.slug,
+                whitelabel: true
+              })
+            });
+          }
+
+          // Now redirect to Stripe
+          window.location.href = checkoutSession.url;
+          return;
+
+        } catch (error: any) {
+          console.error('Payment/Registration error:', error);
+          toast({
+            title: "Error",
+            description: error.message || "Failed to initiate payment. Please try again.",
+            variant: "destructive"
+          });
+          return;
+        }
+      }
+
+      // Existing Free Plan Logic (No Change needed mostly, just wrapped in else or proceed)
 
       const tenantFromDomain = extractTenantFromHostname();
       const requestedTenant = tenantFromDomain !== 'main' ? tenantFromDomain : undefined;
@@ -330,65 +413,64 @@ export const OnboardingWizard: React.FC = () => {
                     </div>
                   )}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                  {plans.map((plan) => {
-                    const planMinutes = plan.minutes_limit || 0;
-                    const isUnavailable = isWhitelabelDomain() && 
-                      availableMinutes && 
-                      availableMinutes.available !== null && 
-                      (planMinutes === 0 || planMinutes > availableMinutes.available);
-                    
-                    return (
-                    <Card
-                      key={plan.plan_key || plan.id}
-                      className={`cursor-pointer transition-all hover:shadow-md ${
-                        data.plan === plan.plan_key ? 'border-primary border-2' : ''
-                      } ${isUnavailable ? 'opacity-60 cursor-not-allowed' : ''}`}
-                      onClick={() => !isUnavailable && handlePlanSelect(plan.plan_key)}
-                    >
-                      <CardHeader>
-                        <CardTitle>{plan.name}</CardTitle>
-                        <CardDescription className="text-xs uppercase">
-                          {plan.plan_key}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-2">
-                          <div className="text-2xl font-bold">
-                            ${plan.price}
-                            <span className="text-sm font-normal">/month</span>
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            {plan.minutes_limit === 0 
-                              ? 'Unlimited minutes' 
-                              : `${plan.minutes_limit.toLocaleString()} minutes/month`
-                            }
-                          </div>
-                          {Array.isArray(plan.features) && plan.features.length > 0 && (
-                            <ul className="text-xs text-muted-foreground space-y-1 mt-2">
-                              {plan.features.slice(0, 3).map((feature, idx) => (
-                                <li key={idx} className="flex items-start gap-1">
-                                  <CheckCircle className="h-3 w-3 text-primary mt-0.5 flex-shrink-0" />
-                                  <span>{feature}</span>
-                                </li>
-                              ))}
-                              {plan.features.length > 3 && (
-                                <li className="text-muted-foreground/70">
-                                  +{plan.features.length - 3} more features
-                                </li>
+                    {plans.map((plan) => {
+                      const planMinutes = plan.minutes_limit || 0;
+                      const isUnavailable = isWhitelabelDomain() &&
+                        availableMinutes &&
+                        availableMinutes.available !== null &&
+                        (planMinutes === 0 || planMinutes > availableMinutes.available);
+
+                      return (
+                        <Card
+                          key={plan.plan_key || plan.id}
+                          className={`cursor-pointer transition-all hover:shadow-md ${data.plan === plan.plan_key ? 'border-primary border-2' : ''
+                            } ${isUnavailable ? 'opacity-60 cursor-not-allowed' : ''}`}
+                          onClick={() => !isUnavailable && handlePlanSelect(plan.plan_key)}
+                        >
+                          <CardHeader>
+                            <CardTitle>{plan.name}</CardTitle>
+                            <CardDescription className="text-xs uppercase">
+                              {plan.plan_key}
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="space-y-2">
+                              <div className="text-2xl font-bold">
+                                ${plan.price}
+                                <span className="text-sm font-normal">/month</span>
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                {plan.minutes_limit === 0
+                                  ? 'Unlimited minutes'
+                                  : `${plan.minutes_limit.toLocaleString()} minutes/month`
+                                }
+                              </div>
+                              {Array.isArray(plan.features) && plan.features.length > 0 && (
+                                <ul className="text-xs text-muted-foreground space-y-1 mt-2">
+                                  {plan.features.slice(0, 3).map((feature, idx) => (
+                                    <li key={idx} className="flex items-start gap-1">
+                                      <CheckCircle className="h-3 w-3 text-primary mt-0.5 flex-shrink-0" />
+                                      <span>{feature}</span>
+                                    </li>
+                                  ))}
+                                  {plan.features.length > 3 && (
+                                    <li className="text-muted-foreground/70">
+                                      +{plan.features.length - 3} more features
+                                    </li>
+                                  )}
+                                </ul>
                               )}
-                            </ul>
-                          )}
-                          {isUnavailable && (
-                            <div className="mt-2 p-2 bg-destructive/10 rounded text-xs text-destructive flex items-center gap-1">
-                              <AlertCircle className="h-3 w-3" />
-                              <span>Please contact your administrator</span>
+                              {isUnavailable && (
+                                <div className="mt-2 p-2 bg-destructive/10 rounded text-xs text-destructive flex items-center gap-1">
+                                  <AlertCircle className="h-3 w-3" />
+                                  <span>Please contact your administrator</span>
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                    );
-                  })}
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
                   </div>
                 </>
               )}
@@ -413,13 +495,13 @@ export const OnboardingWizard: React.FC = () => {
   };
 
   const progress = ((currentStep + 1) / STEPS.length) * 100;
-  const canProceed = currentStep === 0 
+  const canProceed = currentStep === 0
     ? data.companyName && data.industry && data.teamSize
     : currentStep === 1
-    ? data.useCase
-    : currentStep === 2
-    ? data.plan
-    : true;
+      ? data.useCase
+      : currentStep === 2
+        ? data.plan
+        : true;
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-background">

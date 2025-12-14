@@ -45,6 +45,7 @@
     "nodemailer": "^7.0.11",
     "openai": "^4.20.1",
     "pg": "^8.16.3",
+    "stripe": "^20.0.0",
     "twilio": "^5.8.2",
     "unipile-node-sdk": "^1.9.3",
     "uuid": "^9.0.1",

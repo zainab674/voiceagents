@@ -58,6 +58,22 @@ export const createToken = catchAsyncError(async (req, res, next) => {
         canSubscribe: true,
     };
 
+    // Validate LiveKit configuration before creating token
+    const livekitHost = process.env.LIVEKIT_HOST;
+    const livekitApiKey = process.env.LIVEKIT_API_KEY;
+    
+    if (!livekitHost) {
+        console.error("❌ LIVEKIT_HOST is not set in environment variables");
+        return next(new ErrorHandler("LiveKit server not configured", 500));
+    }
+    
+    if (!livekitApiKey) {
+        console.error("❌ LIVEKIT_API_KEY is not set in environment variables");
+        return next(new ErrorHandler("LiveKit API key not configured", 500));
+    }
+    
+    console.log(`🔑 Creating token for LiveKit | Host: ${livekitHost} | API Key: ${livekitApiKey.substring(0, 8)}...`);
+    
     const token = await createLivekitToken({
         identity,
         metadata: JSON.stringify(enhancedMetadata)
@@ -104,9 +120,10 @@ export const createToken = catchAsyncError(async (req, res, next) => {
             agentDispatchResult = await agentDispatchClient.createDispatch(roomName, agentName, {
                 metadata: JSON.stringify({
                     agentId: agentId,
-                    callType: 'livekit',
+                    callType: 'webcall',  // LiveKit web calls are web calls
+                    source: 'web',        // Also set source for compatibility
                     roomName: roomName,
-                    webcall: false
+                    webcall: true         // Mark as webcall
                 }),
             });
 

@@ -31,11 +31,12 @@ import { userApi } from "@/http/userHttp";
 import { agentTemplateApi } from "@/http/agentTemplateHttp";
 import { planApi } from "@/http/planHttp";
 import { handleAuthError } from "@/utils/authHelper";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 
 const AdminPanel = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user: currentUser, loading: authLoading } = useAuth();
 
   // Real-time user data state
@@ -58,6 +59,14 @@ const AdminPanel = () => {
     total: 0,
     totalPages: 0
   });
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tab = params.get('tab');
+    if (tab) {
+      setActiveTab(tab);
+    }
+  }, [location.search]);
 
   // Template management state
   const [templates, setTemplates] = useState([]);
@@ -122,6 +131,17 @@ const AdminPanel = () => {
       minutesRemaining: 0
     }
   });
+
+  // Stripe configuration state
+  const [stripeConfig, setStripeConfig] = useState({
+    stripeSecretKey: '',
+    stripePublishableKey: ''
+  });
+  const [stripeLoading, setStripeLoading] = useState(false);
+  const [savingStripe, setSavingStripe] = useState(false);
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState('users');
 
   const { toast } = useToast();
   const isAdmin = currentUser?.role === 'admin';
@@ -632,6 +652,43 @@ const AdminPanel = () => {
     }
   };
 
+  // Stripe configuration functions
+  const fetchStripeConfig = useCallback(async (showLoading = true) => {
+    if (!isAdmin) return;
+    try {
+      if (showLoading) setStripeLoading(true);
+      const response = await userApi.getStripeConfig();
+      if (response.success) {
+        setStripeConfig(response.data);
+      }
+    } catch (error) {
+      console.error('Error fetching Stripe config:', error);
+      // Don't show toast on initial load error to avoid clutter
+    } finally {
+      if (showLoading) setStripeLoading(false);
+    }
+  }, [isAdmin]);
+
+  const handleSaveStripeConfig = async () => {
+    try {
+      setSavingStripe(true);
+      await userApi.updateStripeConfig(stripeConfig);
+      toast({
+        title: "Success",
+        description: "Stripe configuration updated successfully"
+      });
+    } catch (error) {
+      console.error('Error saving Stripe config:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update Stripe configuration",
+        variant: "destructive"
+      });
+    } finally {
+      setSavingStripe(false);
+    }
+  };
+
   const refreshData = useCallback(async () => {
     if (!isAdmin) return;
     setRefreshing(true);
@@ -639,10 +696,11 @@ const AdminPanel = () => {
       fetchUsers(false),
       fetchUserStats(),
       fetchTemplates(false),
-      fetchPlans(false)
+      fetchPlans(false),
+      fetchStripeConfig(false)
     ]);
     setRefreshing(false);
-  }, [fetchTemplates, fetchUserStats, fetchUsers, fetchPlans, isAdmin]);
+  }, [fetchTemplates, fetchUserStats, fetchUsers, fetchPlans, fetchStripeConfig, isAdmin]);
 
   // Real-time polling effect
   useEffect(() => {
@@ -651,7 +709,9 @@ const AdminPanel = () => {
     fetchUsers();
     fetchUserStats();
     fetchTemplates();
+    fetchTemplates();
     fetchPlans();
+    fetchStripeConfig();
 
     const interval = setInterval(() => {
       refreshData();
@@ -843,13 +903,14 @@ const AdminPanel = () => {
         </p>
       </div>
 
-      <Tabs defaultValue="users" className="space-y-6">
-        <TabsList className={`grid w-full ${isMainAdmin ? 'grid-cols-3' : 'grid-cols-2'}`}>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <TabsList className={`grid w-full ${isMainAdmin ? 'grid-cols-4' : 'grid-cols-3'}`}>
           <TabsTrigger value="users">User Management</TabsTrigger>
           {isMainAdmin && (
             <TabsTrigger value="templates">Assistant Templates</TabsTrigger>
           )}
           <TabsTrigger value="plans">Plans & Pricing</TabsTrigger>
+          <TabsTrigger value="stripe">Stripe Configuration</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="space-y-6">
@@ -1238,6 +1299,78 @@ const AdminPanel = () => {
                   ))}
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="stripe" className="space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-semibold">Stripe Configuration</h2>
+              <p className="text-muted-foreground">
+                Configure your Stripe account keys for payment processing.
+              </p>
+            </div>
+          </div>
+
+          <Card className="shadow-lg max-w-2xl">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CreditCard className="w-5 h-5" />
+                API Keys
+                {stripeLoading && <RefreshCw className="w-4 h-4 animate-spin" />}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="stripePublishableKey">Publishable Key</Label>
+                <div className="relative">
+                  <Input
+                    id="stripePublishableKey"
+                    placeholder="pk_test_..."
+                    value={stripeConfig.stripePublishableKey}
+                    onChange={(e) => setStripeConfig(prev => ({ ...prev, stripePublishableKey: e.target.value }))}
+                    className="font-mono"
+                  />
+                  {stripeConfig.stripePublishableKey && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                      {stripeConfig.stripePublishableKey.startsWith('pk_live_') ? 'Live Mode' : 'Test Mode'}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="stripeSecretKey">Secret Key</Label>
+                <div className="relative">
+                  <Input
+                    id="stripeSecretKey"
+                    type="password"
+                    placeholder="sk_test_..."
+                    value={stripeConfig.stripeSecretKey}
+                    onChange={(e) => setStripeConfig(prev => ({ ...prev, stripeSecretKey: e.target.value }))}
+                    className="font-mono"
+                  />
+                  {stripeConfig.stripeSecretKey && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                      {stripeConfig.stripeSecretKey.startsWith('sk_live_') ? 'Live Mode' : 'Test Mode'}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="pt-4 flex justify-end">
+                <Button onClick={handleSaveStripeConfig} disabled={savingStripe || stripeLoading} className="bg-gradient-to-r from-primary to-accent">
+                  {savingStripe ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Configuration'
+                  )}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

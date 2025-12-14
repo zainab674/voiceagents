@@ -108,6 +108,28 @@ export const userApi = {
       console.error('Error fetching user details:', error);
       throw error;
     }
+  },
+
+  // Get Stripe configuration
+  getStripeConfig: async () => {
+    try {
+      const response = await api.get('/stripe-config');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching Stripe config:', error);
+      throw error;
+    }
+  },
+
+  // Update Stripe configuration
+  updateStripeConfig: async (config) => {
+    try {
+      const response = await api.put('/stripe-config', config);
+      return response.data;
+    } catch (error) {
+      console.error('Error updating Stripe config:', error);
+      throw error;
+    }
   }
 };
 

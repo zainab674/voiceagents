@@ -192,11 +192,9 @@ const Analytics = () => {
       </div>
 
       <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="performance">Performance</TabsTrigger>
-          <TabsTrigger value="insights">AI Insights</TabsTrigger>
-          <TabsTrigger value="reports">Reports</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
@@ -393,138 +391,7 @@ const Analytics = () => {
           </div>
         </TabsContent>
 
-        <TabsContent value="insights" className="space-y-6">
-          <Card className="shadow-lg">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="w-5 h-5" />
-                AI-Generated Insights
-              </CardTitle>
-              <p className="text-muted-foreground">
-                Automated insights and recommendations based on your real-time data patterns.
-              </p>
-            </CardHeader>
-            <CardContent>
-              {isLoadingAnalytics ? (
-                <div className="flex items-center justify-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                </div>
-              ) : agentAnalytics.length > 0 ? (
-                <div className="space-y-6">
-                  {/* Dynamic insights based on real data */}
-                  {getTotalCalls() > 0 && (
-                    <div className="p-4 border rounded-lg">
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
-                          <h3 className="font-semibold">Call Volume Analysis</h3>
-                          <Badge variant="default" className="mt-1">
-                            High Impact
-                          </Badge>
-                        </div>
-                      </div>
-                      <p className="text-muted-foreground mb-3">
-                        Your AI agents have handled {getTotalCalls()} total calls with an average success rate of {getSuccessRate()}%.
-                      </p>
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium text-primary">
-                          💡 Recommendation: {getSuccessRate() > 80 ? 'Excellent performance! Consider scaling up operations.' : 'Focus on improving call success rates through agent training.'}
-                        </p>
-                        <Button variant="outline" size="sm">
-                          Apply
-                        </Button>
-                      </div>
-                    </div>
-                  )}
 
-                  {agentAnalytics.filter(a => a.status === 'active').length > 0 && (
-                    <div className="p-4 border rounded-lg">
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
-                          <h3 className="font-semibold">Agent Status Overview</h3>
-                          <Badge variant="default" className="mt-1">
-                            Medium Impact
-                          </Badge>
-                        </div>
-                      </div>
-                      <p className="text-muted-foreground mb-3">
-                        You have {agentAnalytics.filter(a => a.status === 'active').length} active agents and {agentAnalytics.filter(a => a.status === 'inactive').length} inactive ones.
-                      </p>
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium text-primary">
-                          💡 Recommendation: {agentAnalytics.filter(a => a.status === 'inactive').length > 0 ? 'Consider reactivating inactive agents or creating new ones to increase capacity.' : 'All agents are active and performing well.'}
-                        </p>
-                        <Button variant="outline" size="sm">
-                          Apply
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-
-                  {getTotalCalls() === 0 && (
-                    <div className="p-4 border rounded-lg">
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
-                          <h3 className="font-semibold">Getting Started</h3>
-                          <Badge variant="secondary" className="mt-1">
-                            New User
-                          </Badge>
-                        </div>
-                      </div>
-                      <p className="text-muted-foreground mb-3">
-                        Welcome to your AI calling platform! Start by making your first call to see analytics data appear here.
-                      </p>
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium text-primary">
-                          💡 Recommendation: Make your first AI call to start collecting real-time analytics data.
-                        </p>
-                        <Button variant="outline" size="sm">
-                          Start Calling
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <p className="text-muted-foreground">No insights available yet. Make some calls to generate insights!</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="reports" className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[
-              // { name: "Daily Performance Report", description: "Daily summary of calls and conversions", schedule: "Daily at 9 AM" },
-              { name: "Weekly Analytics Summary", description: "Comprehensive weekly performance analysis", schedule: "Mondays at 8 AM" },
-              { name: "Monthly Business Review", description: "Complete monthly business metrics", schedule: "1st of each month" },
-              { name: "AI Agent Performance", description: "Individual AI agent performance metrics", schedule: "Weekly" },
-              { name: "CRM Integration Report", description: "Data sync and CRM integration status", schedule: "Daily" },
-              { name: "Communication Channel Report", description: "Multi-channel communication analytics", schedule: "Weekly" },
-            ].map((report, index) => (
-              <Card key={index} className="shadow-lg">
-                <CardHeader>
-                  <CardTitle className="text-lg">{report.name}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground mb-4">{report.description}</p>
-                  <div className="space-y-2">
-                    <p className="text-sm"><span className="font-medium">Schedule:</span> {report.schedule}</p>
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm" className="flex-1">
-                        Generate Now
-                      </Button>
-                      <Button variant="outline" size="sm">
-                        <Download className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </TabsContent>
       </Tabs>
     </div>
   );

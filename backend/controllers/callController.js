@@ -104,7 +104,7 @@ export const endCall = async (req, res) => {
         .select('started_at')
         .eq('id', callId)
         .single();
-      
+
       if (existingCall?.started_at) {
         const startTime = new Date(existingCall.started_at);
         const endTime = new Date();
@@ -193,7 +193,7 @@ export const getCallHistory = async (req, res) => {
     // Get SMS messages for all phone numbers
     const phoneNumbers = [...new Set((calls || []).map(call => call.contact_phone).filter(Boolean))];
     let smsMessages = [];
-    
+
     if (phoneNumbers.length > 0) {
       const { data: smsData, error: smsError } = await supabase
         .from('sms_messages')
@@ -212,11 +212,11 @@ export const getCallHistory = async (req, res) => {
 
     // Group calls by phone number to create conversations
     const conversationsMap = new Map();
-    
+
     (calls || []).forEach(call => {
       const phoneNumber = call.contact_phone || 'unknown';
       const conversationId = phoneNumber;
-      
+
       if (!conversationsMap.has(conversationId)) {
         conversationsMap.set(conversationId, {
           id: conversationId,
@@ -242,11 +242,11 @@ export const getCallHistory = async (req, res) => {
           }
         });
       }
-      
+
       const conversation = conversationsMap.get(conversationId);
       conversation.totalCalls += 1;
       conversation.calls.push(call);
-      
+
       // Update last activity if this call is more recent
       const callTime = new Date(call.started_at || call.created_at);
       if (callTime > conversation.lastActivityTimestamp) {
@@ -255,13 +255,13 @@ export const getCallHistory = async (req, res) => {
         conversation.lastActivityTime = callTime.toTimeString().split(' ')[0];
         conversation.lastCallOutcome = call.outcome;
       }
-      
+
       // Calculate total duration
       const totalSeconds = conversation.calls.reduce((sum, c) => sum + (c.duration_seconds || 0), 0);
       const hours = Math.floor(totalSeconds / 3600);
       const minutes = Math.floor((totalSeconds % 3600) / 60);
       conversation.totalDuration = `${hours}:${minutes.toString().padStart(2, '0')}`;
-      
+
       // Count outcomes
       if (call.outcome) {
         const outcome = call.outcome.toLowerCase();
@@ -280,18 +280,18 @@ export const getCallHistory = async (req, res) => {
     // Add SMS messages to conversations
     smsMessages.forEach(sms => {
       // Find which phone number from the SMS matches our call phone numbers
-      const matchingPhoneNumber = phoneNumbers.find(phoneNum => 
+      const matchingPhoneNumber = phoneNumbers.find(phoneNum =>
         phoneNum === sms.to_number || phoneNum === sms.from_number
       );
-      
+
       if (matchingPhoneNumber) {
         const conversationId = matchingPhoneNumber;
-        
+
         if (conversationsMap.has(conversationId)) {
           const conversation = conversationsMap.get(conversationId);
           conversation.totalSMS += 1;
           conversation.smsMessages.push(sms);
-          
+
           // Update last activity if this SMS is more recent
           const smsTime = new Date(sms.date_created);
           if (smsTime > conversation.lastActivityTimestamp) {
@@ -468,15 +468,15 @@ export const getCallRecordingInfo = async (req, res) => {
   try {
     console.log('getCallRecordingInfo called with params:', req.params);
     console.log('getCallRecordingInfo called with user:', req.user);
-    
+
     const userId = req.user.userId;
     const { callSid } = req.params;
-    
+
     if (!callSid) {
       console.log('No callSid provided');
-      return res.status(400).json({ 
-        success: false, 
-        message: 'callSid is required' 
+      return res.status(400).json({
+        success: false,
+        message: 'callSid is required'
       });
     }
 
@@ -487,11 +487,11 @@ export const getCallRecordingInfo = async (req, res) => {
       .eq('user_id', userId)
       .eq('is_active', true)
       .single();
-    
+
     if (credError || !credentials) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'No Twilio credentials found' 
+      return res.status(400).json({
+        success: false,
+        message: 'No Twilio credentials found'
       });
     }
 
@@ -506,9 +506,9 @@ export const getCallRecordingInfo = async (req, res) => {
     res.status(status).json(result);
   } catch (error) {
     console.error('Get call recording info error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error?.message || 'Failed to get call recording info' 
+    res.status(500).json({
+      success: false,
+      message: error?.message || 'Failed to get call recording info'
     });
   }
 };
@@ -544,17 +544,17 @@ export const getRecordingAudio = async (req, res) => {
       .eq('account_sid', accountSid)
       .eq('is_active', true)
       .single();
-    
+
     if (credError || !credentials) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Invalid credentials' 
+      return res.status(403).json({
+        success: false,
+        message: 'Invalid credentials'
       });
     }
 
     // Construct the Twilio recording URL
     const recordingUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Recordings/${recordingSid}.wav`;
-    
+
     // Make authenticated request to Twilio
     const response = await fetch(recordingUrl, {
       headers: {
@@ -572,13 +572,13 @@ export const getRecordingAudio = async (req, res) => {
 
     // Get the audio data as a buffer
     const audioBuffer = await response.arrayBuffer();
-    
+
     // Set appropriate headers for audio streaming
     res.setHeader('Content-Type', 'audio/wav');
     res.setHeader('Content-Length', audioBuffer.byteLength);
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
-    
+
     // Send the audio data
     res.send(Buffer.from(audioBuffer));
 
@@ -660,6 +660,104 @@ export const saveCallHistory = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Internal server error",
+      error: error.message
+    });
+  }
+};
+
+// Update call outcome
+export const updateCallOutcome = async (req, res) => {
+  try {
+    const {
+      call_id, // Internal DB ID or Room Name
+      call_sid,
+      outcome,
+      success,
+      notes,
+      duration,
+      transcription
+    } = req.body;
+
+    // We don't strictly require userId for this internal/agent API, but good to have if available in context
+    // For agent calls, we might use a service key or agent-specific token
+
+    console.log('Updating call outcome:', {
+      call_id,
+      call_sid,
+      outcome,
+      success
+    });
+
+    if (!outcome) {
+      return res.status(400).json({
+        success: false,
+        message: 'Outcome is required'
+      });
+    }
+
+    // Prepare update data
+    const updateData = {
+      outcome,
+      status: 'completed', // If we have an outcome, the call is completed
+      ended_at: new Date().toISOString()
+    };
+
+    if (success !== undefined) updateData.success = success;
+    if (notes) updateData.notes = notes;
+    if (duration) updateData.duration_seconds = duration;
+    if (transcription) updateData.transcription = transcription;
+
+    let result;
+
+    // Try to find by ID first
+    if (call_id) {
+      // Search by ID or Room Name (which we stored in call_id often)
+      const { data: byId } = await supabase
+        .from('calls')
+        .select('id')
+        .or(`id.eq.${call_id},contact_phone.eq.${call_id},call_sid.eq.${call_id}`) // Flexible search
+        .limit(1)
+        .maybeSingle();
+
+      if (byId) {
+        result = await callHistoryService.updateCallHistory(byId.id, updateData);
+      }
+    }
+
+    // Fallback to Call SID
+    if (!result && call_sid) {
+      const { data: bySid } = await supabase
+        .from('calls')
+        .select('id')
+        .eq('call_sid', call_sid)
+        .limit(1)
+        .maybeSingle();
+
+      if (bySid) {
+        result = await callHistoryService.updateCallHistory(bySid.id, updateData);
+      }
+    }
+
+    if (!result || !result.success) {
+      // If we couldn't find the call to update, we might want to create a placeholder or just log warning
+      console.warn('Could not find call to update outcome:', { call_id, call_sid });
+      return res.status(404).json({
+        success: false,
+        message: 'Call not found to update'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: result.data,
+      message: 'Call outcome updated successfully'
+    });
+
+  } catch (error) {
+    console.error('Update call outcome error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
       error: error.message
     });
   }

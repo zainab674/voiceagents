@@ -1,13 +1,15 @@
 import express from 'express';
-import { 
-  getAllUsers, 
-  getUserById, 
-  createUser, 
-  updateUser, 
-  deleteUser, 
+import {
+  getAllUsers,
+  getUserById,
+  createUser,
+  updateUser,
+  deleteUser,
   getUserStats,
   getUserDetails,
-  completeSignup
+  completeSignup,
+  getStripeConfig,
+  updateStripeConfig
 } from '#controllers/userController.js';
 import { authenticateToken } from '#middlewares/authMiddleware.js';
 
@@ -43,5 +45,8 @@ router.get('/:id', getUserById);       // GET /api/users/:id - Get user by ID
 router.post('/', createUser);           // POST /api/users - Create new user
 router.put('/:id', updateUser);         // PUT /api/users/:id - Update user
 router.delete('/:id', deleteUser);      // DELETE /api/users/:id - Delete user
+
+router.get('/stripe-config', getStripeConfig); // GET /api/users/stripe-config
+router.put('/stripe-config', updateStripeConfig); // PUT /api/users/stripe-config
 
 export default router;

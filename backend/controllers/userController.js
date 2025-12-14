@@ -1,6 +1,7 @@
+import { validateSlug } from '#utils/whitelabel.js';
 import { supabase } from '#lib/supabase.js';
 import bcrypt from 'bcrypt';
-import { validateSlug } from '#utils/whitelabel.js';
+
 
 // Get all users with pagination and filtering
 export const getAllUsers = async (req, res) => {
@@ -15,7 +16,7 @@ export const getAllUsers = async (req, res) => {
     let userTenant = null;
     let userRole = null;
     let userSlug = null;
-    
+
     if (userId) {
       const { data: userData } = await supabase
         .from('users')
@@ -427,7 +428,7 @@ export const getUserStats = async (req, res) => {
     let userTenant = null;
     let userSlug = null;
     let userRole = null;
-    
+
     if (userId) {
       const { data: userData } = await supabase
         .from('users')
@@ -469,7 +470,7 @@ export const getUserStats = async (req, res) => {
       const { data: allUsers, error: fetchError } = await supabase
         .from('users')
         .select('id, status, last_login, tenant, slug_name, role');
-      
+
       if (fetchError) {
         console.error('❌ Error fetching users for stats:', fetchError);
         return res.status(500).json({
@@ -488,7 +489,7 @@ export const getUserStats = async (req, res) => {
 
       finalTotalUsers = filteredUsers.length;
       finalActiveUsers = filteredUsers.filter(u => u.status === 'Active').length;
-      
+
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
       finalRecentLogins = filteredUsers.filter(u => {
@@ -579,6 +580,85 @@ export const getUserStats = async (req, res) => {
 
   } catch (error) {
     console.error('❌ Get user stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
+
+// Get Stripe configuration
+export const getStripeConfig = async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    console.log('💳 Fetching Stripe config for user:', userId);
+
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('stripe_secret_key, stripe_publishable_key')
+      .eq('id', userId)
+      .single();
+
+    if (error) {
+      console.error('❌ Error fetching Stripe config:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error fetching Stripe configuration',
+        error: error.message
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        stripeSecretKey: user.stripe_secret_key || '',
+        stripePublishableKey: user.stripe_publishable_key || ''
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Get Stripe config error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
+
+// Update Stripe configuration
+export const updateStripeConfig = async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    const { stripeSecretKey, stripePublishableKey } = req.body;
+
+    console.log('💳 Updating Stripe config for user:', userId);
+
+    const { error } = await supabase
+      .from('users')
+      .update({
+        stripe_secret_key: stripeSecretKey,
+        stripe_publishable_key: stripePublishableKey
+      })
+      .eq('id', userId);
+
+    if (error) {
+      console.error('❌ Error updating Stripe config:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error updating Stripe configuration',
+        error: error.message
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Stripe configuration updated successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Update Stripe config error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error',

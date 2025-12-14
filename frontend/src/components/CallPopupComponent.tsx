@@ -163,13 +163,19 @@ const CallPopupComponent = ({ setIsCallActive, setCallStatus, callStatus, isCall
     }, [callStatus]);
 
     useEffect(() => {
-        // Only set connected when room is connected AND we have received tracks
-        if (roomState === ConnectionState.Connected && tracks.length > 0) {
-            setIsCallActive(true);
+        // Enable microphone immediately when room connects (important for web calls)
+        // Don't wait for tracks - publish immediately so agent can hear us
+        if (roomState === ConnectionState.Connected && localParticipant) {
+            // Enable microphone immediately upon connection
             localParticipant.setMicrophoneEnabled(true);
-            setCallStatus("connected");
-            if (agentId) {
-                startCallTracking(agentId, 'Voice Call');
+            
+            // Set call as active once connected
+            if (!isCallActive) {
+                setIsCallActive(true);
+                setCallStatus("connected");
+                if (agentId) {
+                    startCallTracking(agentId, 'Voice Call');
+                }
             }
         }
 
@@ -179,7 +185,7 @@ const CallPopupComponent = ({ setIsCallActive, setCallStatus, callStatus, isCall
             handleEndCall();
             setCallStatus("ended");
         }
-    }, [localParticipant, roomState, tracks]);
+    }, [localParticipant, roomState, isCallActive, agentId]);
 
     const getStatusIcon = () => {
         switch (callStatus) {

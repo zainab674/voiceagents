@@ -1,6 +1,6 @@
 import express from "express";
 import { authenticateToken } from "#middlewares/authMiddleware.js";
-import { startCall, endCall, getCallHistory, logAppointment, saveTranscription, getCallRecordingInfo, getRecordingAudio, saveCallHistory } from "#controllers/callController.js";
+import { startCall, endCall, getCallHistory, logAppointment, saveTranscription, getCallRecordingInfo, getRecordingAudio, saveCallHistory, updateCallOutcome } from "#controllers/callController.js";
 
 const router = express.Router();
 
@@ -24,6 +24,9 @@ router.get("/history", getCallHistory);
 
 // Log appointment booking (mark call as booked)
 router.post("/appointment", logAppointment);
+
+// Update call outcome (generic)
+router.post("/update-outcome", updateCallOutcome);
 
 // Get recording audio file (proxy endpoint)
 router.get("/recording/:recordingSid/audio", getRecordingAudio);
