@@ -104,6 +104,24 @@ class UnifiedAgent(Agent):
                 self.logger.warning(f"CALL_SAVE_SKIPPED | missing_agent_id | room={room_name}")
                 return False
             
+            # If user_id is not in metadata, query agents table to get it
+            if not user_id and agent_id:
+                try:
+                    import asyncio
+                    agent_result = await asyncio.to_thread(
+                        lambda: supabase.table('agents').select('user_id').eq('id', agent_id).single().execute()
+                    )
+                    if agent_result.data and agent_result.data.get('user_id'):
+                        user_id = agent_result.data.get('user_id')
+                        self.logger.info(f"USER_ID_FROM_AGENT | agent_id={agent_id} | user_id={user_id}")
+                except Exception as agent_query_error:
+                    self.logger.warning(f"AGENT_QUERY_FAILED | agent_id={agent_id} | error={str(agent_query_error)}")
+            
+            # user_id is required, so we must have it
+            if not user_id:
+                self.logger.error(f"CALL_SAVE_SKIPPED | missing_user_id | agent_id={agent_id} | room={room_name}")
+                return False
+            
             # Calculate call duration
             if start_time and end_time:
                 call_duration = int((end_time - start_time).total_seconds())
