@@ -12,7 +12,7 @@ export const paymentApi = {
      */
     createCheckoutSession: async (data) => {
         try {
-            const response = await api.post('/payments/create-checkout-session', data);
+            const response = await api.post('/api/v1/payments/create-checkout-session', data);
             return response.data;
         } catch (error) {
             console.error('Error creating checkout session:', error);

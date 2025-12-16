@@ -24,6 +24,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { BACKEND_URL } from '@/constants/URLConstant';
 
 interface KnowledgeBase {
   id: string;
@@ -90,7 +91,7 @@ const KnowledgeBase = () => {
       }
 
       const companyId = user?.id; // Use user ID as company ID
-      const response = await fetch(`/api/v1/kb/knowledge-bases/company/${companyId}`, {
+      const response = await fetch(`${BACKEND_URL}/api/v1/kb/knowledge-bases/company/${companyId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -125,7 +126,7 @@ const KnowledgeBase = () => {
         throw new Error('No authentication token available');
       }
 
-      const response = await fetch(`/api/v1/kb/knowledge-bases/${kbId}`, {
+      const response = await fetch(`${BACKEND_URL}/api/v1/kb/knowledge-bases/${kbId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -169,7 +170,7 @@ const KnowledgeBase = () => {
         throw new Error('No authentication token available');
       }
 
-      const response = await fetch('/api/v1/kb/knowledge-bases', {
+      const response = await fetch(`${BACKEND_URL}/api/v1/kb/knowledge-bases`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -230,7 +231,7 @@ const KnowledgeBase = () => {
       formData.append('companyId', user?.id || '');
       formData.append('knowledgeBaseId', selectedKB);
 
-      const response = await fetch('/api/v1/kb/upload', {
+      const response = await fetch(`${BACKEND_URL}/api/v1/kb/upload`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -269,7 +270,7 @@ const KnowledgeBase = () => {
         throw new Error('No authentication token available');
       }
 
-      const response = await fetch(`/api/v1/kb/knowledge-bases/${kbId}`, {
+      const response = await fetch(`${BACKEND_URL}/api/v1/kb/knowledge-bases/${kbId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`

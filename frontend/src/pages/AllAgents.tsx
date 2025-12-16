@@ -24,7 +24,7 @@ import {
   Sparkles
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import { AGENTS_ENDPOINT } from "@/constants/URLConstant";
+import { AGENTS_ENDPOINT, BACKEND_URL } from "@/constants/URLConstant";
 import { agentTemplateApi } from "@/http/agentTemplateHttp";
 
 interface AgentTemplate {
@@ -253,7 +253,7 @@ const AllAgents = () => {
       }
 
       const companyId = user?.id; // Use user ID as company ID
-      const response = await fetch(`/api/v1/kb/knowledge-bases/company/${companyId}`, {
+      const response = await fetch(`${BACKEND_URL}/api/v1/kb/knowledge-bases/company/${companyId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
