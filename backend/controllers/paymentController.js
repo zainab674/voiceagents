@@ -9,17 +9,24 @@ import { supabase } from '#lib/supabase.js';
 const getStripeForTenant = async (tenantSlug) => {
     if (!tenantSlug || tenantSlug === 'main') {
         // Return main admin Stripe
-        // For main admin, we might use env var or DB. Assuming DB for consistency if implemented, 
-        // but usually main admin key is in env. Let's support both or check DB first.
-        // For now, let's look up the 'main' user in DB or fall back to process.env.STRIPE_SECRET_KEY
+        // Look for admin user with tenant='main' or slug_name='main'
         const { data: mainAdmin } = await supabase
             .from('users')
             .select('stripe_secret_key')
-            .eq('slug_name', 'main')
-            .single();
+            .eq('role', 'admin')
+            .or('slug_name.eq.main,tenant.eq.main,and(slug_name.is.null,tenant.eq.main)')
+            .limit(1)
+            .maybeSingle();
 
         const key = mainAdmin?.stripe_secret_key || process.env.STRIPE_SECRET_KEY;
-        if (!key) throw new Error('Main Stripe configuration missing');
+        if (!key) {
+            console.error('❌ No Stripe key found for main tenant. Checked:', {
+                mainAdminFound: !!mainAdmin,
+                hasStripeKey: !!mainAdmin?.stripe_secret_key,
+                hasEnvKey: !!process.env.STRIPE_SECRET_KEY
+            });
+            throw new Error('Main Stripe configuration missing');
+        }
         return new Stripe(key);
     }
 
