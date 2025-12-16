@@ -10,7 +10,7 @@ function determineUserTenant(userData) {
   if (!userData) {
     return null;
   }
-  
+
   // For whitelabel admins, use their slug_name (they manage their own tenant's plans)
   // For whitelabel users, use their tenant (which is their admin's slug)
   // For main tenant users/admins, use null
@@ -49,10 +49,10 @@ export const getPlanConfigs = async (req, res) => {
       if (userData) {
         userSlug = userData.slug_name;
         userRole = userData.role;
-        console.log('👤 User data for plan fetch:', { 
-          slug_name: userData.slug_name, 
-          tenant: userData.tenant, 
-          role: userData.role 
+        console.log('👤 User data for plan fetch:', {
+          slug_name: userData.slug_name,
+          tenant: userData.tenant,
+          role: userData.role
         });
         // Use helper function for consistent tenant determination
         userTenant = determineUserTenant(userData);
@@ -80,7 +80,7 @@ export const getPlanConfigs = async (req, res) => {
       userTenant = tenant !== 'main' ? tenant : null;
       console.log('ℹ️ No userId, using tenant from request:', userTenant);
     }
-    
+
     console.log('🏷️ Final userTenant for fetching plans:', userTenant);
 
     // Fetch plans based on user context
@@ -91,14 +91,14 @@ export const getPlanConfigs = async (req, res) => {
     if (userTenant && userTenant !== 'main' && userTenant.trim() !== '') {
       const trimmedTenant = userTenant.trim();
       console.log(`[Plan Config] Fetching plans for whitelabel tenant: "${trimmedTenant}" (authenticated: ${isAuthenticated}, isAdmin: ${isWhitelabelAdmin})`);
-      
+
       // Debug: Check what plans exist in DB for this tenant
       const { data: debugPlans } = await supabase
         .from('plan_configs')
         .select('plan_key, tenant, name, is_active')
         .eq('tenant', trimmedTenant);
       console.log(`[Plan Config] DEBUG - All plans in DB with tenant="${trimmedTenant}":`, debugPlans);
-      
+
       // For authenticated users (admins or regular users): ONLY show their tenant's plans (strict tenant isolation)
       // For public signup pages on whitelabel domains: ONLY show that whitelabel admin's plans (no main tenant fallback)
       // For public signup pages on main domain: show main tenant plans
@@ -148,7 +148,7 @@ export const getPlanConfigs = async (req, res) => {
         console.log(`[Plan Config] Tenant plans found (public signup on whitelabel domain): ${plans.length}`);
         console.log(`[Plan Config] Tenant plan keys:`, plans.map(p => ({ key: p.plan_key, tenant: p.tenant, name: p.name })));
       }
-      
+
       if (plans.length === 0 && trimmedTenant) {
         console.warn(`⚠️ No tenant plans found for tenant="${trimmedTenant}". Checking if plans exist with different case or format...`);
         // Try case-insensitive search
@@ -243,7 +243,7 @@ export const getPlanConfig = async (req, res) => {
 
     // Build query - prefer tenant-specific plan, fallback to main tenant plan
     let plan = null;
-    
+
     if (userTenant && userTenant !== 'main') {
       // First try to get tenant-specific plan
       const { data: tenantPlan, error: tenantError } = await supabase
@@ -253,7 +253,7 @@ export const getPlanConfig = async (req, res) => {
         .eq('is_active', true)
         .eq('tenant', userTenant)
         .maybeSingle();
-      
+
       if (tenantError && tenantError.code !== 'PGRST116') {
         console.error('❌ Error fetching tenant plan:', tenantError);
         return res.status(500).json({
@@ -262,7 +262,7 @@ export const getPlanConfig = async (req, res) => {
           error: tenantError.message
         });
       }
-      
+
       if (tenantPlan) {
         plan = tenantPlan;
       } else {
@@ -274,7 +274,7 @@ export const getPlanConfig = async (req, res) => {
           .eq('is_active', true)
           .is('tenant', null)
           .maybeSingle();
-        
+
         if (mainError && mainError.code !== 'PGRST116') {
           console.error('❌ Error fetching main plan:', mainError);
           return res.status(500).json({
@@ -283,7 +283,7 @@ export const getPlanConfig = async (req, res) => {
             error: mainError.message
           });
         }
-        
+
         plan = mainPlan;
       }
     } else {
@@ -295,7 +295,7 @@ export const getPlanConfig = async (req, res) => {
         .eq('is_active', true)
         .is('tenant', null)
         .maybeSingle();
-      
+
       if (mainError && mainError.code !== 'PGRST116') {
         console.error('❌ Error fetching plan config:', mainError);
         return res.status(500).json({
@@ -304,7 +304,7 @@ export const getPlanConfig = async (req, res) => {
           error: mainError.message
         });
       }
-      
+
       plan = mainPlan;
     }
 
@@ -338,10 +338,9 @@ export const getPlanConfig = async (req, res) => {
   }
 };
 
-// Create or update plan configuration
 export const upsertPlanConfig = async (req, res) => {
   try {
-    const { planKey, name, price, minutesLimit, features } = req.body;
+    const { planKey, name, price, minutesLimit, features, stripePriceId, stripeProductId } = req.body;
     const tenant = req.tenant || 'main';
     const userId = req.user?.userId;
 
@@ -367,10 +366,10 @@ export const upsertPlanConfig = async (req, res) => {
 
       if (userData) {
         userRole = userData.role;
-        console.log('👤 User data:', { 
-          slug_name: userData.slug_name, 
-          tenant: userData.tenant, 
-          role: userData.role 
+        console.log('👤 User data:', {
+          slug_name: userData.slug_name,
+          tenant: userData.tenant,
+          role: userData.role
         });
         // Use helper function for consistent tenant determination
         userTenant = determineUserTenant(userData);
@@ -379,7 +378,7 @@ export const upsertPlanConfig = async (req, res) => {
         }
       }
     }
-    
+
     console.log('🏷️ Determined userTenant for plan creation:', userTenant);
 
     // Check if user is admin
@@ -450,15 +449,18 @@ export const upsertPlanConfig = async (req, res) => {
       display_order: req.body.display_order !== undefined ? parseInt(req.body.display_order) : 0,
       // Set tenant: null for main tenant admin, userTenant for whitelabel admin
       // Ensure tenant is a valid non-empty string
-      tenant: (userTenant && userTenant !== 'main' && userTenant.trim() !== '') 
-        ? userTenant.trim() 
-        : null
+      tenant: (userTenant && userTenant !== 'main' && userTenant.trim() !== '')
+        ? userTenant.trim()
+        : null,
+      // Add Stripe fields
+      stripe_price_id: stripePriceId?.trim() || null,
+      stripe_product_id: stripeProductId?.trim() || null
     };
 
-    console.log('💾 Plan data to save:', { 
-      plan_key: planData.plan_key, 
-      tenant: planData.tenant, 
-      is_active: planData.is_active 
+    console.log('💾 Plan data to save:', {
+      plan_key: planData.plan_key,
+      tenant: planData.tenant,
+      is_active: planData.is_active
     });
 
     let result;
@@ -493,10 +495,10 @@ export const upsertPlanConfig = async (req, res) => {
       result = data;
     }
 
-    console.log('✅ Plan config upserted successfully:', { 
-      id: result.id, 
-      plan_key: result.plan_key, 
-      tenant: result.tenant 
+    console.log('✅ Plan config upserted successfully:', {
+      id: result.id,
+      plan_key: result.plan_key,
+      tenant: result.tenant
     });
 
     res.status(200).json({
@@ -518,7 +520,7 @@ export const upsertPlanConfig = async (req, res) => {
 export const checkAvailableMinutes = async (req, res) => {
   try {
     const tenant = req.tenant || 'main';
-    
+
     // If main tenant, return null (unlimited)
     if (tenant === 'main') {
       return res.status(200).json({
@@ -548,7 +550,7 @@ export const checkAvailableMinutes = async (req, res) => {
     }
 
     const adminMinutes = adminData.minutes_limit || 0;
-    
+
     // If admin has unlimited minutes (0), return null
     if (adminMinutes === 0) {
       return res.status(200).json({

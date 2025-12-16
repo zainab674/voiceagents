@@ -99,7 +99,9 @@ const AdminPanel = () => {
     name: '',
     price: '',
     minutesLimit: '',
-    features: ''
+    features: '',
+    stripePriceId: '',
+    stripeProductId: ''
   });
 
   // Edit modal state
@@ -458,7 +460,9 @@ const AdminPanel = () => {
       name: '',
       price: '',
       minutesLimit: '',
-      features: ''
+      features: '',
+      stripePriceId: '',
+      stripeProductId: ''
     });
     setPlanModalOpen(true);
   };
@@ -471,7 +475,9 @@ const AdminPanel = () => {
       name: '',
       price: '',
       minutesLimit: '',
-      features: ''
+      features: '',
+      stripePriceId: '',
+      stripeProductId: ''
     });
   };
 
@@ -482,7 +488,9 @@ const AdminPanel = () => {
       name: plan.name || '',
       price: plan.price?.toString() || '',
       minutesLimit: plan.minutes_limit?.toString() || '',
-      features: Array.isArray(plan.features) ? plan.features.join('\n') : ''
+      features: Array.isArray(plan.features) ? plan.features.join('\n') : '',
+      stripePriceId: plan.stripe_price_id || '',
+      stripeProductId: plan.stripe_product_id || ''
     });
     setPlanModalOpen(true);
   };
@@ -1276,6 +1284,19 @@ const AdminPanel = () => {
                             {plan.minutes_limit === 0 ? 'Unlimited' : `${plan.minutes_limit.toLocaleString()}`}
                           </span>
                         </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          {plan.stripe_price_id ? (
+                            <Badge variant="default" className="text-xs bg-green-600">
+                              <CreditCard className="w-3 h-3 mr-1" />
+                              Payment Enabled
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-xs">
+                              <CreditCard className="w-3 h-3 mr-1" />
+                              No Payment
+                            </Badge>
+                          )}
+                        </div>
                         {Array.isArray(plan.features) && plan.features.length > 0 && (
                           <div className="mt-3">
                             <p className="text-xs font-medium text-muted-foreground mb-2">Features:</p>
@@ -1842,6 +1863,48 @@ const AdminPanel = () => {
               <p className="text-xs text-muted-foreground">
                 Enter each feature on a new line. These will be displayed to users.
               </p>
+            </div>
+
+            <div className="border-t pt-4">
+              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                <CreditCard className="w-4 h-4" />
+                Stripe Integration (Required for Payments)
+              </h3>
+
+              <div className="grid gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="plan-stripe-price-id">
+                    Stripe Price ID
+                    <span className="text-red-500"> *</span>
+                  </Label>
+                  <Input
+                    id="plan-stripe-price-id"
+                    placeholder="price_1234567890abcdef"
+                    value={planForm.stripePriceId}
+                    onChange={(e) => handlePlanFormChange('stripePriceId', e.target.value)}
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Required for payment processing. Get this from your Stripe Dashboard → Products → [Your Product] → Pricing
+                  </p>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="plan-stripe-product-id">
+                    Stripe Product ID (Optional)
+                  </Label>
+                  <Input
+                    id="plan-stripe-product-id"
+                    placeholder="prod_1234567890abcdef"
+                    value={planForm.stripeProductId}
+                    onChange={(e) => handlePlanFormChange('stripeProductId', e.target.value)}
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Optional reference to the Stripe Product. Useful for tracking.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 
