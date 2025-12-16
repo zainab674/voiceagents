@@ -7,12 +7,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { 
-  Database, 
-  Upload, 
-  FileText, 
-  Trash2, 
-  Plus, 
+import {
+  Database,
+  Upload,
+  FileText,
+  Trash2,
+  Plus,
   Search,
   CheckCircle,
   XCircle,
@@ -49,7 +49,7 @@ interface Document {
 const KnowledgeBase = () => {
   const { user } = useAuth();
   const { toast } = useToast();
-  
+
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [selectedKB, setSelectedKB] = useState<string>('');
@@ -328,7 +328,7 @@ const KnowledgeBase = () => {
     }
   };
 
-  const filteredKnowledgeBases = knowledgeBases.filter(kb => 
+  const filteredKnowledgeBases = knowledgeBases.filter(kb =>
     kb.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     kb.description.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -345,7 +345,7 @@ const KnowledgeBase = () => {
             Manage your AI knowledge bases and documents for enhanced responses.
           </p>
         </div>
-        <Button 
+        <Button
           onClick={fetchKnowledgeBases}
           variant="outline"
           disabled={loading.knowledgeBases}
@@ -391,7 +391,7 @@ const KnowledgeBase = () => {
                   />
                 </div>
               </div>
-              <Button 
+              <Button
                 onClick={createKnowledgeBase}
                 disabled={loading.creating}
                 className="w-full"
@@ -451,18 +451,7 @@ const KnowledgeBase = () => {
                     <p className="text-sm text-muted-foreground">{kb.description}</p>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm font-medium">Status:</span>
-                      {getStatusBadge(kb.pinecone_index_status)}
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm font-medium">Documents:</span>
-                      <span className="text-sm">{kb.total_documents}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm font-medium">Index:</span>
-                      <span className="text-sm font-mono text-xs">{kb.pinecone_index_name}</span>
-                    </div>
+
                     <Button
                       onClick={() => setSelectedKB(kb.id)}
                       className="w-full"
