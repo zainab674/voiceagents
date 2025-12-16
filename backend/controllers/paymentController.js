@@ -51,13 +51,17 @@ export const createCheckoutSession = async (req, res) => {
         }
 
         // 1. Fetch the Plan to get Stripe Price ID and Tenant
+        console.log(`🔍 Looking for plan with planKey: "${planKey}"`);
         const { data: plan, error: planError } = await supabase
             .from('plan_configs')
             .select('*')
             .eq('plan_key', planKey)
             .single();
 
+        console.log('📦 Plan lookup result:', { plan, planError });
+
         if (planError || !plan) {
+            console.error('❌ Plan not found:', { planKey, planError });
             return res.status(404).json({ success: false, message: 'Plan not found' });
         }
 
