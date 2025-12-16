@@ -52,20 +52,43 @@ export const createCheckoutSession = async (req, res) => {
 
         // 1. Fetch the Plan to get Stripe Price ID and Tenant
         console.log(`🔍 Looking for plan with planKey: "${planKey}"`);
-        const { data: plan, error: planError } = await supabase
+
+        // Get tenant from request (for whitelabel domains)
+        const requestTenant = req.tenant || 'main';
+        console.log(`🏷️ Request tenant: "${requestTenant}"`);
+
+        // Build query based on tenant
+        let planQuery = supabase
             .from('plan_configs')
             .select('*')
             .eq('plan_key', planKey)
-            .single();
+            .eq('is_active', true);
 
-        console.log('📦 Plan lookup result:', { plan, planError });
+        // Filter by tenant
+        if (requestTenant && requestTenant !== 'main') {
+            // For whitelabel domains, look for tenant-specific plan first
+            planQuery = planQuery.eq('tenant', requestTenant);
+        } else {
+            // For main domain, look for main tenant plans (tenant IS NULL)
+            planQuery = planQuery.is('tenant', null);
+        }
 
-        if (planError || !plan) {
-            console.error('❌ Plan not found:', { planKey, planError });
+        const { data: plan, error: planError } = await planQuery.maybeSingle();
+
+        console.log('📦 Plan lookup result:', { plan, planError, requestTenant });
+
+        if (planError && planError.code !== 'PGRST116') {
+            console.error('❌ Database error looking up plan:', { planKey, planError });
+            return res.status(500).json({ success: false, message: 'Error looking up plan' });
+        }
+
+        if (!plan) {
+            console.error('❌ Plan not found:', { planKey, requestTenant });
             return res.status(404).json({ success: false, message: 'Plan not found' });
         }
 
         if (!plan.stripe_price_id) {
+            console.error('❌ Plan missing Stripe Price ID:', { planKey, plan });
             return res.status(400).json({
                 success: false,
                 message: 'This plan is not configured for payments (missing Stripe Price ID)'
