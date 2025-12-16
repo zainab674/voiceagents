@@ -460,7 +460,9 @@ export const upsertPlanConfig = async (req, res) => {
     console.log('💾 Plan data to save:', {
       plan_key: planData.plan_key,
       tenant: planData.tenant,
-      is_active: planData.is_active
+      is_active: planData.is_active,
+      stripe_price_id: planData.stripe_price_id,
+      stripe_product_id: planData.stripe_product_id
     });
 
     let result;
