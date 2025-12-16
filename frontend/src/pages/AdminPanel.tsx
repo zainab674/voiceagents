@@ -590,7 +590,9 @@ const AdminPanel = () => {
       name: planForm.name.trim(),
       price: price,
       minutesLimit: minutesLimit,
-      features: featuresArray
+      features: featuresArray,
+      stripePriceId: planForm.stripePriceId.trim(),
+      stripeProductId: planForm.stripeProductId.trim()
     };
 
     setSavingPlan(true);
