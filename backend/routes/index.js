@@ -39,7 +39,8 @@ router.use("/outbound-calls", outboundRoute);
 router.use("/livekit/outbound-calls", livekitOutboundRoute);
 router.use("/campaigns", campaignRoute);
 router.use("/csv", csvRoute);
-router.use("/knowledge-base", knowledgeBaseRoute);
+// Use shorter path to avoid Nginx conflicts with static files/folders
+router.use("/kb", knowledgeBaseRoute);
 router.use("/users", userRoute);
 router.use("/crm", crmRoute);
 router.use("/agent-templates", agentTemplateRoute);

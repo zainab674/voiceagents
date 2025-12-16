@@ -21,23 +21,23 @@ router.get('/', (req, res) => {
     version: '1.0.0',
     endpoints: {
       knowledgeBases: {
-        create: 'POST /api/v1/knowledge-base/knowledge-bases',
-        get: 'GET /api/v1/knowledge-base/knowledge-bases/:kbId',
-        listByCompany: 'GET /api/v1/knowledge-base/knowledge-bases/company/:companyId',
-        update: 'PUT /api/v1/knowledge-base/knowledge-bases/:kbId',
-        delete: 'DELETE /api/v1/knowledge-base/knowledge-bases/:kbId'
+        create: 'POST /api/v1/kb/knowledge-bases',
+        get: 'GET /api/v1/kb/knowledge-bases/:kbId',
+        listByCompany: 'GET /api/v1/kb/knowledge-bases/company/:companyId',
+        update: 'PUT /api/v1/kb/knowledge-bases/:kbId',
+        delete: 'DELETE /api/v1/kb/knowledge-bases/:kbId'
       },
       documents: {
-        upload: 'POST /api/v1/knowledge-base/upload',
-        listByCompany: 'GET /api/v1/knowledge-base/documents/:companyId',
-        getDetails: 'GET /api/v1/knowledge-base/documents/:docId/details',
-        associate: 'POST /api/v1/knowledge-base/knowledge-bases/:kbId/documents/:docId'
+        upload: 'POST /api/v1/kb/upload',
+        listByCompany: 'GET /api/v1/kb/documents/:companyId',
+        getDetails: 'GET /api/v1/kb/documents/:docId/details',
+        associate: 'POST /api/v1/kb/knowledge-bases/:kbId/documents/:docId'
       },
       context: {
-        basic: 'POST /api/v1/knowledge-base/knowledge-bases/:kbId/context',
-        enhanced: 'POST /api/v1/knowledge-base/knowledge-bases/:kbId/context/enhanced',
-        multiSearch: 'POST /api/v1/knowledge-base/knowledge-bases/:kbId/context/multi-search',
-        filtered: 'POST /api/v1/knowledge-base/knowledge-bases/:kbId/context/filtered'
+        basic: 'POST /api/v1/kb/knowledge-bases/:kbId/context',
+        enhanced: 'POST /api/v1/kb/knowledge-bases/:kbId/context/enhanced',
+        multiSearch: 'POST /api/v1/kb/knowledge-bases/:kbId/context/multi-search',
+        filtered: 'POST /api/v1/kb/knowledge-bases/:kbId/context/filtered'
       }
     }
   });
@@ -57,7 +57,7 @@ router.post('/upload', authenticateToken, uploadService.getUploadMiddleware(), a
     }
 
     const document = await uploadService.uploadDocument(req.file, companyId, req.user.userId);
-    
+
     // Associate document with knowledge base if provided
     if (knowledgeBaseId) {
       console.log('Associating document', document.doc_id, 'with knowledge base', knowledgeBaseId);
@@ -65,9 +65,9 @@ router.post('/upload', authenticateToken, uploadService.getUploadMiddleware(), a
     } else {
       console.log('No knowledge base ID provided, document will not be associated');
     }
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       document: {
         doc_id: document.doc_id,
         filename: document.original_filename,
@@ -87,7 +87,7 @@ router.post('/upload', authenticateToken, uploadService.getUploadMiddleware(), a
 router.post('/knowledge-bases', authenticateToken, async (req, res) => {
   try {
     const { companyId, name, description } = req.body;
-    
+
     if (!companyId || !name) {
       return res.status(400).json({ error: 'Company ID and name are required' });
     }
@@ -104,19 +104,19 @@ router.post('/knowledge-bases', authenticateToken, async (req, res) => {
     try {
       console.log(`Creating assistant for knowledge base: ${knowledgeBase.id}`);
       const assistantResult = await pineconeHelper.ensureAssistantExists(
-        companyId, 
-        knowledgeBase.id, 
+        companyId,
+        knowledgeBase.id,
         knowledgeBase.name,
         {
           instructions: `You are an AI assistant for the knowledge base "${knowledgeBase.name}". Use the provided knowledge base to answer questions accurately and helpfully. Use American English for spelling and grammar.`,
           region: 'us'
         }
       );
-      
+
       if (assistantResult.success) {
         pineconeAssistant = assistantResult.assistant;
         console.log(`Pinecone assistant ${assistantResult.created ? 'created' : 'found'}: ${pineconeAssistant.name}`);
-        
+
         // Save assistant information to database
         try {
           await databaseService.updateKnowledgeBaseAssistantInfo(knowledgeBase.id, pineconeAssistant);
@@ -132,9 +132,9 @@ router.post('/knowledge-bases', authenticateToken, async (req, res) => {
       // Don't fail the knowledge base creation if Pinecone fails
       // Just log the error and continue
     }
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       knowledgeBase,
       pineconeAssistant: pineconeAssistant ? {
         id: pineconeAssistant.id,
@@ -152,14 +152,30 @@ router.post('/knowledge-bases', authenticateToken, async (req, res) => {
   }
 });
 
+// Get knowledge bases by company - MOVED UP to avoid conflict
+router.get('/knowledge-bases/company/:companyId', authenticateToken, async (req, res) => {
+  try {
+    const { companyId } = req.params;
+    console.log('Getting knowledge bases for company:', companyId);
+
+    const knowledgeBases = await databaseService.getKnowledgeBasesByCompany(companyId);
+    console.log('Found knowledge bases:', knowledgeBases.length);
+
+    res.json({ knowledgeBases });
+  } catch (error) {
+    console.error('Get knowledge bases error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get knowledge base with documents
 router.get('/knowledge-bases/:kbId', authenticateToken, async (req, res) => {
   try {
     const { kbId } = req.params;
     const knowledgeBase = await databaseService.getKnowledgeBase(kbId);
     const documents = await databaseService.getDocumentsByKnowledgeBase(kbId);
-    
-    res.json({ 
+
+    res.json({
       knowledgeBase: {
         ...knowledgeBase,
         documents: documents
@@ -171,30 +187,14 @@ router.get('/knowledge-bases/:kbId', authenticateToken, async (req, res) => {
   }
 });
 
-// Get knowledge bases by company
-router.get('/knowledge-bases/company/:companyId', authenticateToken, async (req, res) => {
-  try {
-    const { companyId } = req.params;
-    console.log('Getting knowledge bases for company:', companyId);
-    
-    const knowledgeBases = await databaseService.getKnowledgeBasesByCompany(companyId);
-    console.log('Found knowledge bases:', knowledgeBases.length);
-    
-    res.json({ knowledgeBases });
-  } catch (error) {
-    console.error('Get knowledge bases error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // Update knowledge base
 router.put('/knowledge-bases/:kbId', authenticateToken, async (req, res) => {
   try {
     const { kbId } = req.params;
     const updateData = req.body;
-    
+
     const knowledgeBase = await databaseService.updateKnowledgeBase(kbId, updateData);
-    
+
     res.json({ success: true, knowledgeBase });
   } catch (error) {
     console.error('Update knowledge base error:', error);
@@ -207,7 +207,7 @@ router.delete('/knowledge-bases/:kbId', authenticateToken, async (req, res) => {
   try {
     const { kbId } = req.params;
     await databaseService.deleteKnowledgeBase(kbId);
-    
+
     res.json({ success: true, message: 'Knowledge base deleted successfully' });
   } catch (error) {
     console.error('Delete knowledge base error:', error);
@@ -219,9 +219,9 @@ router.delete('/knowledge-bases/:kbId', authenticateToken, async (req, res) => {
 router.post('/knowledge-bases/:kbId/documents/:docId', authenticateToken, async (req, res) => {
   try {
     const { kbId, docId } = req.params;
-    
+
     const document = await databaseService.associateDocumentWithKnowledgeBase(docId, kbId);
-    
+
     res.json({ success: true, document });
   } catch (error) {
     console.error('Associate document error:', error);
@@ -234,7 +234,7 @@ router.get('/documents/:companyId', authenticateToken, async (req, res) => {
   try {
     const { companyId } = req.params;
     const documents = await databaseService.getDocumentsByCompany(companyId);
-    
+
     res.json({ documents });
   } catch (error) {
     console.error('Get documents error:', error);
@@ -247,12 +247,12 @@ router.get('/documents/:docId/status', authenticateToken, async (req, res) => {
   try {
     const { docId } = req.params;
     const document = await databaseService.getDocument(docId);
-    
+
     if (!document) {
       return res.status(404).json({ error: 'Document not found' });
     }
-    
-    res.json({ 
+
+    res.json({
       doc_id: document.doc_id,
       status: document.status,
       filename: document.original_filename,
@@ -270,7 +270,7 @@ router.get('/documents/:docId/details', authenticateToken, async (req, res) => {
   try {
     const { docId } = req.params;
     const document = await databaseService.getDocument(docId);
-    
+
     if (!document) {
       return res.status(404).json({ error: 'Document not found' });
     }
@@ -293,7 +293,7 @@ router.delete('/documents/:docId', authenticateToken, async (req, res) => {
   try {
     const { docId } = req.params;
     await databaseService.deleteDocument(docId);
-    
+
     res.json({ success: true, message: 'Document deleted successfully' });
   } catch (error) {
     console.error('Delete document error:', error);
@@ -305,12 +305,12 @@ router.delete('/documents/:docId', authenticateToken, async (req, res) => {
 router.get('/stats/:companyId', authenticateToken, async (req, res) => {
   try {
     const { companyId } = req.params;
-    
+
     const [documentStats, chunkStats] = await Promise.all([
       databaseService.getDocumentStats(companyId),
       databaseService.getChunkStats(companyId)
     ]);
-    
+
     res.json({
       documents: documentStats,
       chunks: chunkStats
@@ -328,11 +328,11 @@ router.post('/knowledge-bases/:kbId/context', authenticateToken, async (req, res
   try {
     const { kbId } = req.params;
     const { query, top_k, snippet_size, companyId } = req.body;
-    
+
     if (!query) {
       return res.status(400).json({ error: 'Query is required' });
     }
-    
+
     if (!companyId) {
       return res.status(400).json({ error: 'Company ID is required' });
     }
@@ -342,11 +342,11 @@ router.post('/knowledge-bases/:kbId/context', authenticateToken, async (req, res
     if (snippet_size !== undefined) options.snippet_size = snippet_size;
 
     const result = await contextService.getContextSnippets(companyId, kbId, query, options);
-    
+
     if (!result.success) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: result.error,
-        code: result.code 
+        code: result.code
       });
     }
 
@@ -362,11 +362,11 @@ router.post('/knowledge-bases/:kbId/context/enhanced', authenticateToken, async 
   try {
     const { kbId } = req.params;
     const { query, top_k, snippet_size, companyId } = req.body;
-    
+
     if (!query) {
       return res.status(400).json({ error: 'Query is required' });
     }
-    
+
     if (!companyId) {
       return res.status(400).json({ error: 'Company ID is required' });
     }
@@ -376,11 +376,11 @@ router.post('/knowledge-bases/:kbId/context/enhanced', authenticateToken, async 
     if (snippet_size !== undefined) options.snippet_size = snippet_size;
 
     const result = await contextService.getEnhancedContextSnippets(companyId, kbId, query, options);
-    
+
     if (!result.success) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: result.error,
-        code: result.code 
+        code: result.code
       });
     }
 
@@ -396,11 +396,11 @@ router.post('/knowledge-bases/:kbId/context/multi-search', authenticateToken, as
   try {
     const { kbId } = req.params;
     const { queries, top_k, snippet_size, companyId } = req.body;
-    
+
     if (!queries || !Array.isArray(queries) || queries.length === 0) {
       return res.status(400).json({ error: 'Queries array is required' });
     }
-    
+
     if (!companyId) {
       return res.status(400).json({ error: 'Company ID is required' });
     }
@@ -410,11 +410,11 @@ router.post('/knowledge-bases/:kbId/context/multi-search', authenticateToken, as
     if (snippet_size !== undefined) options.snippet_size = snippet_size;
 
     const result = await contextService.searchMultipleQueries(companyId, kbId, queries, options);
-    
+
     if (!result.success) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: result.error,
-        code: result.code 
+        code: result.code
       });
     }
 
@@ -430,11 +430,11 @@ router.post('/knowledge-bases/:kbId/context/filtered', authenticateToken, async 
   try {
     const { kbId } = req.params;
     const { query, filters, top_k, snippet_size, companyId } = req.body;
-    
+
     if (!query) {
       return res.status(400).json({ error: 'Query is required' });
     }
-    
+
     if (!companyId) {
       return res.status(400).json({ error: 'Company ID is required' });
     }
@@ -444,17 +444,17 @@ router.post('/knowledge-bases/:kbId/context/filtered', authenticateToken, async 
     if (snippet_size !== undefined) options.snippet_size = snippet_size;
 
     const result = await contextService.getFilteredContextSnippets(
-      companyId, 
-      kbId, 
-      query, 
-      filters || {}, 
+      companyId,
+      kbId,
+      query,
+      filters || {},
       options
     );
-    
+
     if (!result.success) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: result.error,
-        code: result.code 
+        code: result.code
       });
     }
 

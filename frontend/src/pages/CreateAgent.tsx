@@ -99,7 +99,7 @@ const CreateAgent = () => {
       }
 
       const companyId = user?.id; // Use user ID as company ID
-      const response = await fetch(`/api/v1/knowledge-base/knowledge-bases/company/${companyId}`, {
+      const response = await fetch(`/api/v1/kb/knowledge-bases/company/${companyId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
