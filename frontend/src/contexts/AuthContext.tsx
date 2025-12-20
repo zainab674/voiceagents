@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import { API_BASE_URL, AUTH_ENDPOINT } from "@/constants/URLConstant";
+import { extractTenantFromHostname } from '../lib/tenant-utils';
 
 interface User {
   id: string;
@@ -33,6 +34,8 @@ interface AuthContextType {
   register: (payload: RegisterPayload) => Promise<{ success: boolean; message: string }>;
   logout: () => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<void>;
+  forgotPassword: (email: string) => Promise<{ success: boolean; message: string }>;
+  resetPassword: (password: string) => Promise<{ success: boolean; message: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -61,10 +64,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (session?.user) {
           // Get user profile from our backend
           const token = session.access_token;
+          const tenant = extractTenantFromHostname();
           const response = await fetch(`${AUTH_ENDPOINT}/me`, {
             headers: {
               'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
+              'Content-Type': 'application/json',
+              'X-Tenant': tenant
             }
           });
 
@@ -88,10 +93,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (event === 'SIGNED_IN' && session?.user) {
           try {
             const token = session.access_token;
+            const tenant = extractTenantFromHostname();
             const response = await fetch(`${AUTH_ENDPOINT}/me`, {
               headers: {
                 'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-Tenant': tenant
               }
             });
 
@@ -127,10 +134,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // Get user profile from our backend
         const token = data.session?.access_token;
         if (token) {
+          const tenant = extractTenantFromHostname();
           const response = await fetch(`${AUTH_ENDPOINT}/me`, {
             headers: {
               'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
+              'Content-Type': 'application/json',
+              'X-Tenant': tenant
             }
           });
 
@@ -151,12 +160,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const register = async (payload: RegisterPayload) => {
     try {
+      const tenant = extractTenantFromHostname();
       const response = await fetch(`${AUTH_ENDPOINT}/register`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'X-Tenant': tenant
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ ...payload, tenant })
       });
 
       const result = await response.json();
@@ -198,11 +209,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const token = (await supabase.auth.getSession()).data.session?.access_token;
       if (!token) return;
 
+      const tenant = extractTenantFromHostname();
       const response = await fetch(`${AUTH_ENDPOINT}/me`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'X-Tenant': tenant
         },
         body: JSON.stringify(updates)
       });
@@ -216,13 +229,59 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const forgotPassword = async (email: string) => {
+    try {
+      const tenant = extractTenantFromHostname();
+      const response = await fetch(`${AUTH_ENDPOINT}/forgot-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Tenant': tenant
+        },
+        body: JSON.stringify({ email })
+      });
+
+      const result = await response.json();
+      return { success: result.success, message: result.message };
+    } catch (error) {
+      console.error('Forgot password error:', error);
+      return { success: false, message: 'An error occurred. Please try again later.' };
+    }
+  };
+
+  const resetPassword = async (password: string) => {
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      if (!token) return { success: false, message: 'Authentication required' };
+
+      const tenant = extractTenantFromHostname();
+      const response = await fetch(`${AUTH_ENDPOINT}/reset-password`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'X-Tenant': tenant
+        },
+        body: JSON.stringify({ password })
+      });
+
+      const result = await response.json();
+      return { success: result.success, message: result.message };
+    } catch (error) {
+      console.error('Reset password error:', error);
+      return { success: false, message: 'An error occurred. Please try again later.' };
+    }
+  };
+
   const value: AuthContextType = {
     user,
     loading,
     login,
     register,
     logout,
-    updateUser
+    updateUser,
+    forgotPassword,
+    resetPassword
   };
 
   return (

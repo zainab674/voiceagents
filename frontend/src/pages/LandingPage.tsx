@@ -1,11 +1,11 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Phone, 
-  Zap, 
-  BarChart3, 
-  Users, 
+import {
+  Phone,
+  Zap,
+  BarChart3,
+  Users,
   MessageSquare,
   Shield,
   CheckCircle,
@@ -28,13 +28,7 @@ const LandingPage = () => {
   const companyName = settings?.website_name || camelCaseWebsiteName || 'VoiceAI Pro';
   const companyLogo = settings?.logo;
 
-  // Redirect authenticated users to dashboard
-  useEffect(() => {
-    if (!authLoading && user) {
-      navigate('/dashboard');
-    }
-  }, [user, authLoading, navigate]);
-
+  // No automatic redirect to dashboard here, allowing users to see the landing page if they choose to navigate to it.
   const handleGetStarted = () => {
     if (user) {
       navigate('/dashboard');
@@ -47,22 +41,6 @@ const LandingPage = () => {
     navigate('/auth');
   };
 
-  // Show loading while checking authentication
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Don't render landing page if user is authenticated
-  if (user) {
-    return null;
-  }
 
   const defaultContent = {
     heroTitle: "Scale Your Business with AI Voice Technology",
@@ -80,7 +58,7 @@ const LandingPage = () => {
       },
       {
         icon: Users,
-        title: "CRM Integration", 
+        title: "CRM Integration",
         description: "Connect with HubSpot, Zoho, Ceipal, and other major CRM platforms for unified data management."
       },
       {
@@ -278,7 +256,7 @@ const LandingPage = () => {
     {
       name: "Professional",
       price: "$699",
-      period: "/month", 
+      period: "/month",
       description: "Ideal for growing companies",
       features: [
         "5,000 AI calls/month",
@@ -323,33 +301,41 @@ const LandingPage = () => {
               </div>
               <span className="font-bold text-lg">{companyName}</span>
             </div>
-            
-            <div className="flex items-center gap-4">
-              {!authLoading && (
-                <>
-                  {user ? (
-                    <Button onClick={handleGetStarted} className="bg-gradient-to-r from-primary to-accent">
-                      Go to Dashboard
-                    </Button>
-                  ) : (
-                    <>
-                      <Button variant="ghost" onClick={handleSignIn}>
-                        Sign In
-                      </Button>
+
+            <div className="flex items-center gap-6">
+              <nav className="hidden md:flex items-center gap-6">
+                <button onClick={() => navigate('/contact')} className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors">
+                  Contact Us
+                </button>
+              </nav>
+
+              <div className="flex items-center gap-4">
+                {!authLoading && (
+                  <>
+                    {user ? (
                       <Button onClick={handleGetStarted} className="bg-gradient-to-r from-primary to-accent">
-                        Get Started
+                        Go to Dashboard
                       </Button>
-                    </>
-                  )}
-                </>
-              )}
+                    ) : (
+                      <>
+                        <Button variant="ghost" onClick={handleSignIn}>
+                          Sign In
+                        </Button>
+                        <Button onClick={handleGetStarted} className="bg-gradient-to-r from-primary to-accent">
+                          Get Started
+                        </Button>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>
       </header>
 
       {/* Hero Section */}
-      <div 
+      <div
         className="relative h-screen bg-cover bg-center flex items-center justify-center pt-16"
         style={{ backgroundImage: `url(${heroImage})` }}
       >
@@ -468,9 +454,8 @@ const LandingPage = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
           {pricingPlans.map((plan, index) => (
-            <Card key={index} className={`shadow-lg relative ${
-              plan.popular ? 'border-primary shadow-xl scale-105' : ''
-            }`}>
+            <Card key={index} className={`shadow-lg relative ${plan.popular ? 'border-primary shadow-xl scale-105' : ''
+              }`}>
               {plan.popular && (
                 <Badge className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-primary to-accent">
                   Most Popular
@@ -493,10 +478,9 @@ const LandingPage = () => {
                     </li>
                   ))}
                 </ul>
-                <Button 
-                  className={`w-full ${
-                    plan.popular ? 'bg-gradient-to-r from-primary to-accent' : ''
-                  }`}
+                <Button
+                  className={`w-full ${plan.popular ? 'bg-gradient-to-r from-primary to-accent' : ''
+                    }`}
                   onClick={handleGetStarted}
                 >
                   {plan.price === "Custom" ? "Contact Sales" : "Get Started"}
@@ -513,8 +497,8 @@ const LandingPage = () => {
           <h2 className="text-4xl font-bold mb-4">
             Ready to Transform Your Business?
           </h2>
-            <p className="text-xl opacity-90 mb-8 max-w-2xl mx-auto">
-              Join thousands of businesses already using {companyName} to automate their customer interactions and boost conversions.
+          <p className="text-xl opacity-90 mb-8 max-w-2xl mx-auto">
+            Join thousands of businesses already using {companyName} to automate their customer interactions and boost conversions.
           </p>
           <div className="flex gap-4 justify-center">
             <Button size="lg" className="bg-white text-primary hover:bg-white/90 font-semibold px-8" onClick={handleGetStarted}>
@@ -557,11 +541,11 @@ const LandingPage = () => {
             </div>
             <div>
               <h3 className="font-semibold mb-4">Company</h3>
-              <ul className="space-y-2 text-muted-foreground">
-                <li>About Us</li>
-                <li>Careers</li>
-                <li>Contact</li>
-                <li>Privacy Policy</li>
+              <ul className="space-y-2 text-muted-foreground text-sm">
+                <li><button onClick={() => navigate('/about')} className="hover:text-primary transition-colors">About Us</button></li>
+                <li><button onClick={() => navigate('/careers')} className="hover:text-primary transition-colors">Careers</button></li>
+                <li><button onClick={() => navigate('/contact')} className="hover:text-primary transition-colors">Contact Us</button></li>
+                <li><button onClick={() => navigate('/privacy')} className="hover:text-primary transition-colors">Privacy Policy</button></li>
               </ul>
             </div>
             <div>

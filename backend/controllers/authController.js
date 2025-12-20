@@ -42,7 +42,24 @@ export const registerUser = async (req, res) => {
       industry
     } = req.body;
 
-    console.log('📝 Registration attempt for:', { email, firstName, lastName, hasPassword: !!password });
+    const tenant = slug || requestedTenant || 'main';
+
+    // Calculate return URL for verification email
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8080';
+    const frontendHost = frontendUrl.replace(/^https?:\/\//, '');
+    const mainDomain = process.env.MAIN_DOMAIN || 'aiassistant.net';
+
+    // Ensure we include the port if it's localhost and present in FRONTEND_URL
+    const effectiveMainDomain = (mainDomain === 'localhost' && frontendHost.includes(':'))
+      ? frontendHost
+      : mainDomain;
+
+    const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+    const redirectUrl = (tenant === 'main' || tenant === 'localhost')
+      ? `${protocol}://${effectiveMainDomain}/auth?verified=true`
+      : `${protocol}://${tenant}.${effectiveMainDomain}/auth?verified=true`;
+
+    console.log('📝 Registration attempt for:', { email, firstName, lastName, hasPassword: !!password, tenant, redirectUrl });
 
     // Validate input
     if (!email || !password || !firstName || !lastName) {
@@ -85,15 +102,11 @@ export const registerUser = async (req, res) => {
       }
     }
 
-    const tenant = normalizedSlug || requestedTenant || 'main';
-
     // Validate plan selection for whitelabel tenants
     let selectedPlanMinutes = 0;
 
     // CASE 1: New Whitelabel Admin Signup (whitelabel = true)
-    // They are selecting a SYSTEM plan (tenant is null), but 'tenant' variable holds their NEW slug.
     if (whitelabel && planKey) {
-      // Validate against system plans (tenant IS NULL)
       const { data: planConfig } = await supabase
         .from('plan_configs')
         .select('minutes_limit')
@@ -108,13 +121,9 @@ export const registerUser = async (req, res) => {
         });
       }
       selectedPlanMinutes = planConfig.minutes_limit || 0;
-
-      // Note: New admins don't need minute allocation checks against an upstream admin
-      // because they are the top-level admin.
     }
     // CASE 2: User Signup under a Whitelabel Tenant (whitelabel = false, tenant != 'main')
     else if (planKey && tenant !== 'main') {
-      // Get the plan configuration for this tenant
       const { data: planConfig } = await supabase
         .from('plan_configs')
         .select('minutes_limit')
@@ -131,7 +140,6 @@ export const registerUser = async (req, res) => {
 
       selectedPlanMinutes = planConfig.minutes_limit || 0;
 
-      // Get whitelabel admin for this tenant
       const { data: adminData } = await supabase
         .from('users')
         .select('id, minutes_limit, slug_name')
@@ -149,9 +157,7 @@ export const registerUser = async (req, res) => {
 
       const adminMinutes = adminData.minutes_limit || 0;
 
-      // If admin has unlimited minutes (0), skip validation
       if (adminMinutes > 0) {
-        // Prevent unlimited plans for limited admins
         if (selectedPlanMinutes === 0) {
           return res.status(400).json({
             success: false,
@@ -159,12 +165,11 @@ export const registerUser = async (req, res) => {
           });
         }
 
-        // Calculate allocated minutes: sum of all users' minutes_limit in this tenant (excluding the admin)
         const { data: tenantUsers } = await supabase
           .from('users')
           .select('minutes_limit')
           .eq('tenant', tenant)
-          .neq('id', adminData.id); // Exclude the admin
+          .neq('id', adminData.id);
 
         const allocated = (tenantUsers || []).reduce((sum, user) => {
           const userMinutes = user.minutes_limit || 0;
@@ -173,73 +178,64 @@ export const registerUser = async (req, res) => {
 
         const available = adminMinutes - allocated;
 
-        // Check if there are enough available minutes
         if (selectedPlanMinutes > available) {
           return res.status(400).json({
             success: false,
-            message: 'Your administrator does not have enough minutes available for this plan. Please contact your administrator.'
+            message: 'Your administrator does not have enough minutes available for this plan.'
           });
         }
       }
     }
 
     // Check if user already exists
-    console.log('🔍 Checking if user exists...');
     const { data: existingUser, error: checkError } = await supabase
       .from('users')
       .select('id, email')
       .eq('email', email)
       .single();
 
-    if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows returned
-      console.error('❌ Error checking existing user:', checkError);
-      return res.status(500).json({
-        success: false,
-        message: 'Error checking user existence',
-        error: checkError.message
-      });
-    }
-
     if (existingUser) {
-      console.log('⚠️ User already exists:', email);
       return res.status(400).json({
         success: false,
         message: 'User with this email already exists'
       });
     }
 
-    console.log('✅ User does not exist, proceeding with creation...');
-
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
-    console.log('🔐 Password hashed successfully');
 
     // Create user in Supabase auth
-    console.log('👤 Creating user in Supabase auth...');
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    console.log('👤 Registering user in Supabase auth...');
+    const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
-      email_confirm: true,
-      user_metadata: {
-        firstName,
-        lastName,
-        phone
+      options: {
+        emailRedirectTo: redirectUrl,
+        data: {
+          firstName,
+          lastName,
+          phone
+        }
       }
     });
 
     if (authError) {
-      console.error('❌ Auth error:', authError);
       return res.status(500).json({
         success: false,
-        message: 'Error creating user account',
         error: authError.message
+      });
+    }
+
+    if (!authData.user) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to create user account'
       });
     }
 
     console.log('✅ User created in Supabase auth:', authData.user.id);
 
     // Insert user data into users table
-    console.log('💾 Inserting user data into database...');
     const userRecord = {
       id: authData.user.id,
       email,
@@ -267,28 +263,8 @@ export const registerUser = async (req, res) => {
 
     if (insertError) {
       console.error('❌ Insert error:', insertError);
-      console.error('❌ Insert error details:', {
-        code: insertError.code,
-        message: insertError.message,
-        details: insertError.details,
-        hint: insertError.hint
-      });
-
-      // Clean up auth user if insert fails
-      console.log('🧹 Cleaning up auth user due to insert failure...');
-      try {
-        await supabase.auth.admin.deleteUser(authData.user.id);
-        console.log('✅ Auth user cleaned up successfully');
-      } catch (cleanupError) {
-        console.error('⚠️ Failed to cleanup auth user:', cleanupError);
-      }
-
-      return res.status(500).json({
-        success: false,
-        message: 'Error creating user profile',
-        error: insertError.message,
-        details: insertError.details || 'No additional details available'
-      });
+      try { await supabase.auth.admin.deleteUser(authData.user.id); } catch (e) { }
+      return res.status(500).json({ success: false, error: insertError.message });
     }
 
     console.log('✅ User data inserted successfully:', userData.id);
@@ -299,33 +275,20 @@ export const registerUser = async (req, res) => {
         console.log(`🌱 Initializing default plans for whitelabel admin: ${normalizedSlug}`);
         const planResult = await initializePlansForTenant(normalizedSlug);
         if (planResult.success) {
-          console.log(`✅ Plans initialized: ${planResult.created} created, ${planResult.skipped} skipped`);
-        } else {
-          console.warn(`⚠️ Plan initialization had errors:`, planResult.errors);
-          // Don't fail registration if plan initialization fails
+          console.log(`✅ Plans initialized: ${planResult.created} created`);
         }
       } catch (planError) {
         console.error('❌ Error initializing plans (non-fatal):', planError);
-        // Don't fail registration if plan initialization fails
       }
 
       // Setup Nginx reverse proxy for the whitelabel domain
       try {
-        // Construct full domain from slug
-        const mainDomain = process.env.MAIN_DOMAIN || 'aiassistant.net';
         const fullDomain = `${normalizedSlug}.${mainDomain}`;
         const frontendPort = process.env.FRONTEND_PORT || '8080';
-
-        // Path to script: verify relative path from controllers to scripts
-        // controllers/authController.js -> ../scripts/setup_reverse_proxy.sh
         const scriptPath = path.join(__dirname, '..', 'scripts', 'setup_reverse_proxy.sh');
 
-        // Check if script exists
-        if (!fs.existsSync(scriptPath)) {
-          console.error('⚠️ Nginx setup script not found:', scriptPath);
-        } else {
+        if (fs.existsSync(scriptPath)) {
           console.log(`🚀 Setting up Nginx reverse proxy for ${fullDomain} on port ${frontendPort}`);
-
           // Execute script asynchronously (don't block signup response)
           const script = spawn('sudo', [
             'bash',
@@ -335,7 +298,6 @@ export const registerUser = async (req, res) => {
           ]);
 
           let output = '';
-
           script.stdout.on('data', (data) => {
             output += data.toString();
             console.log(`[Nginx Setup ${fullDomain}]:`, data.toString().trim());
@@ -347,35 +309,23 @@ export const registerUser = async (req, res) => {
           });
 
           script.on('close', (code) => {
-            if (code === 0) {
-              console.log(`✅ Nginx reverse proxy setup completed for ${fullDomain}`);
-            } else {
-              console.error(`❌ Nginx setup failed for ${fullDomain} with code ${code}`);
-            }
+            console.log(`✅ Nginx setup for ${fullDomain} closed with code ${code}`);
           });
 
-          script.on('error', (error) => {
-            console.error('Error executing Nginx setup script:', error);
+          script.on('error', (err) => {
+            console.error(`❌ Nginx script execution error: ${err.message}`);
           });
         }
       } catch (error) {
         console.error('Error setting up Nginx reverse proxy:', error);
-        // Don't fail signup if Nginx setup fails
       }
     }
 
-    // Generate JWT token
-    const token = jwt.sign(
-      { userId: authData.user.id, email },
-      jwtSecret,
-      { expiresIn: '7d' }
-    );
-
-    console.log('🎉 User registration completed successfully');
+    console.log('🎉 User registration completed successfully. Verification email sent.');
 
     res.status(201).json({
       success: true,
-      message: 'User registered successfully',
+      message: 'User registered successfully. Please check your email to verify your account.',
       data: {
         user: {
           id: userData.id,
@@ -386,18 +336,13 @@ export const registerUser = async (req, res) => {
           role: userData.role,
           status: userData.status
         },
-        token
+        verificationUrl: null // Removed manual generation as it invalidates the email link
       }
     });
 
   } catch (error) {
     console.error('❌ Registration error:', error);
-    console.error('❌ Error stack:', error.stack);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Internal server error', error: error.message });
   }
 };
 
@@ -546,5 +491,70 @@ export const logoutUser = async (req, res) => {
       message: 'Internal server error',
       error: error.message
     });
+  }
+};
+
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const tenant = req.tenant || 'main';
+
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email is required' });
+    }
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8080';
+    const frontendHost = frontendUrl.replace(/^https?:\/\//, '');
+    const mainDomain = process.env.MAIN_DOMAIN || 'aiassistant.net';
+
+    // Ensure we include the port if it's localhost and present in FRONTEND_URL
+    const effectiveMainDomain = (mainDomain === 'localhost' && frontendHost.includes(':'))
+      ? frontendHost
+      : mainDomain;
+
+    const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+    const redirectUrl = (tenant === 'main' || tenant === 'localhost')
+      ? `${protocol}://${effectiveMainDomain}/auth?reset=true`
+      : `${protocol}://${tenant}.${effectiveMainDomain}/auth?reset=true`;
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: redirectUrl,
+    });
+
+    if (error) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Password reset link sent to your email'
+    });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+export const resetPassword = async (req, res) => {
+  try {
+    const { password } = req.body;
+
+    if (!password) {
+      return res.status(400).json({ success: false, message: 'New password is required' });
+    }
+
+    const { error } = await supabase.auth.admin.updateUserById(req.user.userId, { password });
+
+    if (error) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Password has been reset successfully'
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };

@@ -10,9 +10,10 @@ import { Eye, EyeOff, Loader2 } from 'lucide-react';
 
 interface LoginFormProps {
   onSwitchToRegister: () => void;
+  onSwitchToForgotPassword: () => void;
 }
 
-export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister }) => {
+export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onSwitchToForgotPassword }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -23,6 +24,28 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister }) => {
   const { login } = useAuth();
   const navigate = useNavigate();
 
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+
+    // Check for success messages in search params
+    if (params.get('registered') === 'true') {
+      setSuccess('Account created! Please verify your email before signing in.');
+    } else if (params.get('verified') === 'true') {
+      setSuccess('Email verified successfully! You can now sign in.');
+    } else if (params.get('reset') === 'true') {
+      setSuccess('Your password has been reset. Please sign in with your new password.');
+    }
+
+    // Check for error fragments (returned by Supabase on failure)
+    const errorCode = hashParams.get('error_code');
+    if (errorCode === 'otp_expired') {
+      setError('The verification link has expired or has already been used. Please try signing up again or contact support.');
+    } else if (hashParams.get('error')) {
+      setError(hashParams.get('error_description')?.replace(/\+/g, ' ') || 'An authentication error occurred.');
+    }
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -31,7 +54,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister }) => {
 
     try {
       const result = await login(email, password);
-      
+
       if (result.success) {
         setSuccess(result.message);
         // Navigate to dashboard after successful login
@@ -63,7 +86,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister }) => {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          
+
           {success && (
             <Alert>
               <AlertDescription>{success}</AlertDescription>
@@ -84,7 +107,18 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister }) => {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password">Password</Label>
+              <Button
+                type="button"
+                variant="link"
+                className="px-0 font-normal h-auto text-xs"
+                onClick={onSwitchToForgotPassword}
+                disabled={loading}
+              >
+                Forgot password?
+              </Button>
+            </div>
             <div className="relative">
               <Input
                 id="password"

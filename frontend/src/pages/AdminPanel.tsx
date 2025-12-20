@@ -24,12 +24,14 @@ import {
   Globe,
   Lock,
   CreditCard,
-  Settings
+  Settings,
+  MessageSquare
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { userApi } from "@/http/userHttp";
 import { agentTemplateApi } from "@/http/agentTemplateHttp";
 import { planApi } from "@/http/planHttp";
+import { contactApi } from "@/http/contactHttp";
 import { handleAuthError } from "@/utils/authHelper";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -134,6 +136,10 @@ const AdminPanel = () => {
     }
   });
 
+  // Contact message view modal
+  const [viewContactModalOpen, setViewContactModalOpen] = useState(false);
+  const [viewingContact, setViewingContact] = useState<any>(null);
+
   // Stripe configuration state
   const [stripeConfig, setStripeConfig] = useState({
     stripeSecretKey: '',
@@ -141,6 +147,11 @@ const AdminPanel = () => {
   });
   const [stripeLoading, setStripeLoading] = useState(false);
   const [savingStripe, setSavingStripe] = useState(false);
+
+  // Contact messages state
+  const [contactMessages, setContactMessages] = useState([]);
+  const [contactMessagesLoading, setContactMessagesLoading] = useState(false);
+  const [updatingContactStatus, setUpdatingContactStatus] = useState(false);
 
   // Tab state
   const [activeTab, setActiveTab] = useState('users');
@@ -699,6 +710,44 @@ const AdminPanel = () => {
     }
   };
 
+  const fetchContactMessages = useCallback(async (showLoading = true) => {
+    if (!isAdmin) return;
+    try {
+      if (showLoading) setContactMessagesLoading(true);
+      const response = await contactApi.getAllContactMessages();
+      if (response.success) {
+        setContactMessages(response.data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching contact messages:', error);
+    } finally {
+      if (showLoading) setContactMessagesLoading(false);
+    }
+  }, [isAdmin]);
+
+  const handleUpdateContactStatus = async (id, status) => {
+    try {
+      setUpdatingContactStatus(true);
+      const response = await contactApi.updateContactMessageStatus(id, status);
+      if (response.success) {
+        toast({
+          title: "Success",
+          description: "Message status updated"
+        });
+        await fetchContactMessages(false);
+      }
+    } catch (error) {
+      console.error('Error updating contact status:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update status",
+        variant: "destructive"
+      });
+    } finally {
+      setUpdatingContactStatus(false);
+    }
+  };
+
   const refreshData = useCallback(async () => {
     if (!isAdmin) return;
     setRefreshing(true);
@@ -707,10 +756,11 @@ const AdminPanel = () => {
       fetchUserStats(),
       fetchTemplates(false),
       fetchPlans(false),
-      fetchStripeConfig(false)
+      fetchStripeConfig(false),
+      fetchContactMessages(false)
     ]);
     setRefreshing(false);
-  }, [fetchTemplates, fetchUserStats, fetchUsers, fetchPlans, fetchStripeConfig, isAdmin]);
+  }, [fetchTemplates, fetchUserStats, fetchUsers, fetchPlans, fetchStripeConfig, fetchContactMessages, isAdmin]);
 
   // Real-time polling effect
   useEffect(() => {
@@ -722,6 +772,7 @@ const AdminPanel = () => {
     fetchTemplates();
     fetchPlans();
     fetchStripeConfig();
+    fetchContactMessages();
 
     const interval = setInterval(() => {
       refreshData();
@@ -921,6 +972,7 @@ const AdminPanel = () => {
           )}
           <TabsTrigger value="plans">Plans & Pricing</TabsTrigger>
           <TabsTrigger value="stripe">Stripe Configuration</TabsTrigger>
+          <TabsTrigger value="contact">Contact Messages</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="space-y-6">
@@ -1398,6 +1450,128 @@ const AdminPanel = () => {
           </Card>
         </TabsContent>
 
+        <TabsContent value="contact" className="space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-semibold">Contact Messages</h2>
+              <p className="text-muted-foreground">
+                View and manage messages from the Contact Us form.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => fetchContactMessages()}
+              disabled={contactMessagesLoading}
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${contactMessagesLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
+
+          <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MessageSquare className="w-5 h-5" />
+                Inquiries
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {contactMessagesLoading && contactMessages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                  <RefreshCw className="w-6 h-6 animate-spin mb-3" />
+                  <span>Loading messages...</span>
+                </div>
+              ) : contactMessages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+                  <MessageSquare className="w-12 h-12 mb-4 opacity-50" />
+                  <p className="text-lg font-medium mb-2">No messages yet</p>
+                  <p className="text-sm">When users contact you, their messages will appear here.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left table-fixed">
+                    <thead className="text-xs uppercase bg-muted/50 text-muted-foreground">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold w-[15%]">User</th>
+                        <th className="px-4 py-3 font-semibold w-[15%]">Email</th>
+                        <th className="px-4 py-3 font-semibold w-[20%]">Subject</th>
+                        <th className="px-4 py-3 font-semibold w-[20%]">Message</th>
+                        <th className="px-4 py-3 font-semibold w-[10%]">Status</th>
+                        <th className="px-4 py-3 font-semibold w-[10%]">Date</th>
+                        <th className="px-4 py-3 font-semibold text-right w-[10%]">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {contactMessages.map((msg) => (
+                        <tr key={msg.id} className="hover:bg-muted/30 transition-colors">
+                          <td className="px-4 py-3 font-medium">
+                            {msg.user?.first_name ? `${msg.user.first_name} ${msg.user.last_name || ''}` : 'Guest User'}
+                          </td>
+                          <td className="px-4 py-3 text-muted-foreground font-mono text-xs">
+                            {msg.user?.email || msg.email || 'N/A'}
+                          </td>
+                          <td className="px-4 py-3 font-medium cursor-pointer max-w-[200px]" onClick={() => { setViewingContact(msg); setViewContactModalOpen(true); }}>
+                            <div className="truncate" title={msg.subject}>{msg.subject}</div>
+                          </td>
+                          <td className="px-4 py-3 cursor-pointer max-w-[300px]" onClick={() => { setViewingContact(msg); setViewContactModalOpen(true); }}>
+                            <p className="truncate text-muted-foreground" title={msg.description}>
+                              {msg.description}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge
+                              variant={
+                                msg.status === 'pending' ? 'outline' :
+                                  msg.status === 'reviewed' ? 'secondary' :
+                                    'default'
+                              }
+                              className={
+                                msg.status === 'pending' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                                  msg.status === 'resolved' ? 'bg-green-50 text-green-700 border-green-200' :
+                                    ''
+                              }
+                            >
+                              {msg.status}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3 text-muted-foreground">
+                            {new Date(msg.created_at).toLocaleDateString()}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex justify-end gap-2">
+                              {msg.status !== 'resolved' && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleUpdateContactStatus(msg.id, 'resolved')}
+                                  disabled={updatingContactStatus}
+                                  className="h-8 px-2 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                >
+                                  Resolve
+                                </Button>
+                              )}
+                              {msg.status === 'pending' && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleUpdateContactStatus(msg.id, 'reviewed')}
+                                  disabled={updatingContactStatus}
+                                  className="h-8 px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                >
+                                  Mark Reviewed
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
       {/* Template Modal */}
@@ -1924,6 +2098,94 @@ const AdminPanel = () => {
                 editingPlan ? 'Update Plan' : 'Create Plan'
               )}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Contact Message Details Modal */}
+      <Dialog open={viewContactModalOpen} onOpenChange={setViewContactModalOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageSquare className="w-5 h-5 text-primary" />
+              Inquiry Details
+            </DialogTitle>
+          </DialogHeader>
+
+          {viewingContact && (
+            <div className="space-y-6 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase">Sender</p>
+                  <p className="font-medium">
+                    {viewingContact.user?.first_name ? `${viewingContact.user.first_name} ${viewingContact.user.last_name || ''}` : 'Guest User'}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase">Email</p>
+                  <p className="font-mono text-sm">{viewingContact.user?.email || viewingContact.email || 'N/A'}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase">Status</p>
+                  <Badge
+                    variant={
+                      viewingContact.status === 'pending' ? 'outline' :
+                        viewingContact.status === 'reviewed' ? 'secondary' :
+                          'default'
+                    }
+                    className={
+                      viewingContact.status === 'pending' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                        viewingContact.status === 'resolved' ? 'bg-green-50 text-green-700 border-green-200' :
+                          ''
+                    }
+                  >
+                    {viewingContact.status}
+                  </Badge>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase">Date Received</p>
+                  <p className="text-sm">{new Date(viewingContact.created_at).toLocaleString()}</p>
+                </div>
+              </div>
+
+              <div className="space-y-2 pt-2 border-t">
+                <p className="text-xs font-semibold text-muted-foreground uppercase">Subject</p>
+                <p className="font-bold text-lg leading-tight break-all">{viewingContact.subject}</p>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase">Message</p>
+                <div className="bg-muted/30 p-4 rounded-lg text-sm leading-relaxed whitespace-pre-wrap min-h-[150px] break-all">
+                  {viewingContact.description}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            {viewingContact?.status === 'pending' && (
+              <Button
+                variant="outline"
+                className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                onClick={() => {
+                  handleUpdateContactStatus(viewingContact.id, 'reviewed');
+                  setViewContactModalOpen(false);
+                }}
+              >
+                Mark Reviewed
+              </Button>
+            )}
+            {viewingContact?.status !== 'resolved' && (
+              <Button
+                className="bg-green-600 hover:bg-green-700 text-white"
+                onClick={() => {
+                  handleUpdateContactStatus(viewingContact.id, 'resolved');
+                  setViewContactModalOpen(false);
+                }}
+              >
+                Mark Resolved
+              </Button>
+            )}
+            <Button variant="ghost" onClick={() => setViewContactModalOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

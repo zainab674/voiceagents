@@ -20,7 +20,8 @@ import {
   Instagram,
   Key,
   Lightbulb,
-  CreditCard
+  CreditCard,
+  LogOut
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -53,6 +54,7 @@ const navigationItems = [
   { title: "CRM Integration", url: "/crm", icon: Database },
   { title: "Social Integrations", url: "/social-integrations", icon: MessageSquare },
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
+  { title: "Contact Us", url: "/contact", icon: MessageSquare },
 ];
 
 const adminItems = [
@@ -69,7 +71,7 @@ export function AppSidebar() {
   const collapsed = state === "collapsed";
   const location = useLocation();
   const currentPath = location.pathname;
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { settings } = useWebsiteSettings();
   const camelCaseWebsiteName = (settings as { websiteName?: string | null } | null)?.websiteName;
   const companyName = settings?.website_name || camelCaseWebsiteName || 'VoiceAI Pro';
@@ -92,7 +94,7 @@ export function AppSidebar() {
       <SidebarContent className="bg-slate-950 text-slate-200 border-r border-slate-800 flex flex-col">
         {/* Brand / Workspace */}
         <div className="px-3 py-4 border-b border-slate-800">
-          <div className="flex items-center gap-3">
+          <NavLink to="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
             <div className="w-9 h-9 rounded-lg bg-slate-900 flex items-center justify-center overflow-hidden ring-1 ring-slate-700">
               {companyLogo ? (
                 <img
@@ -114,7 +116,7 @@ export function AppSidebar() {
                 </span>
               </div>
             )}
-          </div>
+          </NavLink>
         </div>
 
         {/* Main Navigation */}
@@ -164,6 +166,16 @@ export function AppSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
         )}
+        {/* User Section - Logged in user info and Sign Out */}
+        <div className="mt-auto border-t border-slate-800 p-4">
+          <button
+            onClick={() => logout()}
+            className="flex items-center gap-3 w-full px-3 py-2 rounded-md text-sm text-red-400 hover:bg-red-400/10 transition-colors duration-150"
+          >
+            <LogOut className="h-4 w-4" />
+            {!collapsed && <span>Sign Out</span>}
+          </button>
+        </div>
       </SidebarContent>
     </Sidebar>
   );

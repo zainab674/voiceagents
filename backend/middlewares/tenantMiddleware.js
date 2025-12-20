@@ -6,6 +6,7 @@ const normalizeHost = (rawHost = '') => {
 export const tenantMiddleware = (req, _res, next) => {
   const mainDomain = (process.env.MAIN_DOMAIN || process.env.FRONTEND_URL || 'localhost')
     .replace(/^https?:\/\//, '')
+    .split(':')[0]
     .toLowerCase();
 
   let tenant = 'main';

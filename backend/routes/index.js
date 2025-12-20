@@ -23,6 +23,7 @@ import instagramRoute from "#routes/instagramRoute.js";
 import socialRoute from "#routes/socialRoute.js";
 import emailRoute from "#routes/emailRoute.js";
 import paymentRoute from "#routes/paymentRoute.js";
+import contactRoute from "#routes/contactRoute.js";
 
 const router = express.Router();
 
@@ -51,5 +52,6 @@ router.use("/instagram", instagramRoute);
 router.use("/social", socialRoute);
 router.use("/email", emailRoute);
 router.use("/payments", paymentRoute);
+router.use("/contact", contactRoute);
 
 export default router;
