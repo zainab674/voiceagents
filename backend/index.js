@@ -7,6 +7,7 @@ import router from "#routes/index.js";
 import { getCallRecordingInfo as getTwilioRecordingInfo } from '#services/twilioMainTrunkService.js';
 import { ngrokService } from './services/ngrok-service.js';
 import { campaignEngine } from './services/campaign-execution-engine.js';
+import { emailCampaignExecutionEngine } from './services/email-campaign-execution-engine.js';
 import { tenantMiddleware } from '#middlewares/tenantMiddleware.js';
 
 const PORT = process.env.PORT || 4000;
@@ -271,10 +272,11 @@ app.listen(PORT, async () => {
     console.log(`🌐 Using existing ngrok URL: ${process.env.NGROK_URL}`);
   }
 
-  // Start campaign execution engine
-  console.log('\n🚀 Starting campaign execution engine...');
+  // Start campaign execution engines
+  console.log('\n🚀 Starting campaign execution engines...');
   campaignEngine.start();
-  console.log('✅ Campaign execution engine started');
+  emailCampaignExecutionEngine.start();
+  console.log('✅ Campaign execution engines started');
 
   // Start ngrok tunnel for Twilio webhooks
   if (process.env.NGROK_AUTHTOKEN) {

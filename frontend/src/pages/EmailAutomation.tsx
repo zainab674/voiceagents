@@ -136,6 +136,7 @@ const EmailAutomation = () => {
     const getStatusBadge = (status: string) => {
         const variants: any = {
             draft: 'secondary',
+            scheduled: 'outline',
             running: 'default',
             completed: 'outline',
             failed: 'destructive',
@@ -203,7 +204,14 @@ const EmailAutomation = () => {
                                         campaigns.map((c: any) => (
                                             <TableRow key={c.id}>
                                                 <TableCell>{getStatusBadge(c.status)}</TableCell>
-                                                <TableCell className="font-medium">{c.name}</TableCell>
+                                                <TableCell className="font-medium">
+                                                    <div>{c.name}</div>
+                                                    {c.status === 'scheduled' && c.scheduled_at && (
+                                                        <div className="text-xs text-muted-foreground font-normal">
+                                                            Scheduled: {new Date(c.scheduled_at).toLocaleString()}
+                                                        </div>
+                                                    )}
+                                                </TableCell>
                                                 <TableCell>{c.contact_source}</TableCell>
                                                 <TableCell className="text-right">{c.sent_count}</TableCell>
                                                 <TableCell className="text-right">{c.pending_count}</TableCell>

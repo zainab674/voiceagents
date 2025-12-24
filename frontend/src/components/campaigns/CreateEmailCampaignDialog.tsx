@@ -33,6 +33,8 @@ export const CreateEmailCampaignDialog: React.FC<CreateEmailCampaignDialogProps>
     const [subject, setSubject] = useState("");
     const [body, setBody] = useState("");
     const [prompt, setPrompt] = useState("");
+    const [isScheduled, setIsScheduled] = useState(false);
+    const [scheduledAt, setScheduledAt] = useState("");
 
     // Lists/Files (Mocked or fetched)
     const [csvFiles, setCsvFiles] = useState<{ id: string; original_filename: string }[]>([]);
@@ -99,6 +101,24 @@ export const CreateEmailCampaignDialog: React.FC<CreateEmailCampaignDialogProps>
             return;
         }
 
+        if (isScheduled && !scheduledAt) {
+            toast({
+                title: "Missing Schedule",
+                description: "Please select a date and time for scheduling",
+                variant: "destructive"
+            });
+            return;
+        }
+
+        if (isScheduled && new Date(scheduledAt) < new Date()) {
+            toast({
+                title: "Invalid Date",
+                description: "Scheduled date cannot be in the past",
+                variant: "destructive"
+            });
+            return;
+        }
+
         setLoading(true);
         try {
             const token = (await supabase.auth.getSession()).data.session?.access_token;
@@ -112,7 +132,8 @@ export const CreateEmailCampaignDialog: React.FC<CreateEmailCampaignDialogProps>
                 contactSource,
                 contactListId: contactSource === 'crm' ? contactListId : null,
                 csvFileId: contactSource === 'csv' ? csvFileId : null,
-                totalCount: 0 // Backend should ideally calculate this
+                totalCount: 0, // Backend should ideally calculate this
+                scheduledAt: isScheduled ? new Date(scheduledAt).toISOString() : null
             };
 
             const res = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'}/api/v1/email-campaigns`, {
@@ -127,7 +148,10 @@ export const CreateEmailCampaignDialog: React.FC<CreateEmailCampaignDialogProps>
             const data = await res.json();
 
             if (data.success) {
-                toast({ title: "Campaign Created", description: "Email campaign saved successfully" });
+                toast({
+                    title: isScheduled ? "Campaign Scheduled" : "Campaign Created",
+                    description: isScheduled ? `Campaign scheduled for ${new Date(scheduledAt).toLocaleString()}` : "Email campaign saved successfully"
+                });
                 onSuccess();
                 onOpenChange(false);
                 // Reset form
@@ -135,6 +159,8 @@ export const CreateEmailCampaignDialog: React.FC<CreateEmailCampaignDialogProps>
                 setSubject("");
                 setBody("");
                 setPrompt("");
+                setIsScheduled(false);
+                setScheduledAt("");
             } else {
                 throw new Error(data.message);
             }
@@ -177,21 +203,47 @@ export const CreateEmailCampaignDialog: React.FC<CreateEmailCampaignDialogProps>
                         </div>
                     </div>
 
-                    {contactSource === 'csv' && (
+                    <div className="grid grid-cols-2 gap-4 items-end">
                         <div className="space-y-2">
-                            <Label>Select CSV File</Label>
-                            <Select value={csvFileId} onValueChange={setCsvFileId}>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select a file..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {csvFiles.map(f => (
-                                        <SelectItem key={f.id} value={f.id}>{f.original_filename}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            {contactSource === 'csv' && (
+                                <>
+                                    <Label>Select CSV File</Label>
+                                    <Select value={csvFileId} onValueChange={setCsvFileId}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select a file..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {csvFiles.map(f => (
+                                                <SelectItem key={f.id} value={f.id}>{f.original_filename}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </>
+                            )}
                         </div>
-                    )}
+
+                        <div className="flex flex-col space-y-2">
+                            <div className="flex items-center space-x-2">
+                                <input
+                                    type="checkbox"
+                                    id="schedule-toggle"
+                                    checked={isScheduled}
+                                    onChange={(e) => setIsScheduled(e.target.checked)}
+                                    className="w-4 h-4"
+                                />
+                                <Label htmlFor="schedule-toggle" className="cursor-pointer">Schedule for later</Label>
+                            </div>
+                            {isScheduled && (
+                                <Input
+                                    type="datetime-local"
+                                    value={scheduledAt}
+                                    onChange={(e) => setScheduledAt(e.target.value)}
+                                    min={new Date().toISOString().slice(0, 16)}
+                                    className="h-10"
+                                />
+                            )}
+                        </div>
+                    </div>
 
                     <div className="space-y-2">
                         <Label>Subject Line</Label>
@@ -227,7 +279,7 @@ export const CreateEmailCampaignDialog: React.FC<CreateEmailCampaignDialogProps>
                     <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
                     <Button onClick={handleSave} disabled={loading}>
                         {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                        Create Campaign
+                        {isScheduled ? "Schedule Campaign" : "Create Campaign"}
                     </Button>
                 </DialogFooter>
             </DialogContent>
