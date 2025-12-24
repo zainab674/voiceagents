@@ -28,6 +28,7 @@ import aiohttp
 from livekit import agents, api
 from livekit.agents.voice import Agent, AgentSession, RunContext
 from livekit.agents import function_tool, cli, JobContext, WorkerOptions, RoomInputOptions, RoomOutputOptions
+from livekit.protocol.sip import TransferSIPParticipantRequest
 from cal_calendar_api import CalComCalendar, AvailableSlot, CalendarResult, CalendarError
 
 # ⬇️ OpenAI + VAD plugins
@@ -63,6 +64,15 @@ class UnifiedAgent(Agent):
         
         # Initialize Call Outcome Service
         self.call_outcome_service = CallOutcomeService()
+        
+        # Initialize transfer config
+        self._transfer_config = {
+            'enabled': False,
+            'phone_number': None,
+            'country_code': '+1',
+            'sentence': None,
+            'condition': None
+        }
         
         # Initialize calendar if provided
         if self.calendar:
@@ -221,6 +231,89 @@ class UnifiedAgent(Agent):
         except Exception as e:
             self.logger.error(f"OUTCOME_SEND_ERROR | error={str(e)}")
             return False
+    
+    def set_transfer_config(self, config: Dict[str, Any]):
+        """Set the call transfer configuration."""
+        if config:
+            self._transfer_config.update(config)
+            self.logger.info(f"TRANSFER_CONFIG_UPDATED | enabled={self._transfer_config.get('enabled')} | phone={self._transfer_config.get('phone_number')}")
+
+    @function_tool(name="transfer_required")
+    async def transfer_required(self, ctx: RunContext, reason: Optional[str] = None) -> str:
+        """
+        Transfer the call to a human agent or another department.
+        This should be called when the user asks to speak to a human, or when the agent cannot help the user.
+        """
+        try:
+            self.logger.info(f"TRANSFER_REQUESTED | reason={reason}")
+            
+            # 1. Check if transfer is enabled
+            if not self._transfer_config.get('enabled'):
+                self.logger.warning("TRANSFER_SKIPPED | transfer_not_enabled_in_config")
+                return "I'm sorry, I cannot transfer you at the moment. Is there anything else I can help you with?"
+            
+            phone_number = self._transfer_config.get('phone_number')
+            country_code = self._transfer_config.get('country_code', '+1')
+            transfer_sentence = self._transfer_config.get('sentence')
+            
+            if not phone_number:
+                self.logger.warning("TRANSFER_SKIPPED | missing_phone_number")
+                return "I'm sorry, I don't have a phone number to transfer you to. Is there anything else I can help you with?"
+            
+            # 2. Format phone number (ensure E.164 or SIP URI)
+            target_uri = f"tel:{country_code}{phone_number}"
+            if phone_number.startswith('+'):
+                target_uri = f"tel:{phone_number}"
+            
+            self.logger.info(f"TRANSFER_INITIATING | target={target_uri}")
+            
+            # 3. Speak the transfer sentence if one is configured
+            if transfer_sentence:
+                await ctx.agent.say(transfer_sentence)
+                # Small pause to ensure audio is played
+                await asyncio.sleep(1)
+            
+            # 4. Find the participant/room to transfer
+            # We need to find the SIP participant to refer
+            room = ctx.room
+            participant_identity = None
+            
+            # Find the remote participant (the caller)
+            for p in room.remote_participants.values():
+                participant_identity = p.identity
+                break
+                
+            if not participant_identity:
+                self.logger.error("TRANSFER_FAILED | no_remote_participant_found")
+                return "I'm sorry, I'm having trouble connecting you. Please try calling back."
+                
+            self.logger.info(f"TRANSFER_EXECUTING | room={room.name} | participant={participant_identity} | target={target_uri}")
+            
+            # 5. Execute SIP REFER transfer
+            livekit_api = api.LiveKitAPI(
+                os.getenv('LIVEKIT_URL'),
+                os.getenv('LIVEKIT_API_KEY'),
+                os.getenv('LIVEKIT_API_SECRET')
+            )
+            
+            transfer_request = TransferSIPParticipantRequest(
+                participant_identity=participant_identity,
+                room_name=room.name,
+                transfer_to=target_uri
+            )
+            
+            await livekit_api.sip.transfer_sip_participant(transfer_request)
+            
+            # Close the connection effectively ending the agent's part
+            # But give it a moment for the REFER to go through
+            await asyncio.sleep(2)
+            
+            return "Transferring your call now."
+            
+        except Exception as e:
+            self.logger.error(f"TRANSFER_ERROR | error={str(e)}", exc_info=True)
+            # Use 'booking_state' of self to check if error logging works. (Wait, this is unrelated)
+            return "I encountered a problem transferring your call. Please try again later."
     
 
     @function_tool(name="book_appointment")
@@ -1092,6 +1185,50 @@ async def entrypoint(ctx: JobContext):
         
         # Create the agent instance
         agent = create_agent()
+        
+        # Fetch agent configuration from Supabase if agentId is available
+        agent_id = None
+        if ctx.job.metadata:
+            try:
+                job_metadata = json.loads(ctx.job.metadata)
+                agent_id = job_metadata.get('agentId') or job_metadata.get('assistantId')
+            except:
+                pass
+        
+        if agent_id:
+            try:
+                # Get Supabase credentials
+                supabase_url = os.getenv('SUPABASE_URL')
+                supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+                
+                if supabase_url and supabase_key:
+                    from supabase import create_client
+                    # Run in a separate thread to avoid blocking the async loop
+                    import asyncio
+                    supabase = create_client(supabase_url, supabase_key)
+                    
+                    def fetch_agent_config():
+                        return supabase.table('agents').select('*').eq('id', agent_id).single().execute()
+                    
+                    agent_result = await asyncio.to_thread(fetch_agent_config)
+                    
+                    if agent_result.data:
+                        agent_data = agent_result.data
+                        
+                        # Set transfer config
+                        transfer_config = {
+                            'enabled': agent_data.get('transfer_enabled', False),
+                            'phone_number': agent_data.get('transfer_phone_number'),
+                            'country_code': agent_data.get('transfer_country_code', '+1'),
+                            'sentence': agent_data.get('transfer_sentence'),
+                            'condition': agent_data.get('transfer_condition')
+                        }
+                        
+                        agent.set_transfer_config(transfer_config)
+                        logger.info(f"AGENT_CONFIG_LOADED | agent_id={agent_id} | transfer_enabled={transfer_config['enabled']}")
+            except Exception as e:
+                logger.error(f"FAILED_TO_LOAD_AGENT_CONFIG | agent_id={agent_id} | error={str(e)}")
+
         
         # Get API keys for session components
         openai_api_key = os.getenv("OPENAI_API_KEY")

@@ -21,8 +21,10 @@ import {
   User,
   Save,
   Database,
-  Sparkles
+  Sparkles,
+  PhoneForwarded
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
 import { AGENTS_ENDPOINT, BACKEND_URL } from "@/constants/URLConstant";
 import { agentTemplateApi } from "@/http/agentTemplateHttp";
@@ -74,7 +76,12 @@ const AllAgents = () => {
     calEventTypeId: "",
     calTimezone: "UTC",
     enableRAG: false,
-    selectedKnowledgeBase: ""
+    selectedKnowledgeBase: "",
+    transferEnabled: false,
+    transferPhoneNumber: "",
+    transferCountryCode: "+1",
+    transferSentence: "",
+    transferCondition: ""
   });
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -327,7 +334,12 @@ const AllAgents = () => {
       calEventTypeId: agent.cal_event_type_id || "",
       calTimezone: agent.cal_timezone || "UTC",
       enableRAG: !!agent.knowledge_base_id,
-      selectedKnowledgeBase: agent.knowledge_base_id || ""
+      selectedKnowledgeBase: agent.knowledge_base_id || "",
+      transferEnabled: agent.transfer_enabled || false,
+      transferPhoneNumber: agent.transfer_phone_number || "",
+      transferCountryCode: agent.transfer_country_code || "+1",
+      transferSentence: agent.transfer_sentence || "",
+      transferCondition: agent.transfer_condition || ""
     });
     setIsEditModalOpen(true);
   };
@@ -371,6 +383,11 @@ const AllAgents = () => {
           calEventTypeId: editForm.calEventTypeId.trim() || null,
           calTimezone: editForm.calTimezone,
           knowledgeBaseId: editForm.enableRAG && editForm.selectedKnowledgeBase ? editForm.selectedKnowledgeBase : null,
+          transferEnabled: editForm.transferEnabled,
+          transferPhoneNumber: editForm.transferPhoneNumber,
+          transferCountryCode: editForm.transferCountryCode,
+          transferSentence: editForm.transferSentence,
+          transferCondition: editForm.transferCondition
         })
       });
 
@@ -381,7 +398,24 @@ const AllAgents = () => {
         });
         setIsEditModalOpen(false);
         setEditingAgent(null);
-        setEditForm({ name: "", description: "", prompt: "", smsPrompt: "", firstMessage: "", calApiKey: "", calEventTypeSlug: "", calEventTypeId: "", calTimezone: "UTC", enableRAG: false, selectedKnowledgeBase: "" });
+        setEditForm({
+          name: "",
+          description: "",
+          prompt: "",
+          smsPrompt: "",
+          firstMessage: "",
+          calApiKey: "",
+          calEventTypeSlug: "",
+          calEventTypeId: "",
+          calTimezone: "UTC",
+          enableRAG: false,
+          selectedKnowledgeBase: "",
+          transferEnabled: false,
+          transferPhoneNumber: "",
+          transferCountryCode: "+1",
+          transferSentence: "",
+          transferCondition: ""
+        });
         fetchAgents(); // Refresh the list
       } else {
         throw new Error('Failed to update agent');
@@ -818,6 +852,76 @@ const AllAgents = () => {
                     </Select>
                   </div>
                   <div></div> {/* Empty div for grid alignment */}
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold border-b pb-2 flex items-center gap-2">
+                  <PhoneForwarded className="w-5 h-5 text-primary" />
+                  Call Transfer Settings
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Configure when and how the agent should transfer calls
+                </p>
+
+                <div className="space-y-4 border rounded-lg p-4">
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="edit-transfer-enabled"
+                      checked={editForm.transferEnabled}
+                      onCheckedChange={(checked) => setEditForm({ ...editForm, transferEnabled: checked })}
+                    />
+                    <Label htmlFor="edit-transfer-enabled" className="font-semibold">Enable Call Transfer</Label>
+                  </div>
+
+                  {editForm.transferEnabled && (
+                    <div className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-300">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-transfer-country-code">Country Code</Label>
+                          <Input
+                            id="edit-transfer-country-code"
+                            placeholder="+1"
+                            value={editForm.transferCountryCode}
+                            onChange={(e) => setEditForm({ ...editForm, transferCountryCode: e.target.value })}
+                            disabled={isUpdating}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-transfer-phone-number">Phone Number</Label>
+                          <Input
+                            id="edit-transfer-phone-number"
+                            placeholder="5551234567"
+                            value={editForm.transferPhoneNumber}
+                            onChange={(e) => setEditForm({ ...editForm, transferPhoneNumber: e.target.value })}
+                            disabled={isUpdating}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-transfer-sentence">Transfer Sentence</Label>
+                        <Input
+                          id="edit-transfer-sentence"
+                          placeholder="Please hold while I transfer you..."
+                          value={editForm.transferSentence}
+                          onChange={(e) => setEditForm({ ...editForm, transferSentence: e.target.value })}
+                          disabled={isUpdating}
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-transfer-condition">Transfer Condition</Label>
+                        <Textarea
+                          id="edit-transfer-condition"
+                          placeholder="Transfer when..."
+                          value={editForm.transferCondition}
+                          onChange={(e) => setEditForm({ ...editForm, transferCondition: e.target.value })}
+                          disabled={isUpdating}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 

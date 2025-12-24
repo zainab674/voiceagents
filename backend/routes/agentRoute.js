@@ -93,9 +93,15 @@ router.post("/", authenticateToken, async (req, res) => {
           cal_timezone: finalTimezone,
           cal_enabled: !!calApiKey,
           knowledge_base_id: knowledgeBaseId || null,
-        template_id: templateId || null,
+          template_id: templateId || null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          transfer_enabled: req.body.transferEnabled || false,
+          transfer_phone_number: req.body.transferPhoneNumber || null,
+          transfer_country_code: req.body.transferCountryCode || '+1',
+          transfer_sentence: req.body.transferSentence || null,
+          transfer_condition: req.body.transferCondition || null,
+          language: req.body.language || 'en'
         }
       ])
       .select();
@@ -263,6 +269,12 @@ router.put("/:agentId", authenticateToken, async (req, res) => {
         cal_enabled: !!(calApiKey && finalEventTypeSlug),
         knowledge_base_id: knowledgeBaseId || null,
         updated_at: new Date().toISOString(),
+        transfer_enabled: req.body.transferEnabled !== undefined ? req.body.transferEnabled : undefined,
+        transfer_phone_number: req.body.transferPhoneNumber !== undefined ? req.body.transferPhoneNumber : undefined,
+        transfer_country_code: req.body.transferCountryCode !== undefined ? req.body.transferCountryCode : undefined,
+        transfer_sentence: req.body.transferSentence !== undefined ? req.body.transferSentence : undefined,
+        transfer_condition: req.body.transferCondition !== undefined ? req.body.transferCondition : undefined,
+        language: req.body.language || undefined
       })
       .eq('id', agentId)
       .eq('user_id', userId)

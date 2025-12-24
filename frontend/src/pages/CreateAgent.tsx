@@ -12,7 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
-import { Bot, ArrowLeft, Save, Calendar, Database, Users, Layers, Sparkles, Check, RefreshCw } from "lucide-react";
+import { Bot, ArrowLeft, Save, Calendar, Database, Users, Layers, Sparkles, Check, RefreshCw, PhoneForwarded } from "lucide-react";
 import { AGENTS_ENDPOINT, BACKEND_URL } from "@/constants/URLConstant";
 import CRMContactSelector from "@/components/CRMContactSelector";
 import { agentTemplateApi } from "@/http/agentTemplateHttp";
@@ -53,6 +53,12 @@ const CreateAgent = () => {
   const [calEventTypeSlug, setCalEventTypeSlug] = useState("");
   const [calEventTypeId, setCalEventTypeId] = useState("");
   const [calTimezone, setCalTimezone] = useState("UTC");
+  const [transferEnabled, setTransferEnabled] = useState(false);
+  const [transferPhoneNumber, setTransferPhoneNumber] = useState("");
+  const [transferCountryCode, setTransferCountryCode] = useState("+1");
+  const [transferSentence, setTransferSentence] = useState("");
+  const [transferCondition, setTransferCondition] = useState("");
+  const [language, setLanguage] = useState("en");
   const [isCreating, setIsCreating] = useState(false);
 
   // Knowledge Base states
@@ -214,9 +220,15 @@ const CreateAgent = () => {
           calEventTypeId: calEventTypeId.trim() || null,
           calTimezone: calTimezone,
           knowledgeBaseId: enableRAG && selectedKnowledgeBase ? selectedKnowledgeBase : null,
+          transferEnabled: transferEnabled,
+          transferPhoneNumber: transferPhoneNumber,
+          transferCountryCode: transferCountryCode,
+          transferSentence: transferSentence,
+          transferCondition: transferCondition,
           contactSource: contactSource,
           selectedContacts: contactSource === 'crm' ? selectedContacts : null,
-          templateId: selectedTemplateId
+          templateId: selectedTemplateId,
+          language: language
         })
       });
 
@@ -387,8 +399,9 @@ const CreateAgent = () => {
               )}
 
               <Tabs defaultValue="basic" className="space-y-6">
-                <TabsList className="grid w-full grid-cols-2">
+                <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="basic">Basic Info</TabsTrigger>
+                  <TabsTrigger value="transfer">Call Transfer</TabsTrigger>
                   <TabsTrigger value="knowledge">Knowledge Base</TabsTrigger>
                 </TabsList>
 
@@ -483,6 +496,31 @@ const CreateAgent = () => {
                     </p>
                   </div>
 
+                  {/* Language Field */}
+                  <div className="space-y-2">
+                    <Label htmlFor="language" className="text-base font-medium">
+                      Language
+                    </Label>
+                    <Select value={language} onValueChange={setLanguage} disabled={isCreating}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Language" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="en">English</SelectItem>
+                        <SelectItem value="es">Spanish</SelectItem>
+                        <SelectItem value="fr">French</SelectItem>
+                        <SelectItem value="de">German</SelectItem>
+                        <SelectItem value="pt">Portuguese</SelectItem>
+                        <SelectItem value="nl">Dutch</SelectItem>
+                        <SelectItem value="it">Italian</SelectItem>
+                        <SelectItem value="ru">Russian</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-sm text-muted-foreground">
+                      Select the primary language for your AI agent.
+                    </p>
+                  </div>
+
                   {/* Cal.com Integration Section */}
                   <div className="space-y-4">
                     <div className="flex items-center gap-2">
@@ -532,6 +570,80 @@ const CreateAgent = () => {
                   </div>
 
 
+                </TabsContent>
+
+                <TabsContent value="transfer" className="space-y-6">
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <PhoneForwarded className="w-5 h-5 text-primary" />
+                      <h3 className="text-lg font-semibold">Call Transfer Settings</h3>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Configure when and how the agent should transfer calls to a human.
+                    </p>
+
+                    <div className="space-y-4 border rounded-lg p-4">
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          id="transfer-enabled"
+                          checked={transferEnabled}
+                          onCheckedChange={setTransferEnabled}
+                        />
+                        <Label htmlFor="transfer-enabled" className="font-semibold">Enable Call Transfer</Label>
+                      </div>
+
+                      {transferEnabled && (
+                        <div className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-300">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="transfer-country-code">Country Code</Label>
+                              <Input
+                                id="transfer-country-code"
+                                placeholder="+1"
+                                value={transferCountryCode}
+                                onChange={(e) => setTransferCountryCode(e.target.value)}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="transfer-phone-number">Phone Number</Label>
+                              <Input
+                                id="transfer-phone-number"
+                                placeholder="5551234567"
+                                value={transferPhoneNumber}
+                                onChange={(e) => setTransferPhoneNumber(e.target.value)}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="transfer-sentence">Transfer Sentence</Label>
+                            <Input
+                              id="transfer-sentence"
+                              placeholder="Please hold while I transfer you to a specialist."
+                              value={transferSentence}
+                              onChange={(e) => setTransferSentence(e.target.value)}
+                            />
+                            <p className="text-sm text-muted-foreground">
+                              What the agent should say before transferring.
+                            </p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="transfer-condition">Transfer Condition</Label>
+                            <Textarea
+                              id="transfer-condition"
+                              placeholder="Transfer when the user asks for a human, or when the user is angry."
+                              value={transferCondition}
+                              onChange={(e) => setTransferCondition(e.target.value)}
+                            />
+                            <p className="text-sm text-muted-foreground">
+                              Instructions for the agent on when to initiate a transfer.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </TabsContent>
 
                 <TabsContent value="knowledge" className="space-y-6">

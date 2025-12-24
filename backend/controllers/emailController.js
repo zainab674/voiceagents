@@ -2,6 +2,11 @@ import nodemailer from 'nodemailer';
 import * as xlsx from 'xlsx';
 import { OpenAI } from 'openai';
 import { csvService } from '#services/csv-service.js';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 // Initialize OpenAI
 const openai = new OpenAI({
@@ -10,7 +15,8 @@ const openai = new OpenAI({
 
 export const verifyCredentials = async (req, res) => {
     try {
-        const { host, port, user, pass, secure } = req.body;
+        const { host, port, user, pass, secure, fromName } = req.body;
+        const userId = req.user.userId;
 
         const transporter = nodemailer.createTransport({
             host,
@@ -24,7 +30,22 @@ export const verifyCredentials = async (req, res) => {
 
         await transporter.verify();
 
-        res.status(200).json({ success: true, message: 'SMTP credentials verified successfully' });
+        // Save to database if verification successful
+        const { error } = await supabase
+            .from('user_smtp_credentials')
+            .upsert({
+                user_id: userId,
+                host,
+                port: parseInt(port),
+                username: user,
+                password: pass,
+                from_name: fromName,
+                updated_at: new Date()
+            }, { onConflict: 'user_id' });
+
+        if (error) throw error;
+
+        res.status(200).json({ success: true, message: 'SMTP credentials verified and saved successfully' });
     } catch (error) {
         console.error('SMTP Verification Error:', error);
         res.status(400).json({ success: false, message: 'Failed to verify credentials', error: error.message });

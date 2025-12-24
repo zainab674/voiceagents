@@ -22,6 +22,7 @@ import whitelabelRoute from "#routes/whitelabelRoute.js";
 import instagramRoute from "#routes/instagramRoute.js";
 import socialRoute from "#routes/socialRoute.js";
 import emailRoute from "#routes/emailRoute.js";
+import emailCampaignRoute from "#routes/emailCampaignRoute.js";
 import paymentRoute from "#routes/paymentRoute.js";
 import contactRoute from "#routes/contactRoute.js";
 
@@ -51,6 +52,7 @@ router.use("/whitelabel", whitelabelRoute);
 router.use("/instagram", instagramRoute);
 router.use("/social", socialRoute);
 router.use("/email", emailRoute);
+router.use("/email-campaigns", emailCampaignRoute);
 router.use("/payments", paymentRoute);
 router.use("/contact", contactRoute);
 
