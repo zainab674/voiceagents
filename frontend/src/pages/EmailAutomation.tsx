@@ -189,14 +189,13 @@ const EmailAutomation = () => {
                                         <TableHead className="text-right">Sent</TableHead>
                                         <TableHead className="text-right">Pending</TableHead>
                                         <TableHead className="text-right">Failed</TableHead>
-                                        <TableHead className="text-right">Total</TableHead>
                                         <TableHead className="text-right">Actions</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
                                     {campaigns.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={8} className="text-center py-6 text-muted-foreground">
+                                            <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">
                                                 No campaigns found. Create one to get started.
                                             </TableCell>
                                         </TableRow>
@@ -209,7 +208,6 @@ const EmailAutomation = () => {
                                                 <TableCell className="text-right">{c.sent_count}</TableCell>
                                                 <TableCell className="text-right">{c.pending_count}</TableCell>
                                                 <TableCell className="text-right text-destructive">{c.failed_count}</TableCell>
-                                                <TableCell className="text-right">{c.total_count}</TableCell>
                                                 <TableCell className="text-right">
                                                     <div className="flex justify-end gap-2">
                                                         {c.status === 'running' ? (
