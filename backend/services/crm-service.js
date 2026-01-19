@@ -21,7 +21,7 @@ class CRMService {
 
   async getCredentials() {
     if (this.credentials) return this.credentials;
-    
+
     const { data, error } = await supabase
       .from('user_crm_credentials')
       .select('*')
@@ -45,7 +45,7 @@ class CRMService {
 
   async makeRequest(method, url, data = null, headers = {}) {
     const credentials = await this.getCredentials();
-    
+
     // Check if token is expired
     if (credentials.expires_at && new Date(credentials.expires_at) <= new Date()) {
       await this.refreshToken();
@@ -155,7 +155,7 @@ class HubSpotService extends CRMService {
 
   async refreshToken() {
     const credentials = await this.getCredentials();
-    
+
     if (!credentials.refresh_token) {
       throw new Error('No refresh token available for HubSpot');
     }
@@ -214,10 +214,10 @@ class HubSpotService extends CRMService {
 
   async fetchContacts(params = {}) {
     const { limit = 100, after, properties = ['firstname', 'lastname', 'email', 'phone', 'company', 'jobtitle'] } = params;
-    
+
     const url = `${this.baseUrl}/crm/${this.apiVersion}/objects/contacts`;
     const headers = await this.getAuthHeaders();
-    
+
     const queryParams = {
       limit,
       properties: properties.join(','),
@@ -225,7 +225,7 @@ class HubSpotService extends CRMService {
     };
 
     const response = await this.makeRequest('GET', url, null, headers);
-    
+
     // Transform HubSpot response to standard format
     const contacts = response.results.map(contact => ({
       id: contact.id,
@@ -249,7 +249,7 @@ class HubSpotService extends CRMService {
   async createContact(contactData) {
     const url = `${this.baseUrl}/crm/${this.apiVersion}/objects/contacts`;
     const headers = await this.getAuthHeaders();
-    
+
     const properties = {
       firstname: contactData.first_name,
       lastname: contactData.last_name,
@@ -266,7 +266,7 @@ class HubSpotService extends CRMService {
   async getAccountInfo() {
     const url = `${this.baseUrl}/crm/${this.apiVersion}/objects/accounts`;
     const headers = await this.getAuthHeaders();
-    
+
     const response = await this.makeRequest('GET', url, null, headers);
     return response;
   }
@@ -290,7 +290,7 @@ class ZohoService extends CRMService {
 
   async refreshToken() {
     const credentials = await this.getCredentials();
-    
+
     if (!credentials.refresh_token) {
       throw new Error('No refresh token available for Zoho');
     }
@@ -347,17 +347,17 @@ class ZohoService extends CRMService {
 
   async fetchContacts(params = {}) {
     const { page = 1, per_page = 200 } = params;
-    
+
     const url = `${this.baseUrl}/Contacts`;
     const headers = await this.getAuthHeaders();
-    
+
     const queryParams = {
       page,
       per_page
     };
 
     const response = await this.makeRequest('GET', url, null, headers);
-    
+
     // Transform Zoho response to standard format
     const contacts = response.data.map(contact => ({
       id: contact.id,
@@ -381,7 +381,7 @@ class ZohoService extends CRMService {
   async createContact(contactData) {
     const url = `${this.baseUrl}/Contacts`;
     const headers = await this.getAuthHeaders();
-    
+
     const data = {
       data: [{
         First_Name: contactData.first_name,
@@ -399,7 +399,7 @@ class ZohoService extends CRMService {
   async getAccountInfo() {
     const url = `${this.baseUrl}/Accounts`;
     const headers = await this.getAuthHeaders();
-    
+
     const response = await this.makeRequest('GET', url, null, headers);
     return response;
   }
@@ -417,7 +417,7 @@ class MultiCRMService {
 
   async initializeServices() {
     const credentials = await this.getUserCRMCredentials();
-    
+
     for (const credential of credentials) {
       if (credential.is_active) {
         switch (credential.crm_platform) {
@@ -449,12 +449,12 @@ class MultiCRMService {
   async getAllContacts(filters = {}) {
     await this.initializeServices();
     const allContacts = [];
-    
+
     for (const [platform, service] of this.services) {
       try {
         const result = await service.fetchContacts(filters);
         const contacts = result.contacts || result.data || [];
-        
+
         // Add platform identifier to each contact
         const platformContacts = contacts.map(contact => ({
           ...contact,
@@ -467,14 +467,14 @@ class MultiCRMService {
         // Continue with other platforms even if one fails
       }
     }
-    
+
     return allContacts;
   }
 
   async syncAllPlatforms() {
     await this.initializeServices();
     const results = {};
-    
+
     for (const [platform, service] of this.services) {
       try {
         const result = await service.fetchContacts();
@@ -485,16 +485,16 @@ class MultiCRMService {
         results[platform] = { success: false, error: error.message };
       }
     }
-    
+
     return results;
   }
 
   async syncPlatform(platform) {
     await this.initializeServices();
     const service = this.services.get(platform);
-    
+
     if (!service) {
-      throw new Error(`Platform ${platform} not connected`);
+      throw new Error(`Platform ${platform} not connected. Please go to the Integrations tab and connect your ${platform} account.`);
     }
 
     try {
@@ -510,18 +510,18 @@ class MultiCRMService {
   async createContactInPlatform(platform, contactData) {
     await this.initializeServices();
     const service = this.services.get(platform);
-    
+
     if (!service) {
-      throw new Error(`Platform ${platform} not connected`);
+      throw new Error(`Platform ${platform} not connected. Please go to the Integrations tab and connect your ${platform} account.`);
     }
-    
+
     return await service.createContact(contactData);
   }
 
   async createContactInAllPlatforms(contactData) {
     await this.initializeServices();
     const results = {};
-    
+
     for (const [platform, service] of this.services) {
       try {
         const result = await service.createContact(contactData);
@@ -530,7 +530,7 @@ class MultiCRMService {
         results[platform] = { success: false, error: error.message };
       }
     }
-    
+
     return results;
   }
 
@@ -547,14 +547,14 @@ class MultiCRMService {
 
     // Apply filters
     let filteredData = data;
-    
+
     if (filters.platform) {
       filteredData = filteredData.filter(contact => contact.crm_platform === filters.platform);
     }
-    
+
     if (filters.search) {
       const searchTerm = filters.search.toLowerCase();
-      filteredData = filteredData.filter(contact => 
+      filteredData = filteredData.filter(contact =>
         contact.first_name?.toLowerCase().includes(searchTerm) ||
         contact.last_name?.toLowerCase().includes(searchTerm) ||
         contact.email?.toLowerCase().includes(searchTerm) ||
@@ -578,7 +578,7 @@ class MultiCRMService {
 
     // Remove from services map
     this.services.delete(platform);
-    
+
     return true;
   }
 }

@@ -263,13 +263,15 @@ export const getCallHistory = async (req, res) => {
       conversation.totalDuration = `${hours}:${minutes.toString().padStart(2, '0')}`;
 
       // Count outcomes
-      if (call.outcome) {
-        const outcome = call.outcome.toLowerCase();
+      if (call.outcome || call.success) {
+        const outcome = (call.outcome || "").toLowerCase();
+        const isSuccess = call.success === true;
+
         if (outcome.includes('appointment') || outcome.includes('booked')) {
           conversation.outcomes.appointments += 1;
-        } else if (outcome.includes('qualified') && !outcome.includes('not')) {
+        } else if ((outcome.includes('qualified') && !outcome.includes('not')) || (outcome === 'completed' && isSuccess)) {
           conversation.outcomes.qualified += 1;
-        } else if (outcome.includes('not qualified') || outcome.includes('not eligible')) {
+        } else if (outcome.includes('not qualified') || outcome.includes('not eligible') || (outcome === 'completed' && !isSuccess && call.duration_seconds > 30)) {
           conversation.outcomes.notQualified += 1;
         } else if (outcome.includes('spam')) {
           conversation.outcomes.spam += 1;
@@ -518,38 +520,61 @@ export const getRecordingAudio = async (req, res) => {
   try {
     const userId = req.user.userId;
     const { recordingSid } = req.params;
-    const { accountSid, authToken } = req.query;
+    // Support both query params (for backward compatibility) and authenticated route
+    const { accountSid: queryAccountSid, authToken: queryAuthToken } = req.query;
 
     console.log('getRecordingAudio called with:', {
       userId,
       recordingSid,
-      accountSid: accountSid ? `${accountSid.substring(0, 8)}...` : 'missing',
-      authToken: authToken ? `${authToken.substring(0, 8)}...` : 'missing',
+      hasQueryParams: !!(queryAccountSid && queryAuthToken),
       fullUrl: req.originalUrl
     });
 
-    if (!recordingSid || !accountSid || !authToken) {
-      console.error('Missing required parameters:', { recordingSid: !!recordingSid, accountSid: !!accountSid, authToken: !!authToken });
+    if (!recordingSid) {
       return res.status(400).json({
         success: false,
-        message: 'recordingSid, accountSid, and authToken are required'
+        message: 'recordingSid is required'
       });
     }
 
-    // Verify user has access to these credentials
-    const { data: credentials, error: credError } = await supabase
-      .from('user_twilio_credentials')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('account_sid', accountSid)
-      .eq('is_active', true)
-      .single();
+    let accountSid, authToken;
 
-    if (credError || !credentials) {
-      return res.status(403).json({
-        success: false,
-        message: 'Invalid credentials'
-      });
+    // If credentials provided in query params, verify they belong to the user
+    if (queryAccountSid && queryAuthToken) {
+      const { data: credentials, error: credError } = await supabase
+        .from('user_twilio_credentials')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('account_sid', queryAccountSid)
+        .eq('is_active', true)
+        .single();
+
+      if (credError || !credentials) {
+        return res.status(403).json({
+          success: false,
+          message: 'Invalid credentials'
+        });
+      }
+      accountSid = queryAccountSid;
+      authToken = queryAuthToken;
+    } else {
+      // Get user's Twilio credentials from database
+      const { data: credentials, error: credError } = await supabase
+        .from('user_twilio_credentials')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .single();
+
+      if (credError || !credentials) {
+        return res.status(400).json({
+          success: false,
+          message: 'No Twilio credentials found'
+        });
+      }
+
+      accountSid = credentials.account_sid;
+      authToken = credentials.auth_token;
     }
 
     // Construct the Twilio recording URL
@@ -607,7 +632,8 @@ export const saveCallHistory = async (req, res) => {
       call_sid,
       outcome,
       success,
-      notes
+      notes,
+      call_type
     } = req.body;
 
     console.log('Saving call history:', {
@@ -632,7 +658,8 @@ export const saveCallHistory = async (req, res) => {
       call_sid,
       outcome,
       success,
-      notes
+      notes,
+      call_type: call_type || 'inbound'  // Include call_type: inbound, outbound, or web
     };
 
     // Use call history service to save

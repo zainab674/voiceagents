@@ -96,7 +96,11 @@ export function CampaignSettingsDialog({ open, onOpenChange, onSave }: CampaignS
       return; // Basic validation
     }
     
-    onSave(formData);
+    // Add contactSource since this dialog only supports CSV files
+    onSave({
+      ...formData,
+      contactSource: 'csv_file' as const
+    });
     
     // Reset form
     setFormData({

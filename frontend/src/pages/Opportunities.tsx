@@ -21,6 +21,7 @@ import {
     TableRow
 } from "@/components/ui/table";
 import { toast } from "@/components/ui/use-toast";
+import { OpportunityDetailsDialog } from "@/components/opportunities/OpportunityDetailsDialog";
 
 interface BookedCall {
     id: string;
@@ -33,12 +34,15 @@ interface BookedCall {
     agentName: string;
     recordingUrl?: string;
     transcript?: any;
+    callSid?: string;
 }
 
 export default function Opportunities() {
     const [opportunities, setOpportunities] = useState<BookedCall[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [currentPage, setCurrentPage] = useState(1);
+    const [selectedOpportunity, setSelectedOpportunity] = useState<BookedCall | null>(null);
+    const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
     const itemsPerPage = 10;
 
     useEffect(() => {
@@ -58,7 +62,7 @@ export default function Opportunities() {
                     const status = call.status?.toLowerCase() || "";
                     const outcome = call.outcome?.toLowerCase() || "";
 
-                    if (status === "booked" || outcome === "booked" || outcome === "appointment_set") {
+                    if (status.includes("booked") || outcome.includes("booked")) {
                         bookedCalls.push({
                             id: call.id,
                             phoneNumber: conv.phoneNumber,
@@ -68,8 +72,9 @@ export default function Opportunities() {
                             duration: call.duration_seconds ? `${Math.floor(call.duration_seconds / 60)}:${(call.duration_seconds % 60).toString().padStart(2, '0')}` : '0:00',
                             outcome: call.outcome || call.status || "Booked",
                             agentName: call.agents?.name || "AI Agent",
-                            recordingUrl: undefined, // Add logic if recording URL is available in call object
-                            transcript: call.transcription
+                            recordingUrl: undefined, // Will be fetched when dialog opens
+                            transcript: call.transcription,
+                            callSid: call.call_sid
                         });
                     }
                 });
@@ -128,7 +133,7 @@ export default function Opportunities() {
                                 </div>
                                 <h3 className="text-lg font-medium">No Opportunities Found</h3>
                                 <p className="text-muted-foreground max-w-sm mt-2">
-                                    Calls marked as "Booked" or "Appointment Set" will appear here.
+                                    Calls marked as "Booked" will appear here.
                                 </p>
                             </div>
                         ) : (
@@ -191,8 +196,8 @@ export default function Opportunities() {
                                                         <DropdownMenuContent align="end">
                                                             <DropdownMenuItem
                                                                 onClick={() => {
-                                                                    // Logic to view details or recording
-                                                                    toast({ title: "Coming Soon", description: "Details view coming soon." });
+                                                                    setSelectedOpportunity(opp);
+                                                                    setDetailsDialogOpen(true);
                                                                 }}
                                                             >
                                                                 View Details
@@ -238,6 +243,13 @@ export default function Opportunities() {
                     </div>
                 )}
             </div>
+
+            {/* Opportunity Details Dialog */}
+            <OpportunityDetailsDialog
+                open={detailsDialogOpen}
+                onOpenChange={setDetailsDialogOpen}
+                opportunity={selectedOpportunity}
+            />
         </div>
     );
 }

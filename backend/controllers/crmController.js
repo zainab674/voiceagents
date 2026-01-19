@@ -64,6 +64,25 @@ const storeOAuthState = async (userId, state, platform) => {
 };
 
 /**
+ * Get userId from OAuth state (for callbacks)
+ */
+const getUserIdFromState = async (state, platform) => {
+  const { data, error } = await supabase
+    .from('oauth_states')
+    .select('user_id')
+    .eq('state', state)
+    .eq('platform', platform)
+    .gt('expires_at', new Date().toISOString())
+    .single();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return data.user_id;
+};
+
+/**
  * Verify OAuth state parameter
  */
 const verifyOAuthState = async (userId, state, platform) => {
@@ -87,6 +106,31 @@ const verifyOAuthState = async (userId, state, platform) => {
     .eq('id', data.id);
 
   return true;
+};
+
+/**
+ * Verify OAuth state and return userId (for callbacks)
+ */
+const verifyOAuthStateAndGetUserId = async (state, platform) => {
+  const { data, error } = await supabase
+    .from('oauth_states')
+    .select('*')
+    .eq('state', state)
+    .eq('platform', platform)
+    .gt('expires_at', new Date().toISOString())
+    .single();
+
+  if (error || !data) {
+    return null;
+  }
+
+  // Clean up the used state
+  await supabase
+    .from('oauth_states')
+    .delete()
+    .eq('id', data.id);
+
+  return data.user_id;
 };
 
 /**
@@ -245,25 +289,65 @@ export const storeCRMAppCredentials = async (req, res) => {
       });
     }
 
-    // Deactivate any existing app credentials for this platform
-    await supabase
+    // Check if an active record already exists
+    const { data: existingRecord, error: checkError } = await supabase
       .from('user_crm_app_credentials')
-      .update({ is_active: false })
+      .select('id')
       .eq('user_id', userId)
-      .eq('crm_platform', platform);
+      .eq('crm_platform', platform)
+      .eq('is_active', true)
+      .maybeSingle();
 
-    // Insert new app credentials
-    const { data, error } = await supabase
-      .from('user_crm_app_credentials')
-      .insert({
-        user_id: userId,
-        crm_platform: platform,
-        client_id: clientId,
-        client_secret: clientSecret,
-        redirect_uri: redirectUri
-      })
-      .select()
-      .single();
+    if (checkError) {
+      throw new Error(`Failed to check existing ${platform} app credentials: ${checkError.message}`);
+    }
+
+    let data;
+    let error;
+
+    if (existingRecord) {
+      // Update existing active record
+      const updateResult = await supabase
+        .from('user_crm_app_credentials')
+        .update({
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: redirectUri,
+          is_active: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existingRecord.id)
+        .select()
+        .single();
+      
+      data = updateResult.data;
+      error = updateResult.error;
+    } else {
+      // Deactivate any existing active records for this platform (shouldn't happen due to constraint, but safety check)
+      await supabase
+        .from('user_crm_app_credentials')
+        .update({ is_active: false })
+        .eq('user_id', userId)
+        .eq('crm_platform', platform)
+        .eq('is_active', true);
+
+      // Insert new app credentials
+      const insertResult = await supabase
+        .from('user_crm_app_credentials')
+        .insert({
+          user_id: userId,
+          crm_platform: platform,
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: redirectUri,
+          is_active: true
+        })
+        .select()
+        .single();
+      
+      data = insertResult.data;
+      error = insertResult.error;
+    }
 
     if (error) {
       throw new Error(`Failed to store ${platform} app credentials: ${error.message}`);
@@ -342,6 +426,16 @@ export const initiateHubSpotOAuth = async (req, res) => {
     await storeOAuthState(userId, state, 'hubspot');
     
     const authUrl = getHubSpotOAuthUrl(appCredentials.client_id, appCredentials.redirect_uri, state);
+    
+    // If request accepts JSON (API call), return JSON. Otherwise redirect (browser direct access)
+    if (req.headers.accept && req.headers.accept.includes('application/json')) {
+      return res.json({
+        success: true,
+        authUrl: authUrl
+      });
+    }
+    
+    // Browser redirect for direct access
     res.redirect(authUrl);
   } catch (error) {
     console.error('HubSpot OAuth initiation error:', error);
@@ -359,20 +453,23 @@ export const initiateHubSpotOAuth = async (req, res) => {
 export const handleHubSpotCallback = async (req, res) => {
   try {
     const { code, state, error: oauthError } = req.query;
-    const { userId } = req.user;
+
+    // Get frontend URL from environment variable
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const dashboardUrl = `${frontendUrl}/dashboard`;
 
     if (oauthError) {
-      return res.redirect(`https://aiassistant.net/dashboard?crm_error=${oauthError}`);
+      return res.redirect(`${dashboardUrl}?crm_error=${oauthError}`);
     }
 
     if (!code || !state) {
-      return res.redirect(`https://aiassistant.net/dashboard?crm_error=missing_parameters`);
+      return res.redirect(`${dashboardUrl}?crm_error=missing_parameters`);
     }
 
-    // Verify state parameter
-    const isValidState = await verifyOAuthState(userId, state, 'hubspot');
-    if (!isValidState) {
-      return res.redirect(`https://aiassistant.net/dashboard?crm_error=invalid_state`);
+    // Get userId from state parameter (callbacks don't have auth tokens)
+    const userId = await verifyOAuthStateAndGetUserId(state, 'hubspot');
+    if (!userId) {
+      return res.redirect(`${dashboardUrl}?crm_error=invalid_state`);
     }
 
     // Get user's HubSpot app credentials
@@ -385,7 +482,7 @@ export const handleHubSpotCallback = async (req, res) => {
       .single();
 
     if (appError || !appCredentials) {
-      return res.redirect(`https://aiassistant.net/dashboard?crm_error=app_credentials_not_found`);
+      return res.redirect(`${dashboardUrl}?crm_error=app_credentials_not_found`);
     }
 
     // Exchange code for tokens using user credentials
@@ -401,10 +498,11 @@ export const handleHubSpotCallback = async (req, res) => {
     // Store credentials
     await storeCRMCredentials(userId, 'hubspot', tokens);
 
-    res.redirect(`https://aiassistant.net/dashboard?crm_connected=hubspot`);
+    res.redirect(`${dashboardUrl}?crm_connected=hubspot`);
   } catch (error) {
     console.error('HubSpot OAuth callback error:', error);
-    res.redirect(`https://aiassistant.net/dashboard?crm_error=${encodeURIComponent(error.message)}`);
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    res.redirect(`${frontendUrl}/dashboard?crm_error=${encodeURIComponent(error.message)}`);
   }
 };
 
@@ -435,6 +533,16 @@ export const initiateZohoOAuth = async (req, res) => {
     await storeOAuthState(userId, state, 'zoho');
     
     const authUrl = getZohoOAuthUrl(appCredentials.client_id, appCredentials.redirect_uri, state);
+    
+    // If request accepts JSON (API call), return JSON. Otherwise redirect (browser direct access)
+    if (req.headers.accept && req.headers.accept.includes('application/json')) {
+      return res.json({
+        success: true,
+        authUrl: authUrl
+      });
+    }
+    
+    // Browser redirect for direct access
     res.redirect(authUrl);
   } catch (error) {
     console.error('Zoho OAuth initiation error:', error);
@@ -452,20 +560,23 @@ export const initiateZohoOAuth = async (req, res) => {
 export const handleZohoCallback = async (req, res) => {
   try {
     const { code, state, error: oauthError } = req.query;
-    const { userId } = req.user;
+
+    // Get frontend URL from environment variable
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const dashboardUrl = `${frontendUrl}/dashboard`;
 
     if (oauthError) {
-      return res.redirect(`https://aiassistant.net/dashboard?crm_error=${oauthError}`);
+      return res.redirect(`${dashboardUrl}?crm_error=${oauthError}`);
     }
 
     if (!code || !state) {
-      return res.redirect(`https://aiassistant.net/dashboard?crm_error=missing_parameters`);
+      return res.redirect(`${dashboardUrl}?crm_error=missing_parameters`);
     }
 
-    // Verify state parameter
-    const isValidState = await verifyOAuthState(userId, state, 'zoho');
-    if (!isValidState) {
-      return res.redirect(`https://aiassistant.net/dashboard?crm_error=invalid_state`);
+    // Get userId from state parameter (callbacks don't have auth tokens)
+    const userId = await verifyOAuthStateAndGetUserId(state, 'zoho');
+    if (!userId) {
+      return res.redirect(`${dashboardUrl}?crm_error=invalid_state`);
     }
 
     // Get user's Zoho app credentials
@@ -478,7 +589,7 @@ export const handleZohoCallback = async (req, res) => {
       .single();
 
     if (appError || !appCredentials) {
-      return res.redirect(`https://aiassistant.net/dashboard?crm_error=app_credentials_not_found`);
+      return res.redirect(`${dashboardUrl}?crm_error=app_credentials_not_found`);
     }
 
     // Exchange code for tokens using user credentials
@@ -494,10 +605,11 @@ export const handleZohoCallback = async (req, res) => {
     // Store credentials
     await storeCRMCredentials(userId, 'zoho', tokens);
 
-    res.redirect(`https://aiassistant.net/dashboard?crm_connected=zoho`);
+    res.redirect(`${dashboardUrl}?crm_connected=zoho`);
   } catch (error) {
     console.error('Zoho OAuth callback error:', error);
-    res.redirect(`https://aiassistant.net/dashboard?crm_error=${encodeURIComponent(error.message)}`);
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    res.redirect(`${frontendUrl}/dashboard?crm_error=${encodeURIComponent(error.message)}`);
   }
 };
 

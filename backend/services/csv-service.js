@@ -284,32 +284,71 @@ class CsvService {
    */
   parseCsvContent(csvText) {
     try {
-      const lines = csvText.split('\n').filter(line => line.trim());
+      // Handle different line endings and filter out truly empty lines
+      const lines = csvText.split(/\r?\n/).filter(line => line.trim());
       if (lines.length < 2) return [];
 
-      const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
+      // Detect delimiter (comma, semicolon, or tab)
+      const firstLine = lines[0];
+      const separators = [',', ';', '\t'];
+      let delimiter = ',';
+      let maxCols = 0;
+
+      separators.forEach(sep => {
+        const cols = firstLine.split(sep).length;
+        if (cols > maxCols) {
+          maxCols = cols;
+          delimiter = sep;
+        }
+      });
+
+      const headers = lines[0].split(delimiter).map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
       const contacts = [];
 
       for (let i = 1; i < lines.length; i++) {
-        const values = lines[i].split(',').map(v => v.trim().replace(/['"]/g, ''));
-        if (values.length !== headers.length) continue;
+        const values = lines[i].split(delimiter).map(v => v.trim().replace(/['"]/g, ''));
+
+        // If the row doesn't have enough columns, skip it
+        if (values.length < Math.min(2, headers.length)) continue;
 
         const row = {};
         headers.forEach((header, index) => {
-          row[header] = values[index] || '';
+          if (index < values.length) {
+            row[header] = values[index] || '';
+          }
         });
 
-        // Map common column names to our interface
+        // Flexible column finding
+        const findValue = (keywords) => {
+          const key = Object.keys(row).find(k => keywords.some(kw => k.includes(kw)));
+          return key ? row[key] : '';
+        };
+
+        let firstName = findValue(['first_name', 'firstname', 'first', 'fname']);
+        let lastName = findValue(['last_name', 'lastname', 'last', 'lname']);
+        const phone = findValue(['phone', 'telephone', 'mobile', 'cell', 'number', 'ph']);
+        const email = findValue(['email', 'e_mail', 'mail', 'addr']);
+        const fullName = findValue(['name', 'contact', 'full']);
+
+        // If first_name is missing but we have a full name, try to split it
+        if (!firstName && fullName) {
+          const parts = fullName.split(' ');
+          firstName = parts[0];
+          if (!lastName && parts.length > 1) {
+            lastName = parts.slice(1).join(' ');
+          }
+        }
+
         const contact = {
-          first_name: row.first_name || row.firstname || row.first || row.fname || '',
-          last_name: row.last_name || row.lastname || row.last || row.lname || '',
-          phone: row.phone || row.phone_number || row.telephone || row.mobile || '',
-          email: row.email || row.email_address || row.e_mail || '',
+          first_name: firstName,
+          last_name: lastName,
+          phone: phone || '0', // Default to '0' if no phone number
+          email,
           status: (row.status || 'active'),
           do_not_call: row.do_not_call === 'true' || row.dnd === 'true' || row.do_not_call === '1' || row.dnd === '1' || false
         };
 
-        // Only add if we have at least first name and either phone or email
+        // Validation: Must have a name and (phone or email)
         if (contact.first_name && (contact.phone || contact.email)) {
           contacts.push(contact);
         }

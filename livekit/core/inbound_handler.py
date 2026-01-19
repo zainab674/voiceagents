@@ -784,7 +784,8 @@ class InboundCallHandler:
                 'started_at': started_at,
                 'ended_at': ended_at,
                 'success': True,
-                'transcription': transcription
+                'transcription': transcription,
+                'call_type': 'inbound'  # Inbound calls are always inbound type
             }
             
             # Log call data for debugging

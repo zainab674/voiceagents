@@ -6,7 +6,7 @@ export const recordingWebhookRouter = express.Router();
 
 // Supabase client for updating recording status
 const supa = createClient(
-  process.env.SUPABASE_URL, 
+  process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
@@ -44,9 +44,9 @@ recordingWebhookRouter.post('/status', async (req, res) => {
     // Validate required fields
     if (!CallSid || !RecordingSid || !RecordingStatus) {
       console.error('Missing required fields in recording callback', req.body);
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Missing required fields: CallSid, RecordingSid, RecordingStatus' 
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: CallSid, RecordingSid, RecordingStatus'
       });
     }
 
@@ -63,26 +63,26 @@ recordingWebhookRouter.post('/status', async (req, res) => {
       updated_at: new Date().toISOString()
     };
 
-    // Update the call_history table with recording information
+    // Update the calls table with recording information
     const { data, error } = await supa
-      .from('call_history')
+      .from('calls')
       .update(recordingData)
       .eq('call_sid', CallSid)
       .select();
 
     if (error) {
       console.error('Failed to update call history with recording data:', error);
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Failed to update call history' 
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to update call history'
       });
     }
 
     if (!data || data.length === 0) {
       console.warn('No call history found for CallSid:', CallSid);
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Call not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'Call not found'
       });
     }
 
@@ -93,8 +93,8 @@ recordingWebhookRouter.post('/status', async (req, res) => {
       updatedRows: data.length
     });
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: 'Recording status updated successfully',
       callSid: CallSid,
       recordingSid: RecordingSid,
@@ -103,9 +103,9 @@ recordingWebhookRouter.post('/status', async (req, res) => {
 
   } catch (error) {
     console.error('Recording status callback error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Internal server error' 
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
     });
   }
 });
@@ -119,36 +119,36 @@ recordingWebhookRouter.get('/:callSid', async (req, res) => {
     const { callSid } = req.params;
 
     const { data, error } = await supa
-      .from('call_history')
+      .from('calls')
       .select('recording_sid, recording_url, recording_status, recording_duration, recording_start_time')
       .eq('call_sid', callSid)
       .single();
 
     if (error) {
       console.error('Failed to fetch recording info:', error);
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Failed to fetch recording information' 
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to fetch recording information'
       });
     }
 
     if (!data) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Call not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'Call not found'
       });
     }
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       recording: data
     });
 
   } catch (error) {
     console.error('Get recording info error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Internal server error' 
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
     });
   }
 });
@@ -158,8 +158,8 @@ recordingWebhookRouter.get('/:callSid', async (req, res) => {
  * GET /api/v1/recording/health
  */
 recordingWebhookRouter.get('/health', (req, res) => {
-  res.json({ 
-    success: true, 
+  res.json({
+    success: true,
     message: 'Recording webhook service is running',
     timestamp: new Date().toISOString()
   });

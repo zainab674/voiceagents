@@ -13,3 +13,4 @@ export const CALLS_ENDPOINT = `${API_BASE_URL}/calls`;
 export const PLANS_ENDPOINT = `${API_BASE_URL}/plans`;
 export const INSTAGRAM_ENDPOINT = `${API_BASE_URL}/instagram`;
 export const SOCIAL_ENDPOINT = `${API_BASE_URL}/social`;
+export const PHONE_NUMBERS_ENDPOINT = `${API_BASE_URL}/phone-numbers`;

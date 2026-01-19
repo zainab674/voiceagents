@@ -52,22 +52,28 @@ export const fetchRecordingUrl = async (callSid: string): Promise<RecordingInfo 
       return null;
     }
 
-    // Get Twilio credentials for the API call
-    const { data: credentials, error: credError } = await supabase
-      .from('user_twilio_credentials')
-      .select('account_sid, auth_token')
-      .eq('is_active', true)
-      .single();
-
-    if (credError || !credentials) {
-      console.error('Failed to fetch Twilio credentials:', credError);
+    // Get user ID from session
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.error('No authenticated user found');
       return null;
     }
 
-    // Call our server API to get recording info from Twilio
+    // Use authenticated route instead of passing credentials in query params
+    // This is more secure and ensures we get the correct user's credentials
+    const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
+    const authToken = session.access_token;
+    
     console.log('Fetching recording for callSid:', callSid);
+    // Use authenticated route from callRoute.js (mounted at /api/v1/calls)
     const response = await fetch(
-      `${import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'}/api/v1/call/${callSid}/recordings?accountSid=${credentials.account_sid}&authToken=${credentials.auth_token}`
+      `${baseUrl}/api/v1/calls/${callSid}/recordings`,
+      {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
     );
 
     console.log('Recording API response status:', response.status);
@@ -87,19 +93,15 @@ export const fetchRecordingUrl = async (callSid: string): Promise<RecordingInfo 
     // Get the first (and usually only) recording
     const recording = data.recordings[0];
 
-    // Use our proxy endpoint instead of direct Twilio API access
+    // Use our proxy endpoint with authentication
     // This avoids CORS and authentication issues
-    const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
     const recordingSid = encodeURIComponent(recording.sid);
-    const accountSid = encodeURIComponent(credentials.account_sid);
-    const authToken = encodeURIComponent(credentials.auth_token);
-    const proxyAudioUrl = `${baseUrl}/api/v1/call/recording/${recordingSid}/audio?accountSid=${accountSid}&authToken=${authToken}`;
+    // Use authenticated route from callRoute.js (mounted at /api/v1/calls)
+    const proxyAudioUrl = `${baseUrl}/api/v1/calls/recording/${recordingSid}/audio`;
     
     console.log('Generated recording URL:', {
       recordingSid: recording.sid,
       encodedRecordingSid: recordingSid,
-      accountSid: credentials.account_sid.substring(0, 8) + '...',
-      authToken: credentials.auth_token.substring(0, 8) + '...',
       proxyAudioUrl: proxyAudioUrl.substring(0, 100) + '...'
     });
 

@@ -23,7 +23,7 @@ class OutboundCallsService {
   async getTwilioClient(userId) {
     const credentials = await TwilioCredentialsService.getActiveCredentials(userId);
     if (!credentials) {
-      throw new Error('No active Twilio credentials found for user');
+      throw new Error('Twilio Integration Missing: Please go to Settings > Integrations and provide your Twilio credentials (Account SID and Auth Token) to enable calling.');
     }
     return Twilio(credentials.account_sid, credentials.auth_token);
   }
@@ -98,7 +98,7 @@ class OutboundCallsService {
 
       // Get the phone number to call from
       let fromPhoneNumber = fromNumber;
-      
+
       if (!fromPhoneNumber) {
         // Try to get phone number from assistant
         if (assistantId) {
@@ -108,12 +108,12 @@ class OutboundCallsService {
             .eq('inbound_assistant_id', assistantId)
             .eq('status', 'active')
             .single();
-          
+
           if (!phoneError && assistantPhone) {
             fromPhoneNumber = assistantPhone.number;
           }
         }
-        
+
         // Get user's Twilio credentials to find their phone numbers
         if (!fromPhoneNumber) {
           const credentials = await TwilioCredentialsService.getActiveCredentials(userId);
@@ -130,9 +130,9 @@ class OutboundCallsService {
           }
         }
       }
-      
+
       if (!fromPhoneNumber) {
-        throw new Error('No phone number configured for outbound calls. Please assign a phone number to the assistant or ensure your Twilio account has phone numbers.');
+        throw new Error('Caller ID Missing: No phone number configured for outbound calls. Please assign a phone number to this assistant on the Assistants page, or ensure your connected Twilio account has active phone numbers.');
       }
 
       // Create LiveKit room URL for the call
@@ -387,7 +387,7 @@ class OutboundCallsService {
       // Update campaign metrics
       const campaign = call.campaigns;
       const outcomeUpdates = {};
-      
+
       // Remove old outcome count
       switch (call.outcome) {
         case 'interested':

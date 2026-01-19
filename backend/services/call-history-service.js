@@ -40,7 +40,8 @@ class CallHistoryService {
         
         // Fields you already have
         transcription: callData.transcription || [],
-        call_sid: callData.call_sid
+        call_sid: callData.call_sid,
+        call_type: callData.call_type || 'inbound'  // Include call_type: inbound, outbound, or web
       };
 
       // Insert into calls table

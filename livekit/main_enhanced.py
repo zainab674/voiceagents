@@ -35,6 +35,7 @@ from cal_calendar_api import CalComCalendar, AvailableSlot, CalendarResult, Cale
 from livekit.plugins import openai as lk_openai  # LLM, TTS
 from livekit.plugins import silero              # VAD
 from livekit.plugins import deepgram            # Deepgram STT
+from livekit.plugins import cartesia            # Cartesia TTS
 
 # ⬇️ AI Analysis Service
 from services.call_outcome_service import CallOutcomeService, CallOutcomeAnalysis
@@ -50,7 +51,7 @@ class UnifiedAgent(Agent):
     This follows the sass-livekit pattern for modern LiveKit Agents.
     """
     
-    def __init__(self, instructions: str, first_message: Optional[str] = None, knowledge_base_id: Optional[str] = None, calendar: Optional[CalComCalendar] = None, stt=None, tts=None, llm=None) -> None:
+    def __init__(self, instructions: str, first_message: Optional[str] = None, sms_prompt: Optional[str] = None, knowledge_base_id: Optional[str] = None, calendar: Optional[CalComCalendar] = None, stt=None, tts=None, llm=None) -> None:
         super().__init__(
             instructions=instructions,
             stt=stt,
@@ -59,6 +60,7 @@ class UnifiedAgent(Agent):
         )
         self.logger = logging.getLogger(__name__)
         self.first_message = first_message
+        self.sms_prompt = sms_prompt
         self.knowledge_base_id = knowledge_base_id
         self.calendar = calendar
         
@@ -74,11 +76,26 @@ class UnifiedAgent(Agent):
             'condition': None
         }
         
+        # Initialize booking state (following sass-livekit pattern)
+        self.booking_state = {
+            'name': None,
+            'email': None,
+            'phone': None,
+            'date': None,
+            'time': None,
+            'selected_slot': None,
+            'available_slots': [],
+            'available_slot_strings': []
+        }
+        
+        # Store slots in map for selection (following sass-livekit pattern)
+        self._slots_map: Dict[str, Any] = {}
+        
         # Initialize calendar if provided
         if self.calendar:
             asyncio.create_task(self.calendar.initialize())
             
-    async def _save_call_to_database(self, ctx: JobContext, session: AgentSession, outcome: str, success: bool, notes: str, transcription: list, analysis: Optional[Any] = None, start_time: Optional[datetime.datetime] = None, end_time: Optional[datetime.datetime] = None):
+    async def _save_call_to_database(self, ctx: JobContext, session: AgentSession, outcome: str, success: bool, notes: str, transcription: list, contact_phone: Optional[str] = None, call_sid: Optional[str] = None, analysis: Optional[Any] = None, start_time: Optional[datetime.datetime] = None, end_time: Optional[datetime.datetime] = None, call_type: Optional[str] = None):
         """Save call data directly to Supabase database (following sass-livekit pattern)."""
         try:
             from supabase import create_client, Client
@@ -151,13 +168,40 @@ class UnifiedAgent(Agent):
             else:
                 status = "completed"
             
+            # Determine call_type if not provided
+            if not call_type:
+                # Try to determine from context
+                call_type = "inbound"  # default
+                if ctx.job.metadata:
+                    try:
+                        job_metadata = json.loads(ctx.job.metadata)
+                        if (job_metadata.get("source") == "web" or 
+                            job_metadata.get("callType") == "web" or 
+                            job_metadata.get("callType") == "webcall"):
+                            call_type = "web"
+                        elif job_metadata.get("source") == "outbound" or job_metadata.get("callType") == "outbound":
+                            call_type = "outbound"
+                    except:
+                        pass
+                
+                # Check room metadata
+                if call_type == "inbound" and ctx.room.metadata:
+                    try:
+                        room_metadata = json.loads(ctx.room.metadata)
+                        if room_metadata.get("call_type") == "outbound":
+                            call_type = "outbound"
+                        elif room_metadata.get("call_type") == "web":
+                            call_type = "web"
+                    except:
+                        pass
+            
             # Prepare call data (matching database schema exactly)
             call_data = {
                 "agent_id": agent_id,  # Use agent_id, not assistant_id
                 "user_id": user_id,  # Can be None for web calls
                 "status": status,  # Use status, not call_status
                 "contact_name": "Voice Call",  # Default for web calls
-                "contact_phone": None,  # Web calls don't have phone numbers
+                "contact_phone": contact_phone,  # Extract from participant if available
                 "duration_seconds": call_duration,  # Use duration_seconds, not call_duration
                 "outcome": outcome if outcome else "completed",  # Use outcome field
                 "notes": notes if notes else None,
@@ -165,7 +209,8 @@ class UnifiedAgent(Agent):
                 "ended_at": end_time.isoformat() if end_time else datetime.datetime.now().isoformat(),  # Use ended_at, not end_time
                 "success": success,  # Use success (bool), not success_evaluation
                 "transcription": transcription if transcription else [],  # JSONB array
-                "call_sid": None,  # Web calls don't have call_sid
+                "call_sid": call_sid,  # Extract from SIP attributes if available
+                "call_type": call_type,  # Save call type: inbound, outbound, or web
             }
             
             # Note: created_at is auto-generated by database, so we don't set it
@@ -196,11 +241,19 @@ class UnifiedAgent(Agent):
             return False
     
     async def _send_outcome_to_backend(self, outcome: str, success: bool = True, notes: Optional[str] = None, details: Optional[Dict] = None, transcription: Optional[list] = None):
-        """Send call outcome to backend API (fallback method)."""
+        """Send call outcome to backend API (fallback method).
+        
+        Note: This is a non-critical operation. The call data is already saved directly to the database
+        via _save_call_to_database. This API call is optional and failures are logged but don't affect
+        the booking process.
+        """
         try:
             # Get backend URL from env
             backend_url = os.getenv("BACKEND_URL", "http://localhost:4000")
             api_url = f"{backend_url}/api/v1/calls/update-outcome"
+            
+            # Check if we have a service token for server-to-server authentication
+            service_token = os.getenv("BACKEND_SERVICE_TOKEN") or os.getenv("BACKEND_API_KEY")
             
             # Prepare payload
             payload = {
@@ -216,20 +269,32 @@ class UnifiedAgent(Agent):
             if transcription:
                 payload["transcription"] = transcription
                 
+            # Prepare headers
+            headers = {}
+            if service_token:
+                headers["Authorization"] = f"Bearer {service_token}"
+            else:
+                # If no service token, skip the API call since it requires authentication
+                # The data is already saved to DB, so this is just a notification
+                self.logger.warning(f"OUTCOME_API_SKIPPED | no service token available | data already saved to DB")
+                return False
+                
             self.logger.info(f"SENDING_OUTCOME_TO_API | url={api_url}")
             
             async with aiohttp.ClientSession() as session:
-                async with session.post(api_url, json=payload) as response:
+                async with session.post(api_url, json=payload, headers=headers) as response:
                     if response.status >= 200 and response.status < 300:
                         self.logger.info(f"OUTCOME_SENT_SUCCESS | status={response.status}")
                         return True
                     else:
                         resp_text = await response.text()
-                        self.logger.error(f"OUTCOME_SEND_FAILED | status={response.status} | error={resp_text}")
+                        # Log as warning instead of error since DB save is the primary method
+                        self.logger.warning(f"OUTCOME_API_FAILED | status={response.status} | error={resp_text} | data already saved to DB")
                         return False
                         
         except Exception as e:
-            self.logger.error(f"OUTCOME_SEND_ERROR | error={str(e)}")
+            # Log as warning instead of error since DB save is the primary method
+            self.logger.warning(f"OUTCOME_API_ERROR | error={str(e)} | data already saved to DB")
             return False
     
     def set_transfer_config(self, config: Dict[str, Any]):
@@ -237,6 +302,14 @@ class UnifiedAgent(Agent):
         if config:
             self._transfer_config.update(config)
             self.logger.info(f"TRANSFER_CONFIG_UPDATED | enabled={self._transfer_config.get('enabled')} | phone={self._transfer_config.get('phone_number')}")
+    
+    def _require_calendar(self) -> Optional[str]:
+        """Check if calendar is available (following sass-livekit pattern)."""
+        if not self.calendar:
+            self.logger.warning("_require_calendar FAILED | calendar is None")
+            return "Calendar service is not available."
+        self.logger.info(f"_require_calendar SUCCESS | calendar type={type(self.calendar).__name__}")
+        return None
 
     @function_tool(name="transfer_required")
     async def transfer_required(self, ctx: RunContext, reason: Optional[str] = None) -> str:
@@ -318,23 +391,31 @@ class UnifiedAgent(Agent):
 
     @function_tool(name="book_appointment")
     async def book_appointment(self, ctx: RunContext) -> str:
-        """Start the appointment booking process."""
+        """Book the appointment if all information is available, otherwise ask for missing information (following sass-livekit pattern)."""
         try:
-            # Initialize booking state
-            self.booking_state = {
-                'name': None,
-                'email': None,
-                'phone': None,
-                'date': None,
-                'time': None,
-                'step': 'name'
-            }
+            # Check if we have all required information
+            missing_fields = []
+            if not self.booking_state.get('selected_slot'):
+                missing_fields.append("time slot")
+            if not self.booking_state.get('name'):
+                missing_fields.append("name")
+            if not self.booking_state.get('email'):
+                missing_fields.append("email")
+            if not self.booking_state.get('phone'):
+                missing_fields.append("phone")
             
-            return "I'd be happy to help you book an appointment! Let me get some information from you. What's your name?"
+            if missing_fields:
+                return f"I need to collect some information first: {', '.join(missing_fields)}. Please provide the missing information."
+            
+            # All information is available, proceed to book
+            self.logger.info("BOOK_APPOINTMENT_TRIGGERED | all fields available | proceeding to book")
+            return await self._complete_booking()
             
         except Exception as e:
-            self.logger.error(f"APPOINTMENT_BOOKING_ERROR | error={str(e)}")
-            return "I'm sorry, I couldn't start the booking process right now. Please try again later."
+            self.logger.error(f"BOOK_APPOINTMENT_ERROR | error={str(e)}")
+            import traceback
+            self.logger.error(f"BOOK_APPOINTMENT_ERROR | traceback: {traceback.format_exc()}")
+            return "I'm sorry, I couldn't complete the booking right now. Please try again later."
     
     @function_tool(name="provide_name")
     async def provide_name(self, ctx: RunContext, name: str) -> str:
@@ -409,6 +490,11 @@ class UnifiedAgent(Agent):
             self.booking_state['phone'] = phone.strip()
             self.logger.info(f"PHONE_COLLECTED | phone={phone.strip()}")
             
+            # If we have all fields including selected slot, auto-book (following sass-livekit pattern)
+            if self.booking_state.get('selected_slot') and self.booking_state.get('name') and self.booking_state.get('email'):
+                self.logger.info("AUTO_BOOKING_TRIGGERED_FROM_PHONE | all fields available")
+                return await self._complete_booking()
+            
             return f"Perfect! What date would you like to schedule your appointment, {self.booking_state['name']}? Please tell me the date like 'tomorrow', 'next Monday', or 'October 20th'."
             
         except Exception as e:
@@ -434,9 +520,23 @@ class UnifiedAgent(Agent):
             return None
         
         q = day_query.strip().lower()
-        today = datetime.datetime.now().date()
         
-        self.logger.info(f"DATE_PARSING_DEBUG | input='{day_query}' | normalized='{q}' | today={today}")
+        # Get timezone from calendar if available, otherwise use UTC
+        tz = None
+        if self.calendar and hasattr(self.calendar, 'tz'):
+            tz = self.calendar.tz
+        else:
+            # Try to get timezone from calendar config
+            cal_timezone = os.getenv("CAL_TIMEZONE", "UTC")
+            try:
+                tz = ZoneInfo(cal_timezone)
+            except Exception:
+                tz = ZoneInfo("UTC")
+        
+        # Use timezone-aware date like sass-livekit
+        today = datetime.datetime.now(tz).date()
+        
+        self.logger.info(f"DATE_PARSING_DEBUG | input='{day_query}' | normalized='{q}' | today={today} | timezone={tz}")
         
         # Relative dates
         if q in {"today"}:
@@ -463,10 +563,33 @@ class UnifiedAgent(Agent):
         # ISO format (YYYY-MM-DD)
         try:
             parsed_date = datetime.date.fromisoformat(q)
-            # If the parsed date is in the past (older than current year), assume current year
-            if parsed_date.year < today.year:
+            
+            # CRITICAL: If the date is from a past year (more than 1 year ago), it's likely wrong
+            # This handles cases where LLM generates old dates like "2023-10-04" when it's 2026
+            if parsed_date.year < today.year - 1:
+                self.logger.warning(f"DATE_PARSING_FIX | LLM provided old date '{q}' (year {parsed_date.year}), adjusting to current year {today.year}")
+                # Update to current year
                 parsed_date = datetime.date(today.year, parsed_date.month, parsed_date.day)
-            self.logger.info(f"DATE_PARSING_DEBUG | matched ISO: {q} -> {parsed_date}")
+                # If still in the past, move to next year
+                if parsed_date < today:
+                    parsed_date = datetime.date(today.year + 1, parsed_date.month, parsed_date.day)
+                    self.logger.info(f"DATE_PARSING_FIX | adjusted to next year: {parsed_date}")
+                else:
+                    self.logger.info(f"DATE_PARSING_FIX | adjusted to current year: {parsed_date}")
+            # If the parsed date is in the past (within last year), update to current year or next occurrence
+            elif parsed_date < today:
+                # If it's a different year, update to current year
+                if parsed_date.year < today.year:
+                    parsed_date = datetime.date(today.year, parsed_date.month, parsed_date.day)
+                    # If still in the past, move to next year
+                    if parsed_date < today:
+                        parsed_date = datetime.date(today.year + 1, parsed_date.month, parsed_date.day)
+                else:
+                    # Same year but past date, move to next year
+                    parsed_date = datetime.date(today.year + 1, parsed_date.month, parsed_date.day)
+                self.logger.info(f"DATE_PARSING_DEBUG | matched ISO: {q} -> {parsed_date} (adjusted from past date)")
+            else:
+                self.logger.info(f"DATE_PARSING_DEBUG | matched ISO: {q} -> {parsed_date}")
             return parsed_date
         except Exception:
             pass
@@ -572,17 +695,29 @@ class UnifiedAgent(Agent):
 
     @function_tool(name="list_slots_on_day")
     async def list_slots_on_day(self, ctx: RunContext, day: str, max_options: int = 6) -> str:
-        """List available appointment slots for a specific day."""
+        """List available appointment slots for a specific day (following sass-livekit pattern).
+        
+        Args:
+            day: The date in natural language (e.g., "tomorrow", "next Monday", "January 21st", "2026-01-21"). 
+                 DO NOT convert relative dates like "tomorrow" to specific dates - pass them as-is.
+                 The function will parse natural language dates correctly.
+            max_options: Maximum number of time slots to return (default: 6)
+        """
+        # Check calendar availability (following sass-livekit pattern - NO booking state required)
+        msg = self._require_calendar()
+        if msg:
+            return msg
+        
+        self.logger.info(f"list_slots_on_day START | day={day} | calendar={self.calendar is not None}")
+        
         try:
-            if not hasattr(self, 'booking_state') or not all([self.booking_state.get('name'), self.booking_state.get('email'), self.booking_state.get('phone')]):
-                return "Let's start by booking an appointment. What's your name?"
-            
             if not day or len(day.strip()) < 2:
                 return "Please tell me the date you'd like to schedule your appointment."
             
-            # Parse the date to a readable format
-            parsed_date = self._parse_date(day)
-            self.booking_state['date'] = parsed_date
+            # Parse the date using comprehensive parser
+            parsed_date = self._parse_day_comprehensive(day)
+            if not parsed_date:
+                return "Please say the day like 'today', 'tomorrow', 'Friday', or '2026-01-21'."
             
             # Get available slots from real calendar API
             calendar_result = await self._get_available_slots(day, max_options)
@@ -591,31 +726,61 @@ class UnifiedAgent(Agent):
                 return "I'm having trouble connecting to the calendar right now. Would you like me to try another day, or should I notify someone to help you?"
             
             if calendar_result.is_no_slots or not calendar_result.slots:
-                return f"I don't see any available times on {parsed_date}. Would you like to try a different date?"
+                return f"No available slots for {day}."
             
-            # Format the slots for display
-            slots_text = f"Here are the available times on {parsed_date}:\n"
+            all_slots = calendar_result.slots
+            
+            # Clear previous slots and use stable keys (following sass-livekit pattern)
+            # IMPORTANT: Store ALL slots in _slots_map for availability checking
+            self._slots_map.clear()
+            for slot in all_slots:
+                key = slot.start_time.isoformat()  # Stable key based on ISO time
+                self._slots_map[key] = slot
+            
+            # Get calendar timezone for display
+            display_tz = None
+            if self.calendar and hasattr(self.calendar, 'tz'):
+                display_tz = self.calendar.tz
+            else:
+                cal_timezone = os.getenv("CAL_TIMEZONE", "UTC")
+                try:
+                    display_tz = ZoneInfo(cal_timezone)
+                except Exception:
+                    display_tz = ZoneInfo("UTC")
+            
+            # Only show first max_options to user for brevity
+            display_slots = all_slots[:max_options]
+            lines = []
             slot_strings = []
-            for i, slot in enumerate(calendar_result.slots[:max_options], 1):
-                # Convert UTC slot time to local time for display
-                local_time = slot.start_time.astimezone(ZoneInfo("UTC"))
-                time_str = local_time.strftime("%I:%M %p")
-                slots_text += f"Option {i}: {time_str}\n"
-                slot_strings.append(time_str)
+            for i, slot in enumerate(display_slots, 1):
+                local_time = slot.start_time.astimezone(display_tz)
+                formatted_time = local_time.strftime('%I:%M %p')
+                lines.append(f"{i}. {formatted_time}")
+                slot_strings.append(formatted_time)
             
-            slots_text += "Which option would you like to choose?"
+            # Build response with total count information
+            response_parts = [f"Available slots for {day}:\n" + "\n".join(lines)]
             
-            # Store slots for selection (store both the slot objects and time strings)
-            self.booking_state['available_slots'] = calendar_result.slots[:max_options]
+            # Inform user if there are more slots available
+            if len(all_slots) > max_options:
+                response_parts.append(f"\nI'm showing you {len(display_slots)} of {len(all_slots)} total available slots. You can choose any time slot from the list above, or ask me to show more options.")
+            
+            # Store slots for selection (following sass-livekit pattern)
+            self.booking_state['available_slots'] = display_slots
             self.booking_state['available_slot_strings'] = slot_strings
+            self.booking_state['date'] = parsed_date.strftime("%A, %B %d") if parsed_date else day
             
-            self.logger.info(f"SLOTS_LISTED | date={parsed_date} | slots_count={len(calendar_result.slots)}")
+            self.logger.info(f"SLOTS_LISTED | total={len(all_slots)} | displayed={len(display_slots)} | day={day}")
+            return "".join(response_parts)
             
-            return slots_text
-            
+        except asyncio.TimeoutError:
+            self.logger.warning(f"list_slots_on_day TIMEOUT | day={day}")
+            return "I'm having trouble connecting to the calendar. Please try again in a moment."
         except Exception as e:
-            self.logger.error(f"SLOTS_LISTING_ERROR | error={str(e)}")
-            return "I'm sorry, I had trouble checking that day. Could we try a different date?"
+            self.logger.error(f"list_slots_on_day ERROR | day={day} | error={str(e)}")
+            import traceback
+            self.logger.error(f"list_slots_on_day ERROR | traceback: {traceback.format_exc()}")
+            return "I encountered an issue retrieving available slots."
 
     def _generate_mock_slots(self, date_str: str, max_options: int) -> list:
         """Generate available time slots using real calendar API."""
@@ -624,7 +789,7 @@ class UnifiedAgent(Agent):
         return []
 
     async def _get_available_slots(self, date_str: str, max_options: int = 6) -> CalendarResult:
-        """Get available slots from the real calendar API."""
+        """Get available slots from the real calendar API (following sass-livekit pattern)."""
         try:
             self.logger.info(f"CALENDAR_SLOTS_DEBUG | Starting slots request for date: {date_str}")
             
@@ -641,35 +806,63 @@ class UnifiedAgent(Agent):
             
             self.logger.info(f"CALENDAR_SLOTS_DEBUG | Calendar service available: {type(self.calendar)}")
             
-            # Parse the date string to get start and end times
-            today = datetime.datetime.now()
-            
-            # Use comprehensive date parsing
-            parsed_date = self._parse_day_comprehensive(date_str)
-            if parsed_date:
-                target_date = datetime.datetime.combine(parsed_date, datetime.time())
+            # Get timezone from calendar if available, otherwise use UTC
+            tz = None
+            if self.calendar and hasattr(self.calendar, 'tz'):
+                tz = self.calendar.tz
             else:
-                # Fallback to tomorrow if parsing fails
-                target_date = today + datetime.timedelta(days=1)
+                # Try to get timezone from calendar config
+                cal_timezone = os.getenv("CAL_TIMEZONE", "UTC")
+                try:
+                    tz = ZoneInfo(cal_timezone)
+                except Exception:
+                    tz = ZoneInfo("UTC")
             
-            # Set up time range for the day
-            start_time = target_date.replace(hour=9, minute=0, second=0, microsecond=0)
-            end_time = target_date.replace(hour=17, minute=0, second=0, microsecond=0)
+            # Parse the date string (following sass-livekit pattern)
+            parsed_date = self._parse_day_comprehensive(date_str)
+            if not parsed_date:
+                self.logger.warning(f"CALENDAR_SLOTS_DEBUG | Failed to parse date: {date_str}")
+                return CalendarResult(
+                    slots=[],
+                    error=CalendarError(
+                        error_type="invalid_date_range",
+                        message="Could not parse the date",
+                        details=f"Unable to parse date: {date_str}"
+                    )
+                )
             
-            # Convert to UTC for the API
-            start_utc = start_time.astimezone(ZoneInfo("UTC"))
-            end_utc = end_time.astimezone(ZoneInfo("UTC"))
+            # Create start_time at midnight in the target timezone (following sass-livekit pattern)
+            start_time = datetime.datetime.combine(parsed_date, datetime.time(0, 0, tzinfo=tz))
             
-            self.logger.info(f"CALENDAR_SLOTS_REQUEST | date={target_date.date()} | start_utc={start_utc} | end_utc={end_utc}")
+            # End time is start of next day (full day range)
+            end_time = start_time + datetime.timedelta(days=1)
             
-            # Call the real calendar API
+            self.logger.info(f"CALENDAR_SLOTS_REQUEST | date={parsed_date} | start_time={start_time} | end_time={end_time} | tz={tz}")
+            
+            # Call the real calendar API with timezone-aware datetimes
+            # The calendar API will handle timezone conversion internally
+            # Add timeout like sass-livekit (2.5 seconds)
             self.logger.info(f"CALENDAR_SLOTS_DEBUG | Calling calendar.list_available_slots...")
-            result = await self.calendar.list_available_slots(start_time=start_utc, end_time=end_utc)
+            try:
+                result = await asyncio.wait_for(
+                    self.calendar.list_available_slots(start_time=start_time, end_time=end_time),
+                    timeout=2.5  # 2.5 second timeout for calendar operations (following sass-livekit)
+                )
+            except asyncio.TimeoutError:
+                self.logger.warning(f"CALENDAR_SLOTS_TIMEOUT | date={date_str}")
+                return CalendarResult(
+                    slots=[],
+                    error=CalendarError(
+                        error_type="calendar_unavailable",
+                        message="Calendar service timeout",
+                        details="Calendar API did not respond within 2.5 seconds"
+                    )
+                )
             
-            self.logger.info(f"CALENDAR_SLOTS_RESPONSE | slots_count={len(result.slots) if result.is_success else 0}")
+            self.logger.info(f"CALENDAR_SLOTS_RESPONSE | slots_count={len(result.slots) if result.is_success else 0} | is_success={result.is_success}")
             
             if result.error:
-                self.logger.warning(f"CALENDAR_SLOTS_ERROR | error_type={result.error.error_type} | message={result.error.message}")
+                self.logger.warning(f"CALENDAR_SLOTS_ERROR | error_type={result.error.error_type} | message={result.error.message} | details={result.error.details}")
             
             return result
             
@@ -686,58 +879,159 @@ class UnifiedAgent(Agent):
                 )
             )
 
+    def _find_slot_by_time_string(self, time_str: str):
+        """Find a slot by parsing a time string like '8am', '3:30pm', etc. (following sass-livekit pattern)."""
+        import re
+        
+        # Parse time string like "8am", "8:30am", "3pm", "10:00am", "12:00pm"
+        time_str = time_str.strip().lower().replace(" ", "")
+        
+        # Match patterns: 8am, 8:30am, 3:00pm, 10:15am
+        match = re.match(r"(\d{1,2})(?::(\d{2}))?(am|pm)", time_str)
+        if not match:
+            return None
+        
+        hour = int(match.group(1))
+        minute = int(match.group(2) or "0")
+        period = match.group(3)
+        
+        # Convert to 24-hour format
+        if period == "am":
+            if hour == 12:
+                hour_24 = 0
+            else:
+                hour_24 = hour
+        else:  # pm
+            if hour == 12:
+                hour_24 = 12
+            else:
+                hour_24 = hour + 12
+        
+        # Create target time
+        target_time = datetime.time(hour_24, minute)
+        
+        # Find matching slot in _slots_map
+        display_tz = None
+        if self.calendar and hasattr(self.calendar, 'tz'):
+            display_tz = self.calendar.tz
+        else:
+            cal_timezone = os.getenv("CAL_TIMEZONE", "UTC")
+            try:
+                display_tz = ZoneInfo(cal_timezone)
+            except Exception:
+                display_tz = ZoneInfo("UTC")
+        
+        for key, slot in self._slots_map.items():
+            local_time = slot.start_time.astimezone(display_tz)
+            if local_time.time().hour == target_time.hour and local_time.time().minute == target_time.minute:
+                return slot
+        
+        self.logger.info(f"SLOT_NOT_FOUND_BY_TIME | time_str={time_str} | total_slots={len(self._slots_map)}")
+        return None
+
     @function_tool(name="choose_slot")
     async def choose_slot(self, ctx: RunContext, option_id: str) -> str:
-        """Choose a specific time slot for the appointment."""
-        try:
-            if not hasattr(self, 'booking_state') or not self.booking_state.get('available_slots'):
-                return "Please first check available times for your preferred date."
-            
-            if not option_id:
-                return "Please tell me which option you'd like to choose."
-            
-            # Parse option selection
+        """Select a time slot for the appointment (following sass-livekit pattern)."""
+        # Allow either index from last list or iso key or time string
+        slot = None
+        if option_id in self._slots_map:
+            slot = self._slots_map[option_id]
+        else:
+            # Try resolving index seen last render
+            if option_id.isdigit():
+                idx = int(option_id) - 1
+                keys = list(self._slots_map.keys())
+                if 0 <= idx < len(keys):
+                    slot = self._slots_map[keys[idx]]
+            else:
+                # Try parsing as time string (e.g., "8am", "3:30pm", "10:00am")
+                slot = self._find_slot_by_time_string(option_id)
+        
+        if not slot:
+            return f"Option {option_id} isn't available. Say 'list slots' to refresh."
+        
+        self.booking_state['selected_slot'] = slot
+        self.logger.info(f"SLOT_SELECTED | option_id={option_id}")
+        
+        # Get calendar timezone for display
+        display_tz = None
+        if self.calendar and hasattr(self.calendar, 'tz'):
+            display_tz = self.calendar.tz
+        else:
+            cal_timezone = os.getenv("CAL_TIMEZONE", "UTC")
             try:
-                option_num = int(option_id.strip())
-                if 1 <= option_num <= len(self.booking_state['available_slots']):
-                    selected_slot = self.booking_state['available_slots'][option_num - 1]
-                    selected_time_str = self.booking_state['available_slot_strings'][option_num - 1]
-                    
-                    # Store the selected slot object for booking
-                    self.booking_state['selected_slot'] = selected_slot
-                    self.booking_state['time'] = selected_time_str
-                    
-                    self.logger.info(f"SLOT_SELECTED | option={option_num} | time={selected_time_str}")
-                    
-                    # All information collected, book the appointment
-                    return await self._complete_booking()
-                else:
-                    return f"Please choose an option between 1 and {len(self.booking_state['available_slots'])}."
-            except ValueError:
-                return "Please tell me the option number you'd like to choose."
-            
-        except Exception as e:
-            self.logger.error(f"SLOT_SELECTION_ERROR | error={str(e)}")
-            return "I'm sorry, I didn't catch that. Could you please tell me which option you'd like?"
+                display_tz = ZoneInfo(cal_timezone)
+            except Exception:
+                display_tz = ZoneInfo("UTC")
+        
+        local_time = slot.start_time.astimezone(display_tz)
+        formatted_time = local_time.strftime('%A, %B %d at %I:%M %p')
+        
+        missing_fields = []
+        if not self.booking_state.get('name'):
+            missing_fields.append("name")
+        if not self.booking_state.get('email'):
+            missing_fields.append("email")
+        if not self.booking_state.get('phone'):
+            missing_fields.append("phone")
+        
+        if missing_fields:
+            return f"Great—{formatted_time}. I still need your {', '.join(missing_fields)}."
+        
+        # Auto-book now to remove an extra LLM turn (following sass-livekit pattern)
+        self.logger.info("AUTO_BOOKING_TRIGGERED | all fields available")
+        return await self._complete_booking()
 
     async def _complete_booking(self) -> str:
-        """Complete the booking process with all collected information."""
+        """Complete the booking process with all collected information (following sass-livekit pattern)."""
         try:
-            # All information collected, book the appointment
-            self.logger.info(f"APPOINTMENT_BOOKING | name={self.booking_state['name']} | email={self.booking_state['email']} | phone={self.booking_state['phone']} | date={self.booking_state['date']} | time={self.booking_state['time']}")
+            self.logger.info(f"_complete_booking CALLED | booking_state keys: {list(self.booking_state.keys())}")
+            self.logger.info(f"_complete_booking | has_selected_slot: {bool(self.booking_state.get('selected_slot'))} | has_name: {bool(self.booking_state.get('name'))} | has_email: {bool(self.booking_state.get('email'))} | has_phone: {bool(self.booking_state.get('phone'))}")
             
-            # Store the booking details before resetting
-            booking_details = self.booking_state.copy()
+            selected_slot = self.booking_state.get('selected_slot')
+            if not selected_slot:
+                self.logger.warning("_complete_booking FAILED | no selected slot")
+                return "No time slot selected. Please choose a time slot first."
+            
+            # Validate all required fields
+            if not self.booking_state.get('name'):
+                self.logger.warning("_complete_booking FAILED | missing name")
+                return "Missing name. Please provide your name."
+            if not self.booking_state.get('email'):
+                self.logger.warning("_complete_booking FAILED | missing email")
+                return "Missing email. Please provide your email."
+            if not self.booking_state.get('phone'):
+                self.logger.warning("_complete_booking FAILED | missing phone")
+                return "Missing phone. Please provide your phone number."
+            
+            # Get calendar timezone for formatting
+            display_tz = None
+            if self.calendar and hasattr(self.calendar, 'tz'):
+                display_tz = self.calendar.tz
+            else:
+                cal_timezone = os.getenv("CAL_TIMEZONE", "UTC")
+                try:
+                    display_tz = ZoneInfo(cal_timezone)
+                except Exception:
+                    display_tz = ZoneInfo("UTC")
+            
+            # Format time from slot
+            local_time = selected_slot.start_time.astimezone(display_tz)
+            formatted_time = local_time.strftime('%I:%M %p')
+            formatted_date = local_time.strftime('%A, %B %d')
+            
+            # All information collected, book the appointment
+            self.logger.info(f"APPOINTMENT_BOOKING | name={self.booking_state['name']} | email={self.booking_state['email']} | phone={self.booking_state['phone']} | date={formatted_date} | time={formatted_time}")
             
             # Book the appointment using the real calendar API
-            if self.calendar and booking_details.get('selected_slot'):
+            if self.calendar:
                 try:
                     await self.calendar.schedule_appointment(
-                        start_time=booking_details['selected_slot'].start_time,
-                        attendee_name=booking_details['name'],
-                        attendee_email=booking_details['email'],
-                        attendee_phone=booking_details['phone'],
-                        notes=""
+                        start_time=selected_slot.start_time,
+                        attendee_name=self.booking_state['name'],
+                        attendee_email=self.booking_state['email'],
+                        attendee_phone=self.booking_state['phone'],
+                        notes=self.booking_state.get('notes', '')
                     )
                     
                     # Generate appointment ID
@@ -749,22 +1043,35 @@ class UnifiedAgent(Agent):
                     asyncio.create_task(self._send_outcome_to_backend(
                         outcome="booked",
                         success=True,
-                        notes=f"Appointment booked: {booking_details['date']} at {booking_details['time']}",
+                        notes=f"Appointment booked: {formatted_date} at {formatted_time}",
                         details={
                             "appointment_id": appointment_id,
                             "booking_details": {
-                                "date": str(booking_details.get('date')),
-                                "time": booking_details.get('time'),
-                                "name": booking_details.get('name'),
-                                "email": booking_details.get('email')
+                                "date": formatted_date,
+                                "time": formatted_time,
+                                "name": self.booking_state['name'],
+                                "email": self.booking_state['email']
                             }
                         }
                     ))
                     
-                    # Reset booking state
-                    self.booking_state = None
+                    # Store email before resetting
+                    attendee_email = self.booking_state['email']
                     
-                    return f"Perfect! I've successfully booked your appointment for {booking_details['date']} at {booking_details['time']}. Your appointment ID is {appointment_id}. You'll receive a confirmation email at {booking_details['email']}. Is there anything else I can help you with?"
+                    # Reset booking state (following sass-livekit pattern)
+                    self.booking_state = {
+                        'name': None,
+                        'email': None,
+                        'phone': None,
+                        'date': None,
+                        'time': None,
+                        'selected_slot': None,
+                        'available_slots': [],
+                        'available_slot_strings': []
+                    }
+                    self._slots_map.clear()
+                    
+                    return f"Perfect! I've successfully booked your appointment for {formatted_date} at {formatted_time}. Your appointment ID is {appointment_id}. You'll receive a confirmation email at {attendee_email}. Is there anything else I can help you with?"
                     
                 except Exception as booking_error:
                     self.logger.error(f"CALENDAR_BOOKING_ERROR | error={str(booking_error)}")
@@ -777,73 +1084,53 @@ class UnifiedAgent(Agent):
                 asyncio.create_task(self._send_outcome_to_backend(
                     outcome="booked",
                     success=True,
-                    notes=f"Appointment booked (MOCK): {booking_details['date']} at {booking_details['time']}",
+                    notes=f"Appointment booked (MOCK): {formatted_date} at {formatted_time}",
                     details={
                         "appointment_id": appointment_id,
                         "booking_details": {
-                            "date": str(booking_details.get('date')),
-                            "time": booking_details.get('time'),
-                            "name": booking_details.get('name'),
-                            "email": booking_details.get('email')
+                            "date": formatted_date,
+                            "time": formatted_time,
+                            "name": self.booking_state['name'],
+                            "email": self.booking_state['email']
                         }
                     }
                 ))
                 
-                # Reset booking state
-                self.booking_state = None
+                # Store email before resetting
+                attendee_email = self.booking_state['email']
                 
-                return f"Perfect! I've booked your appointment for {booking_details['date']} at {booking_details['time']}. Your appointment ID is {appointment_id}. We'll send you a confirmation email at {booking_details['email']}. Is there anything else I can help you with?"
+                # Reset booking state
+                self.booking_state = {
+                    'name': None,
+                    'email': None,
+                    'phone': None,
+                    'date': None,
+                    'time': None,
+                    'selected_slot': None,
+                    'available_slots': [],
+                    'available_slot_strings': []
+                }
+                self._slots_map.clear()
+                
+                return f"Perfect! I've booked your appointment for {formatted_date} at {formatted_time}. Your appointment ID is {appointment_id}. We'll send you a confirmation email at {attendee_email}. Is there anything else I can help you with?"
             
         except Exception as e:
             self.logger.error(f"BOOKING_COMPLETION_ERROR | error={str(e)}")
+            import traceback
+            self.logger.error(f"BOOKING_COMPLETION_ERROR | traceback: {traceback.format_exc()}")
             return "I'm sorry, I couldn't complete the booking right now. Please try again later."
 
     @function_tool(name="provide_date")
     async def provide_date(self, ctx: RunContext, date: str) -> str:
-        """Provide the appointment date and show available slots."""
-        try:
-            if not hasattr(self, 'booking_state') or not all([self.booking_state.get('name'), self.booking_state.get('email'), self.booking_state.get('phone')]):
-                return "Let's start by booking an appointment. What's your name?"
-            
-            if not date or len(date.strip()) < 2:
-                return "Please tell me the date you'd like to schedule your appointment."
-            
-            # Parse the date to a readable format
-            parsed_date = self._parse_date(date)
-            self.booking_state['date'] = parsed_date
-            
-            # Get available slots from real calendar API
-            calendar_result = await self._get_available_slots(date, 6)
-            
-            if calendar_result.is_calendar_unavailable:
-                return "I'm having trouble connecting to the calendar right now. Would you like me to try another day, or should I notify someone to help you?"
-            
-            if calendar_result.is_no_slots or not calendar_result.slots:
-                return f"I don't see any available times on {parsed_date}. Would you like to try a different date?"
-            
-            # Format the slots for display
-            slots_text = f"Great! Here are the available times on {parsed_date}:\n"
-            slot_strings = []
-            for i, slot in enumerate(calendar_result.slots[:6], 1):
-                # Convert UTC slot time to local time for display
-                local_time = slot.start_time.astimezone(ZoneInfo("UTC"))
-                time_str = local_time.strftime("%I:%M %p")
-                slots_text += f"Option {i}: {time_str}\n"
-                slot_strings.append(time_str)
-            
-            slots_text += "Which option would you like to choose?"
-            
-            # Store slots for selection (store both the slot objects and time strings)
-            self.booking_state['available_slots'] = calendar_result.slots[:6]
-            self.booking_state['available_slot_strings'] = slot_strings
-            
-            self.logger.info(f"DATE_COLLECTED | original={date.strip()} | parsed={parsed_date} | slots_count={len(calendar_result.slots)}")
-            
-            return slots_text
-            
-        except Exception as e:
-            self.logger.error(f"DATE_COLLECTION_ERROR | error={str(e)}")
-            return "I'm sorry, I didn't catch that. Could you please tell me the date again?"
+        """Provide the appointment date and show available slots (following sass-livekit pattern).
+        
+        Args:
+            date: The date in natural language (e.g., "tomorrow", "next Monday", "January 21st", "2026-01-21").
+                  DO NOT convert relative dates like "tomorrow" to specific dates - pass them as-is.
+                  The function will parse natural language dates correctly.
+        """
+        # Just delegate to list_slots_on_day (following sass-livekit pattern - no booking state required)
+        return await self.list_slots_on_day(ctx, date, 6)
     
     
     @function_tool(name="collect_user_data")
@@ -1014,37 +1301,94 @@ def sha256_text(s: str) -> str:
 def preview(s: str, n: int = 160) -> str:
     return s[:n] + "..." if len(s) > n else s
 
+def extract_phone_from_room(room_name: str) -> Optional[str]:
+    """
+    Extract phone number from room name (e.g., did-_+17164194270_... or inbound_+17164194270)
+    Following the pattern from sass-livekit.
+    """
+    if not room_name:
+        return None
+    
+    import re
+    # Look for patterns like +17164194270
+    # We find any sequence of 10+ digits with an optional + prefix
+    match = re.search(r'(\+?\d{10,15})', room_name)
+    if match:
+        return match.group(0)
+    
+    return None
+
 # ===================== Main Entry Point =====================
 
-def create_agent() -> UnifiedAgent:
+def create_agent(instructions: Optional[str] = None, first_message: Optional[str] = None, sms_prompt: Optional[str] = None, knowledge_base_id: Optional[str] = None, agent_data: Optional[Dict] = None) -> UnifiedAgent:
     """
     Factory function to create a UnifiedAgent instance.
     This is called by the LiveKit Agents framework when a new session starts.
     """
     logger = logging.getLogger(__name__)
     
-    # Get default instructions from environment or use default
-    instructions = os.getenv("AGENT_INSTRUCTIONS", "You are a helpful assistant. You can help users book appointments and answer questions.")
-    first_message = os.getenv("AGENT_FIRST_MESSAGE", None)
-    knowledge_base_id = os.getenv("KNOWLEDGE_BASE_ID", None)
+    # Get instructions - use provided or from environment
+    instructions = instructions or os.getenv("AGENT_INSTRUCTIONS", "You are a helpful assistant. You can help users book appointments and answer questions.")
+    first_message = first_message or os.getenv("AGENT_FIRST_MESSAGE", None)
+    sms_prompt = sms_prompt or os.getenv("AGENT_SMS_PROMPT", None)
+    knowledge_base_id = knowledge_base_id or os.getenv("KNOWLEDGE_BASE_ID", None)
+    
+    # If agent_data is provided, it takes precedence over environment
+    if agent_data:
+        instructions = agent_data.get('prompt') or instructions
+        first_message = agent_data.get('first_message') or first_message
+        sms_prompt = agent_data.get('sms_prompt') or sms_prompt
+        knowledge_base_id = agent_data.get('knowledge_base_id') or knowledge_base_id
+    
+    # Add current date context to instructions so LLM knows what "today" and "tomorrow" mean
+    # Get timezone from calendar config or default to UTC
+    cal_timezone = (agent_data.get('cal_timezone') if agent_data else None) or os.getenv("CAL_TIMEZONE", "UTC")
+    try:
+        tz = ZoneInfo(cal_timezone)
+    except Exception:
+        tz = ZoneInfo("UTC")
+    
+    current_date = datetime.datetime.now(tz)
+    current_date_str = current_date.strftime("%A, %B %d, %Y")
+    tomorrow_date_str = (current_date + datetime.timedelta(days=1)).strftime("%A, %B %d, %Y")
+    
+    # Append date context to instructions
+    date_context = f"""
+
+IMPORTANT DATE CONTEXT:
+- Today is {current_date_str}
+- Tomorrow is {tomorrow_date_str}
+- Current year is {current_date.year}
+
+CRITICAL: When calling date-related functions (list_slots_on_day, provide_date):
+- If user says "tomorrow", pass "tomorrow" (NOT a specific date like "2026-01-21")
+- If user says "next Monday", pass "next Monday" (NOT a specific date)
+- If user says "January 21st", you can pass "January 21st" or "2026-01-21"
+- DO NOT convert relative dates like "tomorrow" to specific dates - the functions parse natural language automatically
+- Only convert to ISO format (YYYY-MM-DD) if the user explicitly provides a full date with year
+"""
+    instructions = instructions + date_context
     
     # Initialize TTS and STT
     openai_api_key = os.getenv("OPENAI_API_KEY")
     deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
+    cartesia_api_key = os.getenv("CARTESIA_API_KEY")
     
     # Validate API keys are set
-    if not deepgram_api_key:
-        logger.warning("DEEPGRAM_API_KEY not set - TTS/STT will fallback to OpenAI (may have permission issues)")
-    if not openai_api_key:
+    if not cartesia_api_key and not deepgram_api_key and not openai_api_key:
         logger.error(
-            "OPENAI_API_KEY not set - LLM will not work. "
-            "Please set OPENAI_API_KEY in your environment. "
-            "The key must have 'model.request' scope enabled. "
-            "Check permissions at: https://platform.openai.com/api-keys"
+            "None of the required API keys (CARTESIA_API_KEY, DEEPGRAM_API_KEY, OPENAI_API_KEY) are set. "
+            "At least one is needed for TTS."
         )
-    
-    # Create TTS instance - prefer Deepgram if available, fallback to OpenAI
-    if deepgram_api_key:
+        raise ValueError("No TTS API keys found in environment")
+
+    # Create TTS instance - prefer Cartesia, then Deepgram, fallback to OpenAI
+    if cartesia_api_key:
+        tts = cartesia.TTS(api_key=cartesia_api_key, model="sonic-english")
+        tts_provider = "cartesia"
+        tts_model = "sonic-english"
+        logger.info("CARTESIA_TTS_CONFIGURED | using Cartesia for TTS")
+    elif deepgram_api_key:
         tts = deepgram.TTS(model="aura-2-andromeda-en", api_key=deepgram_api_key)
         tts_provider = "deepgram"
         tts_model = "aura-2-andromeda-en"
@@ -1053,9 +1397,10 @@ def create_agent() -> UnifiedAgent:
         tts = lk_openai.TTS(model="tts-1", voice="alloy", api_key=openai_api_key)
         tts_provider = "openai"
         tts_model = "tts-1"
-        logger.warning("OPENAI_TTS_CONFIGURED | using OpenAI for TTS (consider using Deepgram)")
+        logger.warning("OPENAI_TTS_CONFIGURED | using OpenAI for TTS (consider using Cartesia or Deepgram)")
     else:
-        raise ValueError("Either DEEPGRAM_API_KEY or OPENAI_API_KEY must be set for TTS")
+        # This shouldn't be reached due to the check above
+        raise ValueError("No TTS API keys found in environment")
     
     # Create STT instance - prefer Deepgram if available, fallback to OpenAI
     if deepgram_api_key:
@@ -1088,21 +1433,20 @@ def create_agent() -> UnifiedAgent:
     
     # Initialize calendar if configured
     calendar = None
-    cal_api_key = os.getenv("CAL_API_KEY")
-    cal_event_type_id = os.getenv("CAL_EVENT_TYPE_ID")
-    cal_timezone = os.getenv("CAL_TIMEZONE", "UTC")
-    cal_event_type_slug = os.getenv("CAL_EVENT_TYPE_SLUG")
+    cal_api_key = (agent_data.get('cal_api_key') if agent_data else None) or os.getenv("CAL_API_KEY")
+    cal_event_type_id = (agent_data.get('cal_event_type_id') if agent_data else None) or os.getenv("CAL_EVENT_TYPE_ID")
+    cal_timezone = (agent_data.get('cal_timezone') if agent_data else None) or os.getenv("CAL_TIMEZONE", "UTC")
+    cal_event_type_slug = (agent_data.get('cal_event_type_slug') if agent_data else None) or os.getenv("CAL_EVENT_TYPE_SLUG")
     
     if cal_api_key and cal_event_type_id:
         try:
-            logger.info(f"CALENDAR_CONFIG | api_key={'***' if cal_api_key else None} | event_type_id={cal_event_type_id} | timezone={cal_timezone}")
+            logger.info(f"CALENDAR_CONFIG | from_db={bool(agent_data and agent_data.get('cal_api_key'))} | api_key={'***' if cal_api_key else None} | event_type_id={cal_event_type_id} | timezone={cal_timezone}")
             calendar = CalComCalendar(
                 api_key=cal_api_key,
                 timezone=cal_timezone,
                 event_type_id=cal_event_type_id,
                 event_type_slug=cal_event_type_slug
             )
-            # Note: Calendar initialization will happen asynchronously in UnifiedAgent.__init__
         except Exception as e:
             logger.error(f"Failed to create calendar instance: {e}")
             calendar = None
@@ -1112,6 +1456,7 @@ def create_agent() -> UnifiedAgent:
     return UnifiedAgent(
         instructions=instructions,
         first_message=first_message,
+        sms_prompt=sms_prompt,
         knowledge_base_id=knowledge_base_id,
         calendar=calendar,
         stt=stt,
@@ -1183,11 +1528,11 @@ async def entrypoint(ctx: JobContext):
         
         logger.info(f"CALL_TYPE_DETERMINED | call_type={call_type} | room={ctx.room.name} | job_metadata={ctx.job.metadata} | room_metadata={ctx.room.metadata}")
         
-        # Create the agent instance
-        agent = create_agent()
-        
-        # Fetch agent configuration from Supabase if agentId is available
+        # Prepare agent configuration
         agent_id = None
+        agent_data = None
+        
+        # 1. Try to get agent_id from job metadata
         if ctx.job.metadata:
             try:
                 job_metadata = json.loads(ctx.job.metadata)
@@ -1195,39 +1540,79 @@ async def entrypoint(ctx: JobContext):
             except:
                 pass
         
+        # 2. If no agent_id, try to resolve by phone number (for inbound phone calls)
+        if not agent_id and call_type != "web":
+            try:
+                called_phone = None
+                
+                # Check job metadata for phone number (following sass-livekit pattern)
+                if ctx.job.metadata:
+                    try:
+                        job_metadata = json.loads(ctx.job.metadata)
+                        called_phone = (job_metadata.get("called_number") or 
+                                       job_metadata.get("to_number") or 
+                                       job_metadata.get("phoneNumber"))
+                        if called_phone:
+                            logger.info(f"PHONE_FROM_METADATA | phone={called_phone}")
+                    except:
+                        pass
+                
+                # If not in metadata, extract from room name
+                if not called_phone:
+                    called_phone = extract_phone_from_room(ctx.room.name)
+                
+                if called_phone:
+                    logger.info(f"LOOKING_UP_AGENT_BY_PHONE | phone={called_phone}")
+                    # Look up in phone_number table
+                    supabase_url = os.getenv('SUPABASE_URL')
+                    supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+                    if supabase_url and supabase_key:
+                        from supabase import create_client
+                        supabase = create_client(supabase_url, supabase_key)
+                        
+                        def lookup_phone():
+                            return supabase.table('phone_number').select('inbound_assistant_id').eq('number', called_phone).execute()
+                        
+                        phone_result = await asyncio.to_thread(lookup_phone)
+                        if phone_result.data:
+                            agent_id = phone_result.data[0].get('inbound_assistant_id')
+                            logger.info(f"AGENT_RESOLVED_FROM_PHONE | phone={called_phone} | agent_id={agent_id}")
+            except Exception as e:
+                logger.error(f"FAILED_TO_RESOLVE_AGENT_BY_PHONE | error={str(e)}")
+
+        # 3. Fetch full agent configuration from Supabase if we have an agent_id
         if agent_id:
             try:
-                # Get Supabase credentials
                 supabase_url = os.getenv('SUPABASE_URL')
                 supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
                 
                 if supabase_url and supabase_key:
                     from supabase import create_client
-                    # Run in a separate thread to avoid blocking the async loop
-                    import asyncio
                     supabase = create_client(supabase_url, supabase_key)
                     
                     def fetch_agent_config():
                         return supabase.table('agents').select('*').eq('id', agent_id).single().execute()
                     
                     agent_result = await asyncio.to_thread(fetch_agent_config)
-                    
                     if agent_result.data:
                         agent_data = agent_result.data
-                        
-                        # Set transfer config
-                        transfer_config = {
-                            'enabled': agent_data.get('transfer_enabled', False),
-                            'phone_number': agent_data.get('transfer_phone_number'),
-                            'country_code': agent_data.get('transfer_country_code', '+1'),
-                            'sentence': agent_data.get('transfer_sentence'),
-                            'condition': agent_data.get('transfer_condition')
-                        }
-                        
-                        agent.set_transfer_config(transfer_config)
-                        logger.info(f"AGENT_CONFIG_LOADED | agent_id={agent_id} | transfer_enabled={transfer_config['enabled']}")
+                        logger.info(f"AGENT_CONFIG_FETCHED | agent_id={agent_id} | name={agent_data.get('name')}")
             except Exception as e:
                 logger.error(f"FAILED_TO_LOAD_AGENT_CONFIG | agent_id={agent_id} | error={str(e)}")
+
+        # Create the agent instance with resolved config
+        agent = create_agent(agent_data=agent_data)
+        
+        # Apply transfer config if available
+        if agent_data:
+            transfer_config = {
+                'enabled': agent_data.get('transfer_enabled', False),
+                'phone_number': agent_data.get('transfer_phone_number'),
+                'country_code': agent_data.get('transfer_country_code', '+1'),
+                'sentence': agent_data.get('transfer_sentence'),
+                'condition': agent_data.get('transfer_condition')
+            }
+            agent.set_transfer_config(transfer_config)
 
         
         # Get API keys for session components
@@ -1294,6 +1679,19 @@ async def entrypoint(ctx: JobContext):
             room_output_options=RoomOutputOptions(transcription_enabled=True)
         )
         logger.info(f"AGENT_SESSION_STARTED | job_id={ctx.job.id} | call_type={call_type} | close_on_disconnect={close_on_disconnect}")
+        
+        # Trigger first message immediately if configured (following sass-livekit pattern)
+        # We do this BEFORE waiting for participant to reduce perceived latency
+        first_message = agent.first_message or "Hello! I'm your AI assistant. How can I help you today?"
+        force_first = os.getenv("FORCE_FIRST_MESSAGE", "true").lower() != "false"
+        
+        if force_first and first_message:
+            logger.info(f"SENDING_FIRST_MESSAGE | message='{first_message[:60]}{'...' if len(first_message) > 60 else ''}'")
+            try:
+                await session.say(first_message)
+                logger.info("FIRST_MESSAGE_SENT")
+            except Exception as msg_error:
+                logger.error(f"FIRST_MESSAGE_ERROR | error={str(msg_error)}")
         
         # Now wait for participant to connect
         participant = None
@@ -1365,15 +1763,6 @@ async def entrypoint(ctx: JobContext):
         
         # Track start time for duration calculation (before shutdown callback)
         start_time = datetime.datetime.now()
-        
-        # Send first message - use configured message or default greeting
-        first_message = agent.first_message or "Hello! I'm your AI assistant. How can I help you today?"
-        logger.info(f"SENDING_FIRST_MESSAGE | message='{first_message[:60]}{'...' if len(first_message) > 60 else ''}'")
-        try:
-            await session.say(first_message)
-            logger.info("FIRST_MESSAGE_SENT")
-        except Exception as msg_error:
-            logger.error(f"FIRST_MESSAGE_ERROR | error={str(msg_error)}")
         
         async def save_call_on_shutdown():
             """
@@ -1471,8 +1860,29 @@ async def entrypoint(ctx: JobContext):
                 else:
                     logger.warning("CALL_ANALYSIS_FAILED | using default outcome")
                 
-                # 3. Save to database directly (like sass-livekit)
                 try:
+                    # Extract phone and SID for saving
+                    extracted_phone = None
+                    extracted_sid = None
+                    
+                    if participant:
+                        # For SIP, identity is often the caller's phone number
+                        identity = participant.identity
+                        if identity and (identity.startswith('+') or any(c.isdigit() for c in identity)):
+                            extracted_phone = identity
+                        
+                        # Try to get SIP attributes
+                        if hasattr(participant, 'attributes') and participant.attributes:
+                            extracted_sid = participant.attributes.get('sip.twilio.callSid')
+                    
+                    # Fallback for SID from room metadata
+                    if not extracted_sid and ctx.room.metadata:
+                        try:
+                            rmeta = json.loads(ctx.room.metadata)
+                            extracted_sid = rmeta.get('call_sid') or rmeta.get('CallSid')
+                        except:
+                            pass
+
                     await agent._save_call_to_database(
                         ctx=ctx,
                         session=session,
@@ -1480,9 +1890,12 @@ async def entrypoint(ctx: JobContext):
                         success=success,
                         notes=notes,
                         transcription=session_transcript,
+                        contact_phone=extracted_phone,
+                        call_sid=extracted_sid,
                         analysis=analysis,
                         start_time=start_time,
-                        end_time=end_time
+                        end_time=end_time,
+                        call_type=call_type  # Pass the detected call type
                     )
                 except Exception as save_error:
                     logger.error(f"DIRECT_DB_SAVE_ERROR | error={str(save_error)}", exc_info=True)

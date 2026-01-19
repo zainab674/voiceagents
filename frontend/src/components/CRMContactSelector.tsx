@@ -57,7 +57,7 @@ const CRMContactSelector = ({
   const checkCredentials = async () => {
     try {
       const token = (await supabase.auth.getSession()).data.session?.access_token;
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://backend.aiassistant.net'}/api/v1/crm/credentials`, {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'}/api/v1/crm/credentials`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
@@ -73,7 +73,7 @@ const CRMContactSelector = ({
     setLoading(true);
     try {
       const token = (await supabase.auth.getSession()).data.session?.access_token;
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://backend.aiassistant.net'}/api/v1/crm/contacts`, {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'}/api/v1/crm/contacts`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
@@ -97,7 +97,7 @@ const CRMContactSelector = ({
     setLoading(true);
     try {
       const token = (await supabase.auth.getSession()).data.session?.access_token;
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://backend.aiassistant.net'}/api/v1/crm/sync`, {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'}/api/v1/crm/sync`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });

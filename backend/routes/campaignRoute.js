@@ -109,10 +109,20 @@ router.post('/', authenticateToken, async (req, res) => {
       campaignPrompt
     } = req.body;
 
-    if (!name || !assistantId || !contactSource) {
+    // Infer contactSource from csvFileId or contactListId if not provided
+    let inferredContactSource = contactSource;
+    if (!inferredContactSource) {
+      if (csvFileId) {
+        inferredContactSource = 'csv_file';
+      } else if (contactListId) {
+        inferredContactSource = 'contact_list';
+      }
+    }
+
+    if (!name || !assistantId || !inferredContactSource) {
       return res.status(400).json({
         success: false,
-        message: 'name, assistantId, and contactSource are required'
+        message: 'name, assistantId, and contactSource (or csvFileId/contactListId) are required'
       });
     }
 
@@ -137,7 +147,7 @@ router.post('/', authenticateToken, async (req, res) => {
         name,
         assistant_id: assistantId,
         assistant_name: assistant.name,
-        contact_source: contactSource,
+        contact_source: inferredContactSource,
         contact_list_id: contactListId || null,
         csv_file_id: csvFileId || null,
         daily_cap: dailyCap || 100,

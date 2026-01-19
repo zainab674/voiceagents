@@ -13,6 +13,26 @@ const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
 
+export const getCredentials = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const { data, error } = await supabase
+            .from('user_smtp_credentials')
+            .select('*')
+            .eq('user_id', userId)
+            .single();
+
+        if (error && error.code !== 'PGRST116') { // PGRST116 is code for no rows found
+            throw error;
+        }
+
+        res.status(200).json({ success: true, credentials: data || null });
+    } catch (error) {
+        console.error('Error fetching SMTP credentials:', error);
+        res.status(500).json({ success: false, message: 'Failed to fetch credentials' });
+    }
+};
+
 export const verifyCredentials = async (req, res) => {
     try {
         const { host, port, user, pass, secure, fromName } = req.body;

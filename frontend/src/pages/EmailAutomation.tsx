@@ -29,7 +29,18 @@ const EmailAutomation = () => {
 
     useEffect(() => {
         fetchCampaigns();
-    }, []);
+        fetchCredentials();
+
+        // Polling for running campaigns
+        const interval = setInterval(() => {
+            const hasRunning = campaigns.some(c => c.status === 'running');
+            if (hasRunning) {
+                fetchCampaigns();
+            }
+        }, 5000);
+
+        return () => clearInterval(interval);
+    }, [campaigns]);
 
     const fetchCampaigns = async () => {
         try {
@@ -43,6 +54,27 @@ const EmailAutomation = () => {
             }
         } catch (error) {
             console.error(error);
+        }
+    };
+
+    const fetchCredentials = async () => {
+        try {
+            const token = (await supabase.auth.getSession()).data.session?.access_token;
+            const res = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'}/api/v1/email/credentials`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (data.success && data.credentials) {
+                setCredentials({
+                    host: data.credentials.host || '',
+                    port: data.credentials.port?.toString() || '587',
+                    user: data.credentials.username || '',
+                    pass: data.credentials.password || '',
+                    fromName: data.credentials.from_name || ''
+                });
+            }
+        } catch (error) {
+            console.error('Error fetching credentials:', error);
         }
     };
 

@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
-import { AGENTS_ENDPOINT, BACKEND_URL } from "@/constants/URLConstant";
+import { AGENTS_ENDPOINT, BACKEND_URL, PHONE_NUMBERS_ENDPOINT } from "@/constants/URLConstant";
 import { agentTemplateApi } from "@/http/agentTemplateHttp";
 
 interface AgentTemplate {
@@ -55,6 +55,12 @@ const AllAgents = () => {
     prompt: ''
   });
   const [isCloning, setIsCloning] = useState(false);
+  const [phoneNumbers, setPhoneNumbers] = useState([]);
+  const [loadingPhoneNumbers, setLoadingPhoneNumbers] = useState(false);
+
+  // Agent details modal state
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [viewingAgent, setViewingAgent] = useState(null);
 
   const templateLookup = useMemo(() => {
     const map = new Map<string, AgentTemplate>();
@@ -95,6 +101,7 @@ const AllAgents = () => {
       fetchAgents();
       fetchKnowledgeBases();
       fetchTemplates();
+      fetchPhoneNumbers();
     }
   }, [user]);
 
@@ -163,6 +170,41 @@ const AllAgents = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const fetchPhoneNumbers = async () => {
+    if (!user) return;
+
+    setLoadingPhoneNumbers(true);
+    try {
+      const token = await getAuthToken();
+      if (!token) return;
+
+      const response = await fetch(PHONE_NUMBERS_ENDPOINT, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setPhoneNumbers(result.phoneNumbers || []);
+      }
+    } catch (error) {
+      console.error('Error fetching phone numbers:', error);
+    } finally {
+      setLoadingPhoneNumbers(false);
+    }
+  };
+
+  const getAssignedNumber = (agentId) => {
+    const found = phoneNumbers.find(pn => pn.inbound_assistant_id === agentId);
+    return found ? found.number : null;
+  };
+
+  const handleViewAgentDetails = (agent) => {
+    setViewingAgent(agent);
+    setIsDetailsModalOpen(true);
   };
 
   const fetchTemplates = async () => {
@@ -572,12 +614,15 @@ const AllAgents = () => {
                     <tr key={agent.id} className="border-b hover:bg-muted/50 transition-colors">
                       <td className="p-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-gradient-to-r from-primary to-accent rounded-full flex items-center justify-center">
+                          <div className="w-10 h-10 bg-gradient-to-r from-primary to-accent rounded-full flex items-center justify-center flex-shrink-0">
                             <Bot className="w-5 h-5 text-white" />
                           </div>
-                          <div>
+                          <div
+                            className="cursor-pointer hover:text-primary transition-colors group"
+                            onClick={() => handleViewAgentDetails(agent)}
+                          >
                             <div className="flex items-center gap-2 font-medium">
-                              <span>{agent.name}</span>
+                              <span className="group-hover:underline">{agent.name}</span>
                               {agent.template_id && (
                                 <Badge variant="outline" className="flex items-center gap-1 text-xs">
                                   <Sparkles className="w-3 h-3" />
@@ -1113,6 +1158,119 @@ const AllAgents = () => {
               ) : (
                 'Clone Agent'
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Agent Details Modal */}
+      <Dialog open={isDetailsModalOpen} onOpenChange={setIsDetailsModalOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle className="flex items-center gap-2">
+              <Bot className="w-6 h-6 text-primary" />
+              Agent Details
+            </DialogTitle>
+            <DialogDescription>
+              Comprehensive overview of this AI agent's configuration and status.
+            </DialogDescription>
+          </DialogHeader>
+
+          {viewingAgent && (
+            <div className="flex-1 overflow-y-auto pr-2 space-y-6 py-4">
+              <div className="space-y-4">
+                <div className="flex flex-wrap gap-4">
+                  <div className="flex-1 min-w-[200px]">
+                    <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Agent Name</Label>
+                    <p className="text-lg font-bold">{viewingAgent.name}</p>
+                  </div>
+                  <div className="flex-1 min-w-[200px]">
+                    <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Assigned Number</Label>
+                    <div className="flex items-center gap-2 mt-1">
+                      {getAssignedNumber(viewingAgent.id) ? (
+                        <Badge variant="default" className="bg-primary/10 text-primary hover:bg-primary/20 border-primary/20 py-1 px-3 text-sm font-medium">
+                          {getAssignedNumber(viewingAgent.id)}
+                        </Badge>
+                      ) : (
+                        <span className="text-sm text-muted-foreground italic">No number assigned</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Created At</Label>
+                    <div className="flex items-center gap-2 mt-1 text-sm">
+                      <Calendar className="w-4 h-4 text-muted-foreground" />
+                      {formatDate(viewingAgent.created_at)}
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Language</Label>
+                    <p className="mt-1 text-sm font-medium uppercase">{viewingAgent.language || 'en'}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Description</Label>
+                <Card className="bg-muted/30 border-none">
+                  <CardContent className="p-3">
+                    <p className="text-sm leading-relaxed">{viewingAgent.description}</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">System Prompt</Label>
+                <div className="relative group">
+                  <div className="bg-muted p-4 rounded-lg text-sm font-mono whitespace-pre-wrap max-h-[250px] overflow-y-auto border group-hover:border-primary/50 transition-colors">
+                    {viewingAgent.prompt}
+                  </div>
+                </div>
+              </div>
+
+              {(viewingAgent.first_message || viewingAgent.sms_prompt) && (
+                <div className="grid grid-cols-1 gap-4 pt-2">
+                  {viewingAgent.first_message && (
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">First Message</Label>
+                      <p className="text-sm italic text-muted-foreground border-l-2 border-primary pl-3 py-1 bg-primary/5 rounded-r">
+                        "{viewingAgent.first_message}"
+                      </p>
+                    </div>
+                  )}
+                  {viewingAgent.sms_prompt && (
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">SMS Prompt</Label>
+                      <p className="text-sm text-muted-foreground line-clamp-3">
+                        {viewingAgent.sms_prompt}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="flex-shrink-0 gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsDetailsModalOpen(false);
+                handleEditAgent(viewingAgent);
+              }}
+              className="flex-1 sm:flex-none"
+            >
+              <Edit className="w-4 h-4 mr-2" />
+              Edit Configuration
+            </Button>
+            <Button
+              onClick={() => setIsDetailsModalOpen(false)}
+              className="flex-1 sm:flex-none bg-gradient-to-r from-primary to-accent text-white"
+            >
+              Done
             </Button>
           </DialogFooter>
         </DialogContent>

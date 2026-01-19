@@ -34,7 +34,7 @@ export const emailCampaignService = {
 
             if (credError || !credentials) {
                 await supabase.from('email_campaigns').update({ status: 'failed' }).eq('id', campaignId);
-                throw new Error('No SMTP credentials found');
+                throw new Error('SMTP Setup Required: Please go to Settings > Integrations and configure your Email (SMTP) credentials to send campaigns.');
             }
 
             // Update status to running
@@ -63,15 +63,33 @@ export const emailCampaignService = {
 
                 if (contactError) throw contactError;
                 contacts = csvContacts;
+
+                // Update total_count if it's 0 or doesn't match
+                if (campaign.total_count !== contacts.length) {
+                    await supabase.from('email_campaigns')
+                        .update({ total_count: contacts.length })
+                        .eq('id', campaignId);
+                }
             }
 
             const startIndex = campaign.sent_count || 0;
             const contactsToProcess = contacts.slice(startIndex);
 
+            if (contactsToProcess.length === 0) {
+                console.log(`Campaign ${campaignId} already has all contacts processed.`);
+                const finalStatus = (contacts.length > 0 && (campaign.sent_count + (campaign.failed_count || 0)) >= contacts.length) ? 'completed' : 'paused';
+                await supabase.from('email_campaigns').update({
+                    status: finalStatus,
+                    pending_count: 0
+                }).eq('id', campaignId);
+                return;
+            }
+
             console.log(`Processing ${contactsToProcess.length} contacts for campaign ${campaign.name}`);
 
             let successCount = campaign.sent_count || 0;
             let failedCount = campaign.failed_count || 0;
+            let totalProcessed = successCount + failedCount;
 
             for (const contact of contactsToProcess) {
                 // Check if campaign is still running
@@ -107,21 +125,41 @@ export const emailCampaignService = {
                     failedCount++;
                 }
 
+                totalProcessed = successCount + failedCount;
+                const isFinished = totalProcessed >= contacts.length;
+
                 await supabase.from('email_campaigns').update({
                     sent_count: successCount,
                     failed_count: failedCount,
-                    pending_count: contacts.length - (successCount + failedCount)
+                    pending_count: Math.max(0, contacts.length - totalProcessed),
+                    status: isFinished ? 'completed' : 'running'
                 }).eq('id', campaignId);
+
+                if (isFinished) {
+                    console.log(`Campaign ${campaignId} completed during loop.`);
+                    break;
+                }
 
                 await new Promise(resolve => setTimeout(resolve, 500));
             }
 
-            const finalStatus = (successCount + failedCount >= contacts.length) ? 'completed' : 'paused';
-            await supabase.from('email_campaigns').update({
-                status: finalStatus,
-                sent_count: successCount,
-                failed_count: failedCount
-            }).eq('id', campaignId);
+            // Final safety check/update
+            const finalStatus = (totalProcessed >= contacts.length && contacts.length > 0) ? 'completed' : 'paused';
+
+            // If it was paused or interrupted, don't overwrite with 'completed' unless actually done
+            const { data: latestCampaign } = await supabase
+                .from('email_campaigns')
+                .select('status')
+                .eq('id', campaignId)
+                .single();
+
+            if (latestCampaign?.status === 'running' || (totalProcessed >= contacts.length)) {
+                await supabase.from('email_campaigns').update({
+                    status: finalStatus,
+                    sent_count: successCount,
+                    failed_count: failedCount
+                }).eq('id', campaignId);
+            }
 
             transporter.close();
 

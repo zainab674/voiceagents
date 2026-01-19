@@ -17,14 +17,16 @@ import {
 
 const router = express.Router();
 
-// OAuth initiation routes (no auth required)
-router.get('/hubspot/oauth', initiateHubSpotOAuth);
+// OAuth callback routes (no auth required - called by external OAuth providers)
 router.get('/hubspot/callback', handleHubSpotCallback);
-router.get('/zoho/oauth', initiateZohoOAuth);
 router.get('/zoho/callback', handleZohoCallback);
 
 // Protected routes (require authentication)
 router.use(authenticateToken);
+
+// OAuth initiation routes (require authentication - need to know which user is initiating)
+router.get('/hubspot/oauth', initiateHubSpotOAuth);
+router.get('/zoho/oauth', initiateZohoOAuth);
 
 // CRM app credentials management
 router.post('/app-credentials', storeCRMAppCredentials);

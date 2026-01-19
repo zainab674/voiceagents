@@ -86,7 +86,8 @@ export const getAgentAnalytics = async (req, res) => {
 
         // Calculate conversion rate (calls with positive outcomes)
         const positiveOutcomes = totalCalls.filter(call =>
-          call.outcome && ['booked', 'follow-up', 'interested'].includes(call.outcome.toLowerCase())
+          (call.outcome && ['booked', 'booked appointment', 'follow-up', 'interested', 'qualified'].includes(call.outcome.toLowerCase())) ||
+          call.success === true
         ).length;
         const conversionRate = totalCalls.length > 0 ? (positiveOutcomes / totalCalls.length) * 100 : 0;
 

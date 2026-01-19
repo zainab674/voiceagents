@@ -57,7 +57,7 @@ class CampaignExecutionEngine {
   async executeCampaigns() {
     try {
       console.log('🔄 Campaign execution engine checking for campaigns...');
-      
+
       // Reset daily caps at midnight
       await this.resetDailyCapsIfNeeded();
 
@@ -97,7 +97,7 @@ class CampaignExecutionEngine {
     try {
       const now = new Date();
       const today = now.toISOString().split('T')[0]; // YYYY-MM-DD format
-      
+
       // Check if we've already reset today by looking for any running campaign that was reset today
       const { data: runningCampaigns, error: resetError } = await supabase
         .from('campaigns')
@@ -114,14 +114,14 @@ class CampaignExecutionEngine {
       }
 
       // Check if any running campaign needs reset (hasn't been reset today)
-      const needsReset = runningCampaigns.some(campaign => 
-        !campaign.last_daily_reset || 
+      const needsReset = runningCampaigns.some(campaign =>
+        !campaign.last_daily_reset ||
         !campaign.last_daily_reset.startsWith(today)
       );
 
       if (needsReset) {
         console.log('🔄 Resetting daily caps for all running campaigns');
-        
+
         const { error: updateError } = await supabase
           .from('campaigns')
           .update({
@@ -168,7 +168,7 @@ class CampaignExecutionEngine {
    */
   async processAllCalls(campaign) {
     console.log(`🔄 Starting continuous processing for campaign: ${campaign.name}`);
-    
+
     // Get all contacts for this campaign
     const contacts = await this.getCampaignContacts(campaign);
     if (!contacts || contacts.length === 0) {
@@ -182,7 +182,7 @@ class CampaignExecutionEngine {
     // Process each contact immediately
     for (let i = 0; i < contacts.length; i++) {
       const contact = contacts[i];
-      
+
       // Check if campaign should continue (daily cap, calling hours, etc.)
       // Get fresh campaign data to check current daily calls
       const { data: freshCampaign } = await supabase
@@ -190,19 +190,19 @@ class CampaignExecutionEngine {
         .select('current_daily_calls, daily_cap, start_hour, end_hour, calling_days')
         .eq('id', campaign.id)
         .single();
-      
+
       if (!freshCampaign) {
         console.log(`Campaign ${campaign.name} not found, stopping`);
         return;
       }
-      
+
       // Update the campaign object with fresh data
       campaign.current_daily_calls = freshCampaign.current_daily_calls;
       campaign.daily_cap = freshCampaign.daily_cap;
       campaign.start_hour = freshCampaign.start_hour;
       campaign.end_hour = freshCampaign.end_hour;
       campaign.calling_days = freshCampaign.calling_days;
-      
+
       if (!this.shouldExecuteCampaign(campaign)) {
         console.log(`Campaign ${campaign.name} reached daily cap or outside calling hours, pausing`);
         await this.pauseCampaign(campaign.id, 'Daily cap reached or outside calling hours');
@@ -226,9 +226,9 @@ class CampaignExecutionEngine {
       try {
         // Execute the call immediately
         console.log(`🔄 Starting call ${i + 1}/${contacts.length} for ${contact.name} - ${contact.phone_number}`);
-        
+
         await this.executeCallDirect(campaign, contact, i + 1);
-        
+
         // Update campaign metrics in database
         const { error: updateError } = await supabase
           .from('campaigns')
@@ -256,7 +256,7 @@ class CampaignExecutionEngine {
 
       } catch (callError) {
         console.error(`❌ Call ${i + 1} failed for campaign ${campaign.name}:`, callError);
-        
+
         // Mark call as failed but continue with next call
         await this.createFailedCallRecord(campaign, contact, callError.message);
         continue;
@@ -378,7 +378,7 @@ class CampaignExecutionEngine {
 
         if (phoneError) {
           if (phoneError.code === 'PGRST116') {
-            throw new Error(`No phone number assigned to assistant ${campaign.assistant_id}. Please assign a phone number to this assistant first.`);
+            throw new Error(`Phone Number Missing: No phone number assigned to assistant ${campaign.assistant_id}. Please go to the Assistants page and assign a phone number to this assistant.`);
           } else {
             throw new Error(`Error fetching phone number for assistant: ${phoneError.message}`);
           }
@@ -389,9 +389,9 @@ class CampaignExecutionEngine {
           fromNumber = assistantPhone.number;
         }
       }
-      
+
       if (!outboundTrunkId) {
-        throw new Error(`No outbound trunk configured for assistant ${campaign.assistant_id}. Please ensure the assistant has a phone number assigned with outbound trunk created.`);
+        throw new Error(`Outbound Configuration Missing: No outbound trunk configured for assistant ${campaign.assistant_id}. Please ensure the assistant has a phone number assigned with a valid outbound trunk. You may need to recreate the phone number in Settings.`);
       }
 
       // 3) Build room & metadata
@@ -462,7 +462,7 @@ class CampaignExecutionEngine {
       // Try different dispatch URL formats
       const dispatchUrl = `${LK_HTTP_URL}/twirp/livekit.AgentService/CreateAgentDispatch`;
       const alternativeUrl = `${LK_HTTP_URL}/twirp/livekit.AgentService/CreateAgentDispatchRequest`;
-      
+
       console.log('🔍 Dispatch URL check:', {
         LK_HTTP_URL,
         dispatchUrl,
@@ -470,12 +470,12 @@ class CampaignExecutionEngine {
         expectedFormat: 'https://your-livekit-host/twirp/livekit.AgentService/CreateAgentDispatch'
       });
       const agentName = process.env.LK_AGENT_NAME || 'ai';
-      console.log('🔍 Agent name check:', { 
-        LK_AGENT_NAME: process.env.LK_AGENT_NAME, 
-        agentName, 
-        fallback: 'ai' 
+      console.log('🔍 Agent name check:', {
+        LK_AGENT_NAME: process.env.LK_AGENT_NAME,
+        agentName,
+        fallback: 'ai'
       });
-      
+
       // Try different dispatch body formats
       const dispatchBody = {
         agent_name: agentName,
@@ -490,7 +490,7 @@ class CampaignExecutionEngine {
           outbound_trunk_id: outboundTrunkId,  // Add outbound trunk ID
         }),
       };
-      
+
       // Alternative format that might work
       const alternativeBody = {
         agentName: agentName,
@@ -505,7 +505,7 @@ class CampaignExecutionEngine {
           outbound_trunk_id: outboundTrunkId,  // Add outbound trunk ID
         }),
       };
-      
+
       console.log('🔍 Dispatch body formats:', {
         primary: dispatchBody,
         alternative: alternativeBody
@@ -518,15 +518,15 @@ class CampaignExecutionEngine {
           room: roomName,
           metadata: dispatchBody.metadata
         });
-        
+
         const dispatchResult = await agentDispatchClient.createDispatch(roomName, agentName, {
           metadata: dispatchBody.metadata,
         });
-        
+
         console.log('✅ Agent dispatch successful via AgentDispatchClient:', dispatchResult);
       } catch (sdkError) {
         console.log('⚠️ AgentDispatchClient failed, trying HTTP method:', sdkError.message);
-        
+
         // Fallback to HTTP method
         console.log('🤖 Dispatching agent via HTTP:', {
           url: dispatchUrl,
@@ -535,7 +535,7 @@ class CampaignExecutionEngine {
           jwt_len: jwt.length,
           dispatchBody: dispatchBody,
         });
-        
+
         const dispatchRes = await fetch(dispatchUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
@@ -629,7 +629,7 @@ class CampaignExecutionEngine {
       // Mark call as failed
       await supabase
         .from('campaign_calls')
-        .update({ 
+        .update({
           status: 'failed',
           completed_at: new Date().toISOString(),
           notes: error.message

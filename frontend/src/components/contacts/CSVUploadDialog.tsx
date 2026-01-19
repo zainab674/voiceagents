@@ -158,7 +158,7 @@ export function CSVUploadDialog({ open, onOpenChange, onUploadComplete }: CSVUpl
               </div>
 
               {/* Preview */}
-              {previewData.length > 0 && (
+              {previewData.length > 0 ? (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <h4 className="font-medium text-gray-900">Preview ({previewData.length} contacts)</h4>
@@ -166,7 +166,7 @@ export function CSVUploadDialog({ open, onOpenChange, onUploadComplete }: CSVUpl
                       {previewData.length} contacts found
                     </Badge>
                   </div>
-                  
+
                   <div className="max-h-60 overflow-auto border rounded-lg">
                     <Table>
                       <TableHeader>
@@ -186,7 +186,7 @@ export function CSVUploadDialog({ open, onOpenChange, onUploadComplete }: CSVUpl
                             <TableCell>{contact.email || '-'}</TableCell>
                             <TableCell>{contact.phone || '-'}</TableCell>
                             <TableCell>
-                              <Badge 
+                              <Badge
                                 variant={contact.status === 'active' ? 'default' : 'secondary'}
                                 className="text-xs"
                               >
@@ -204,6 +204,18 @@ export function CSVUploadDialog({ open, onOpenChange, onUploadComplete }: CSVUpl
                     )}
                   </div>
                 </div>
+              ) : (
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm">
+                  <div className="flex items-start space-x-2">
+                    <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="font-semibold">No valid contacts found in this file</p>
+                      <p className="mt-1">
+                        To upload successfully, your CSV must have a header row with at least a <b>First Name</b> (or "Name") column and either an <b>Email</b> or <b>Phone</b> column.
+                      </p>
+                    </div>
+                  </div>
+                </div>
               )}
 
               {/* Upload Button */}
@@ -211,8 +223,8 @@ export function CSVUploadDialog({ open, onOpenChange, onUploadComplete }: CSVUpl
                 <Button variant="outline" onClick={handleClose}>
                   Cancel
                 </Button>
-                <Button 
-                  onClick={handleUpload} 
+                <Button
+                  onClick={handleUpload}
                   disabled={isUploading || previewData.length === 0}
                 >
                   {isUploading ? 'Uploading...' : 'Upload CSV'}
@@ -237,25 +249,22 @@ export function CSVUploadDialog({ open, onOpenChange, onUploadComplete }: CSVUpl
           {/* Upload Result */}
           {uploadResult && (
             <div className="space-y-4">
-              <div className={`flex items-center space-x-3 p-4 rounded-lg ${
-                uploadResult.success 
-                  ? 'bg-green-50 border border-green-200' 
+              <div className={`flex items-center space-x-3 p-4 rounded-lg ${uploadResult.success
+                  ? 'bg-green-50 border border-green-200'
                   : 'bg-red-50 border border-red-200'
-              }`}>
+                }`}>
                 {uploadResult.success ? (
                   <CheckCircle className="h-6 w-6 text-green-500" />
                 ) : (
                   <AlertCircle className="h-6 w-6 text-red-500" />
                 )}
                 <div>
-                  <p className={`font-medium ${
-                    uploadResult.success ? 'text-green-900' : 'text-red-900'
-                  }`}>
+                  <p className={`font-medium ${uploadResult.success ? 'text-green-900' : 'text-red-900'
+                    }`}>
                     {uploadResult.success ? 'Upload Successful!' : 'Upload Failed'}
                   </p>
-                  <p className={`text-sm ${
-                    uploadResult.success ? 'text-green-700' : 'text-red-700'
-                  }`}>
+                  <p className={`text-sm ${uploadResult.success ? 'text-green-700' : 'text-red-700'
+                    }`}>
                     {uploadResult.message}
                   </p>
                 </div>

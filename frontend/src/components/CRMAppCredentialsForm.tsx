@@ -41,14 +41,14 @@ const CRMAppCredentialsForm = ({ platform, onCredentialsSaved }: CRMAppCredentia
     clientSecret: '',
     redirectUri: ''
   });
-  const [showSecret, setShowSecret] = useState(false);
+  const [showSecret, setShowSecret] = useState(true);
   const [loading, setLoading] = useState(false);
   const [existingCredentials, setExistingCredentials] = useState<CRMAppCredentials | null>(null);
 
   const fetchExistingCredentials = async () => {
     try {
       const token = (await supabase.auth.getSession()).data.session?.access_token;
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://backend.aiassistant.net'}/api/v1/crm/app-credentials`, {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'}/api/v1/crm/app-credentials`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
@@ -91,7 +91,7 @@ const CRMAppCredentialsForm = ({ platform, onCredentialsSaved }: CRMAppCredentia
     setLoading(true);
     try {
       const token = (await supabase.auth.getSession()).data.session?.access_token;
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://backend.aiassistant.net'}/api/v1/crm/app-credentials`, {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'}/api/v1/crm/app-credentials`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -135,17 +135,30 @@ const CRMAppCredentialsForm = ({ platform, onCredentialsSaved }: CRMAppCredentia
           name: 'HubSpot',
           color: 'bg-orange-500',
           setupUrl: 'https://developers.hubspot.com/docs/api/creating-an-app',
-          redirectExample: `https://backend.aiassistant.net/api/v1/crm/hubspot/callback`
+          redirectExample: `${import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'}/api/v1/crm/hubspot/callback`,
+          detailedInstructions: null
         };
       case 'zoho':
         return {
           name: 'Zoho CRM',
           color: 'bg-blue-500',
-          setupUrl: 'https://www.zoho.com/crm/developer/docs/api/v2/',
-          redirectExample: `https://backend.aiassistant.net/api/v1/crm/zoho/callback`
+          setupUrl: 'https://api-console.zoho.com/',
+          redirectExample: `${import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'}/api/v1/crm/zoho/callback`,
+          detailedInstructions: [
+            'Go to Zoho API Console: https://api-console.zoho.com/',
+            'Login with the same Zoho account that owns/accesses your Zoho CRM',
+            'Click: Add Client',
+            'Choose Client Type: Server-based Applications ✅',
+            'Fill the form:',
+            '  • Client Name: anything (e.g. MyWebsite Zoho CRM)',
+            '  • Homepage URL: your website URL',
+            `  • Authorized Redirect URI: ${import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'}/api/v1/crm/zoho/callback`,
+            'Click Create',
+            '➡️ Zoho will show you: Client ID and Client Secret'
+          ]
         };
       default:
-        return { name: platform, color: 'bg-gray-500', setupUrl: '', redirectExample: '' };
+        return { name: platform, color: 'bg-gray-500', setupUrl: '', redirectExample: '', detailedInstructions: null };
     }
   };
 
@@ -165,14 +178,46 @@ const CRMAppCredentialsForm = ({ platform, onCredentialsSaved }: CRMAppCredentia
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            <div className="space-y-2">
-              <p>To connect {platformInfo.name}, you need to create an app and get your credentials:</p>
-              <ol className="list-decimal list-inside space-y-1 text-sm">
-                <li>Go to the {platformInfo.name} developer portal</li>
-                <li>Create a new app/client</li>
-                <li>Set the redirect URI to: <code className="bg-gray-100 px-1 rounded">{platformInfo.redirectExample}</code></li>
-                <li>Copy your Client ID and Client Secret</li>
-              </ol>
+            <div className="space-y-3">
+              <p className="font-medium">To connect {platformInfo.name}, you need to create an app and get your credentials:</p>
+              
+              {platformInfo.detailedInstructions ? (
+                // Detailed instructions for Zoho
+                <div className="space-y-2 text-sm bg-gray-50 p-3 rounded-md">
+                  {platformInfo.detailedInstructions.map((step, index) => {
+                    const isSubItem = step.startsWith('  •');
+                    const isArrow = step.startsWith('➡️');
+                    const isCheckmark = step.startsWith('✅');
+                    const cleanStep = step.replace(/^[0-9]+\.\s*/, '').replace(/^  •\s*/, '').replace(/^➡️\s*/, '').replace(/^✅\s*/, '');
+                    
+                    return (
+                      <div key={index} className={`flex items-start gap-2 ${isSubItem ? 'ml-4' : ''}`}>
+                        {isSubItem ? (
+                          <span className="text-gray-500 mt-0.5">•</span>
+                        ) : isArrow ? (
+                          <span className="text-blue-600 mt-0.5">➡️</span>
+                        ) : isCheckmark ? (
+                          <span className="text-green-600 mt-0.5">✅</span>
+                        ) : (
+                          <span className="text-gray-500 font-medium">{index + 1}.</span>
+                        )}
+                        <span className={`flex-1 ${isArrow ? 'font-semibold text-blue-600' : isSubItem ? 'text-gray-700' : ''}`}>
+                          {cleanStep}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                // Simple instructions for HubSpot
+                <ol className="list-decimal list-inside space-y-1 text-sm">
+                  <li>Go to the {platformInfo.name} developer portal</li>
+                  <li>Create a new app/client</li>
+                  <li>Set the redirect URI to: <code className="bg-gray-100 px-1 rounded">{platformInfo.redirectExample}</code></li>
+                  <li>Copy your Client ID and Client Secret</li>
+                </ol>
+              )}
+              
               <Button
                 variant="outline"
                 size="sm"
@@ -180,7 +225,7 @@ const CRMAppCredentialsForm = ({ platform, onCredentialsSaved }: CRMAppCredentia
                 className="mt-2"
               >
                 <ExternalLink className="h-4 w-4 mr-2" />
-                Open {platformInfo.name} Developer Portal
+                {platform === 'zoho' ? 'Open Zoho API Console' : `Open ${platformInfo.name} Developer Portal`}
               </Button>
             </div>
           </AlertDescription>
@@ -231,6 +276,11 @@ const CRMAppCredentialsForm = ({ platform, onCredentialsSaved }: CRMAppCredentia
                 {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </Button>
             </div>
+            {existingCredentials && (
+              <p className="text-sm text-amber-600">
+                Note: For security reasons, existing secrets cannot be displayed. Please re-enter your Client Secret to update it.
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">

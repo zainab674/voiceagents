@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import { authenticateToken } from '#middlewares/authMiddleware.js';
 import {
+    getCredentials,
     verifyCredentials,
     parseContactFile,
     generateEmailContent,
@@ -13,6 +14,7 @@ const upload = multer({ storage: multer.memoryStorage() }); // In-memory storage
 
 router.use(authenticateToken);
 
+router.get('/credentials', getCredentials);
 router.post('/credentials/verify', verifyCredentials);
 router.post('/parse-file', upload.single('file'), parseContactFile);
 router.post('/generate', generateEmailContent);

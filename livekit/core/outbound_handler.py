@@ -517,7 +517,8 @@ class OutboundCallHandler:
                 'started_at': ctx.room.creation_time.isoformat() if hasattr(ctx.room, 'creation_time') and ctx.room.creation_time else None,
                 'ended_at': session.end_time.isoformat() if hasattr(session, 'end_time') and session.end_time else None,
                 'success': analysis_results.get('call_success', True),
-                'transcription': self._extract_transcription(session)
+                'transcription': self._extract_transcription(session),
+                'call_type': 'outbound'  # Outbound calls are always outbound type
             }
             
             # Save to database via backend API
