@@ -1,12 +1,11 @@
 // components/opportunities/OpportunityDetailsDialog.tsx
-import { useState, useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Phone, Calendar, Clock, User, MessageSquare, CheckCircle, Loader2 } from "lucide-react";
+import { Phone, Calendar, Clock, User, MessageSquare, CheckCircle } from "lucide-react";
 import { format } from "date-fns";
-import { fetchRecordingUrlCached, RecordingInfo } from "@/lib/api/recordings/fetchRecordingUrl";
 
 interface BookedCall {
     id: string;
@@ -28,92 +27,68 @@ interface OpportunityDetailsDialogProps {
     opportunity: BookedCall | null;
 }
 
-export function OpportunityDetailsDialog({ open, onOpenChange, opportunity }: OpportunityDetailsDialogProps) {
-    const [recording, setRecording] = useState<RecordingInfo | null>(null);
-    const [loadingRecording, setLoadingRecording] = useState(false);
-
-    // Fetch recording when dialog opens
-    useEffect(() => {
-        if (open && opportunity?.callSid) {
-            setLoadingRecording(true);
-            fetchRecordingUrlCached(opportunity.callSid)
-                .then((recordingInfo) => {
-                    setRecording(recordingInfo);
-                })
-                .catch((error) => {
-                    console.error('Error fetching recording:', error);
-                    setRecording(null);
-                })
-                .finally(() => {
-                    setLoadingRecording(false);
-                });
-        } else {
-            setRecording(null);
-        }
-    }, [open, opportunity?.callSid]);
-
-    if (!opportunity) return null;
-
-    // Use fetched recording URL if available, otherwise use the one from opportunity
-    const recordingUrl = recording?.recordingUrl || opportunity.recordingUrl;
-
-    // Format transcript if available
-    const formatTranscript = (transcript: any) => {
-        if (!transcript) return null;
-        
-        if (Array.isArray(transcript)) {
-            return transcript.map((item: any, index: number) => {
-                // Handle different transcript formats
-                // Format 1: { role: 'assistant', content: 'text' } or { role: 'assistant', content: ['text1', 'text2'] }
-                if (item.role !== undefined) {
-                    const speaker = item.role === 'assistant' ? 'Assistant' : (item.role === 'user' ? 'Customer' : item.role);
-                    const content = item.content;
-                    const text = Array.isArray(content) ? content.join(' ') : (content || '');
-                    const time = item.time || item.timestamp || '';
-                    return { speaker, text, time, index };
-                }
-                
-                // Format 2: { speaker: 'name', text: 'text' }
-                if (item.speaker !== undefined || item.text !== undefined) {
-                    const speaker = item.speaker || item.role || 'Unknown';
-                    const text = item.text || item.message || '';
-                    const time = item.time || item.timestamp || '';
-                    return { speaker, text, time, index };
-                }
-                
-                // Format 3: Plain string in array
-                if (typeof item === 'string') {
-                    return { speaker: 'Transcript', text: item, time: '', index };
-                }
-                
-                // Fallback: try to extract any text-like fields
-                const speaker = item.speaker || item.role || item.name || 'Unknown';
-                const text = item.text || item.message || item.content || JSON.stringify(item);
+// Format transcript helper function (moved outside component to avoid recreation)
+const formatTranscript = (transcript: any) => {
+    if (!transcript) return null;
+    
+    if (Array.isArray(transcript)) {
+        return transcript.map((item: any, index: number) => {
+            // Handle different transcript formats
+            // Format 1: { role: 'assistant', content: 'text' } or { role: 'assistant', content: ['text1', 'text2'] }
+            if (item.role !== undefined) {
+                const speaker = item.role === 'assistant' ? 'Assistant' : (item.role === 'user' ? 'Customer' : item.role);
+                const content = item.content;
+                const text = Array.isArray(content) ? content.join(' ') : (content || '');
                 const time = item.time || item.timestamp || '';
                 return { speaker, text, time, index };
-            });
-        }
-        
-        if (typeof transcript === 'string') {
-            return [{ speaker: 'Transcript', text: transcript, time: '', index: 0 }];
-        }
-        
-        // If it's an object, try to extract useful information
-        if (typeof transcript === 'object') {
-            return [{ 
-                speaker: transcript.role === 'assistant' ? 'Assistant' : 'Customer', 
-                text: Array.isArray(transcript.content) ? transcript.content.join(' ') : (transcript.content || JSON.stringify(transcript)), 
-                time: '', 
-                index: 0 
-            }];
-        }
-        
-        return null;
-    };
+            }
+            
+            // Format 2: { speaker: 'name', text: 'text' }
+            if (item.speaker !== undefined || item.text !== undefined) {
+                const speaker = item.speaker || item.role || 'Unknown';
+                const text = item.text || item.message || '';
+                const time = item.time || item.timestamp || '';
+                return { speaker, text, time, index };
+            }
+            
+            // Format 3: Plain string in array
+            if (typeof item === 'string') {
+                return { speaker: 'Transcript', text: item, time: '', index };
+            }
+            
+            // Fallback: try to extract any text-like fields
+            const speaker = item.speaker || item.role || item.name || 'Unknown';
+            const text = item.text || item.message || item.content || JSON.stringify(item);
+            const time = item.time || item.timestamp || '';
+            return { speaker, text, time, index };
+        });
+    }
+    
+    if (typeof transcript === 'string') {
+        return [{ speaker: 'Transcript', text: transcript, time: '', index: 0 }];
+    }
+    
+    // If it's an object, try to extract useful information
+    if (typeof transcript === 'object') {
+        return [{ 
+            speaker: transcript.role === 'assistant' ? 'Assistant' : 'Customer', 
+            text: Array.isArray(transcript.content) ? transcript.content.join(' ') : (transcript.content || JSON.stringify(transcript)), 
+            time: '', 
+            index: 0 
+        }];
+    }
+    
+    return null;
+};
 
-    const transcriptItems = formatTranscript(opportunity.transcript);
+export function OpportunityDetailsDialog({ open, onOpenChange, opportunity }: OpportunityDetailsDialogProps) {
+    // Memoize transcript items - must be called before any early returns
+    const transcriptItems = useMemo(() => {
+        if (!opportunity?.transcript) return null;
+        return formatTranscript(opportunity.transcript);
+    }, [opportunity?.transcript]);
 
-    // Debug: Log transcript data to help troubleshoot
+    // Debug: Log transcript data to help troubleshoot - must be called before any early returns
     useEffect(() => {
         if (open && opportunity) {
             console.log('Opportunity transcript data:', {
@@ -125,6 +100,9 @@ export function OpportunityDetailsDialog({ open, onOpenChange, opportunity }: Op
             });
         }
     }, [open, opportunity, transcriptItems]);
+
+    // Early return after all hooks
+    if (!opportunity) return null;
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -255,45 +233,6 @@ export function OpportunityDetailsDialog({ open, onOpenChange, opportunity }: Op
                             )}
                         </CardContent>
                     </Card>
-
-                    {/* Recording (if available) */}
-                    {loadingRecording ? (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="text-lg">Call Recording</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="flex items-center justify-center py-8">
-                                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mr-2" />
-                                    <p className="text-sm text-muted-foreground">Loading recording...</p>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    ) : recordingUrl ? (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="text-lg">Call Recording</CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-2">
-                                {recording && (
-                                    <div className="text-sm text-muted-foreground">
-                                        <p>Status: {recording.recordingStatus}</p>
-                                        <p>Duration: {Math.floor(recording.recordingDuration / 60)}:{(recording.recordingDuration % 60).toString().padStart(2, '0')}</p>
-                                    </div>
-                                )}
-                                <audio controls className="w-full">
-                                    <source src={recordingUrl} type="audio/mpeg" />
-                                    Your browser does not support the audio element.
-                                </audio>
-                            </CardContent>
-                        </Card>
-                    ) : null}
-
-                    {!recordingUrl && !loadingRecording && (
-                        <div className="text-center py-4 text-muted-foreground">
-                            <p>No recording available for this call.</p>
-                        </div>
-                    )}
                 </div>
             </DialogContent>
         </Dialog>
