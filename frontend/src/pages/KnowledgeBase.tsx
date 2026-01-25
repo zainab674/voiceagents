@@ -38,12 +38,12 @@ interface KnowledgeBase {
 }
 
 interface Document {
-  id: string;
+  doc_id: string;
   knowledge_base_id: string;
   filename: string;
   original_filename: string;
   file_size: number;
-  status: 'uploading' | 'processing' | 'completed' | 'failed';
+  pinecone_status: 'uploading' | 'processing' | 'ready' | 'completed' | 'failed' | 'error';
   created_at: string;
 }
 
@@ -261,6 +261,45 @@ const KnowledgeBase = () => {
     }
   };
 
+  const deleteDocument = async (docId: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (!token) {
+        throw new Error('No authentication token available');
+      }
+
+      const response = await fetch(`${BACKEND_URL}/api/v1/kb/documents/${docId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to delete document');
+      }
+
+      toast({
+        title: "Success!",
+        description: "Document deleted successfully!",
+      });
+
+      if (selectedKB) {
+        fetchDocuments(selectedKB);
+      }
+    } catch (error: any) {
+      console.error('Error deleting document:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete document",
+        variant: "destructive",
+      });
+    }
+  };
+
   const deleteKnowledgeBase = async (kbId: string) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -316,16 +355,19 @@ const KnowledgeBase = () => {
 
   const getDocumentStatusBadge = (status: string) => {
     switch (status) {
+      case 'ready':
       case 'completed':
         return <Badge className="bg-green-100 text-green-800"><CheckCircle className="w-3 h-3 mr-1" />Completed</Badge>;
       case 'processing':
         return <Badge className="bg-yellow-100 text-yellow-800"><RefreshCw className="w-3 h-3 mr-1" />Processing</Badge>;
       case 'uploading':
+      case 'uploaded':
         return <Badge className="bg-blue-100 text-blue-800"><Upload className="w-3 h-3 mr-1" />Uploading</Badge>;
       case 'failed':
+      case 'error':
         return <Badge className="bg-red-100 text-red-800"><XCircle className="w-3 h-3 mr-1" />Failed</Badge>;
       default:
-        return <Badge className="bg-gray-100 text-gray-800"><AlertCircle className="w-3 h-3 mr-1" />Unknown</Badge>;
+        return <Badge className="bg-gray-100 text-gray-800"><AlertCircle className="w-3 h-3 mr-1" />{status || 'Unknown'}</Badge>;
     }
   };
 
@@ -538,7 +580,7 @@ const KnowledgeBase = () => {
                   ) : (
                     <div className="space-y-3">
                       {documents.map((doc) => (
-                        <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div key={doc.doc_id} className="flex items-center justify-between p-3 border rounded-lg">
                           <div className="flex items-center gap-3">
                             <FileText className="w-5 h-5 text-muted-foreground" />
                             <div>
@@ -549,8 +591,12 @@ const KnowledgeBase = () => {
                             </div>
                           </div>
                           <div className="flex items-center gap-3">
-                            {getDocumentStatusBadge(doc.status)}
-                            <Button variant="ghost" size="sm">
+                            {getDocumentStatusBadge(doc.pinecone_status)}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => deleteDocument(doc.doc_id)}
+                            >
                               <Trash2 className="w-4 h-4" />
                             </Button>
                           </div>

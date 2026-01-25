@@ -5,6 +5,7 @@ import KnowledgeBaseDatabaseService from '../services/knowledge-base-database-se
 import PineconeAssistantHelper from '../services/pinecone-assistant-helper.js';
 import PineconeContextService from '../services/pinecone-context-service.js';
 import { authenticateToken } from '../middlewares/authMiddleware.js';
+import fs from 'fs';
 
 const router = express.Router();
 
@@ -292,6 +293,40 @@ router.get('/documents/:docId/details', authenticateToken, async (req, res) => {
 router.delete('/documents/:docId', authenticateToken, async (req, res) => {
   try {
     const { docId } = req.params;
+
+    // 1. Get document metadata
+    const document = await databaseService.getDocument(docId);
+    if (!document) {
+      // If it's already gone, just return success
+      return res.json({ success: true, message: 'Document already deleted' });
+    }
+
+    // 2. Clear from Pinecone if it was successfully processed
+    if (document.pinecone_file_id && document.knowledge_base_id) {
+      try {
+        const knowledgeBase = await databaseService.getKnowledgeBase(document.knowledge_base_id);
+        if (knowledgeBase && knowledgeBase.pinecone_assistant_name) {
+          console.log(`Deleting file ${document.pinecone_file_id} from Pinecone assistant ${knowledgeBase.pinecone_assistant_name}`);
+          const pineconeUploadService = new (await import('../services/pinecone-assistant-upload-service.js')).default();
+          await pineconeUploadService.deleteFile(knowledgeBase.pinecone_assistant_name, document.pinecone_file_id);
+        }
+      } catch (pineconeError) {
+        console.error('Error deleting from Pinecone during document cleanup:', pineconeError);
+        // Continue with local cleanup even if Pinecone fails
+      }
+    }
+
+    // 3. Delete from local filesystem
+    if (document.file_path && fs.existsSync(document.file_path)) {
+      try {
+        console.log(`Deleting local file: ${document.file_path}`);
+        fs.unlinkSync(document.file_path);
+      } catch (fsError) {
+        console.error('Error deleting local file:', fsError);
+      }
+    }
+
+    // 4. Delete from database
     await databaseService.deleteDocument(docId);
 
     res.json({ success: true, message: 'Document deleted successfully' });

@@ -67,7 +67,6 @@ class UnifiedAgent(Agent):
         # Initialize Call Outcome Service
         self.call_outcome_service = CallOutcomeService()
         
-        # Initialize transfer config
         self._transfer_config = {
             'enabled': False,
             'phone_number': None,
@@ -75,6 +74,8 @@ class UnifiedAgent(Agent):
             'sentence': None,
             'condition': None
         }
+        self._transfer_requested = False
+        self._room = None  # Store room context for tools
         
         # Initialize booking state (following sass-livekit pattern)
         self.booking_state = {
@@ -313,80 +314,146 @@ class UnifiedAgent(Agent):
 
     @function_tool(name="transfer_required")
     async def transfer_required(self, ctx: RunContext, reason: Optional[str] = None) -> str:
+        """Signal that a call transfer is required based on the transfer condition being met.
+        
+        This function should be called when the conversation matches the transfer condition
+        configured for this assistant. The system will handle the cold transfer to the
+        configured phone number using LiveKit SIP REFER.
+        
+        Args:
+            reason: Optional reason for the transfer (for logging purposes).
         """
-        Transfer the call to a human agent or another department.
-        This should be called when the user asks to speak to a human, or when the agent cannot help the user.
-        """
+        if not self._transfer_config.get("enabled", False):
+            self.logger.warning("TRANSFER_REQUESTED_BUT_DISABLED | transfer is not enabled for this assistant")
+            return "Transfer is not configured for this assistant."
+        
+        if self._transfer_requested:
+            self.logger.info("TRANSFER_ALREADY_REQUESTED | transfer already in progress")
+            return "Transfer is already being processed."
+        
+        phone_number = self._transfer_config.get("phone_number")
+        country_code = self._transfer_config.get("country_code", "+1")
+        transfer_sentence = self._transfer_config.get("sentence", "")
+        
+        if not phone_number:
+            self.logger.error("TRANSFER_NO_PHONE | transfer requested but no phone number configured")
+            return "Transfer phone number is not configured."
+        
+        # Build full phone number in tel: format
+        full_phone = phone_number.strip()
+        if not full_phone.startswith("+"):
+            full_phone = f"{country_code}{full_phone}"
+        
+        # Format as tel: URI for LiveKit
+        transfer_to = f"tel:{full_phone}"
+        
+        # Get room name from multiple possible sources
+        room_name = None
+        room_obj = None
+        
+        # Try to get from context first
+        if hasattr(ctx, 'room') and ctx.room:
+            room_obj = ctx.room
+            room_name = ctx.room.name
+            self.logger.info(f"TRANSFER_ROOM_FROM_CTX | room={room_name}")
+        elif hasattr(self, '_room') and self._room:
+            room_obj = self._room
+            room_name = self._room.name
+            self.logger.info(f"TRANSFER_ROOM_FROM_AGENT_STORAGE | room={room_name}")
+        
+        if not room_name:
+            self.logger.error("TRANSFER_NO_ROOM | room not available from context or agent storage")
+            return "Unable to transfer: room information not available. Transfer is only available for phone calls (SIP), not web calls."
+        
+        self.logger.info(f"TRANSFER_INITIATING | room={room_name} | target={transfer_to} | reason={reason or 'transfer condition met'}")
+        
+        # Get participant identity (the caller/SIP participant)
+        participant_identity = None
         try:
-            self.logger.info(f"TRANSFER_REQUESTED | reason={reason}")
-            
-            # 1. Check if transfer is enabled
-            if not self._transfer_config.get('enabled'):
-                self.logger.warning("TRANSFER_SKIPPED | transfer_not_enabled_in_config")
-                return "I'm sorry, I cannot transfer you at the moment. Is there anything else I can help you with?"
-            
-            phone_number = self._transfer_config.get('phone_number')
-            country_code = self._transfer_config.get('country_code', '+1')
-            transfer_sentence = self._transfer_config.get('sentence')
-            
-            if not phone_number:
-                self.logger.warning("TRANSFER_SKIPPED | missing_phone_number")
-                return "I'm sorry, I don't have a phone number to transfer you to. Is there anything else I can help you with?"
-            
-            # 2. Format phone number (ensure E.164 or SIP URI)
-            target_uri = f"tel:{country_code}{phone_number}"
-            if phone_number.startswith('+'):
-                target_uri = f"tel:{phone_number}"
-            
-            self.logger.info(f"TRANSFER_INITIATING | target={target_uri}")
-            
-            # 3. Speak the transfer sentence if one is configured
-            if transfer_sentence:
-                await ctx.agent.say(transfer_sentence)
-                # Small pause to ensure audio is played
-                await asyncio.sleep(1)
-            
-            # 4. Find the participant/room to transfer
-            # We need to find the SIP participant to refer
-            room = ctx.room
-            participant_identity = None
-            
-            # Find the remote participant (the caller)
-            for p in room.remote_participants.values():
-                participant_identity = p.identity
-                break
+            # Try to get from room object if available
+            if room_obj:
+                # Try to get from remote participants first (most common case)
+                if hasattr(room_obj, 'remote_participants'):
+                    for sid, participant in room_obj.remote_participants.items():
+                        # Skip agent participants - look for SIP/caller participants
+                        identity = getattr(participant, 'identity', None)
+                        if identity and not identity.lower().startswith('agent') and not identity.lower().startswith('ai'):
+                            participant_identity = identity
+                            self.logger.info(f"TRANSFER_PARTICIPANT_FOUND | identity={identity} | sid={sid}")
+                            break
                 
+                # Fallback: try all participants
+                if not participant_identity and hasattr(room_obj, 'participants'):
+                    for sid, participant in room_obj.participants.items():
+                        identity = getattr(participant, 'identity', None)
+                        if identity and not identity.lower().startswith('agent') and not identity.lower().startswith('ai'):
+                            participant_identity = identity
+                            self.logger.info(f"TRANSFER_PARTICIPANT_FOUND_FALLBACK | identity={identity} | sid={sid}")
+                            break
+            
+            # Last resort: try to extract from room name
             if not participant_identity:
-                self.logger.error("TRANSFER_FAILED | no_remote_participant_found")
-                return "I'm sorry, I'm having trouble connecting you. Please try calling back."
-                
-            self.logger.info(f"TRANSFER_EXECUTING | room={room.name} | participant={participant_identity} | target={target_uri}")
+                # Room names for SIP calls often contain phone numbers
+                import re
+                phone_match = re.search(r'\+?\d{10,}', room_name)
+                if phone_match:
+                    phone_number_extract = phone_match.group()
+                    participant_identity = f"sip_{phone_number_extract}"
+                    self.logger.info(f"TRANSFER_PARTICIPANT_FROM_ROOM_NAME | extracted_phone={phone_number_extract} | identity={participant_identity}")
+                    
+        except Exception as e:
+            self.logger.warning(f"TRANSFER_PARTICIPANT_DETECTION_ERROR | error={str(e)}", exc_info=True)
+        
+        if not participant_identity:
+            self.logger.error("TRANSFER_NO_PARTICIPANT | could not find participant identity")
+            return "Unable to transfer: participant information not available. Transfer requires a SIP participant."
+        
+        # Say transfer sentence if configured
+        response = ""
+        if transfer_sentence:
+            response = transfer_sentence
+            self.logger.info(f"TRANSFER_SENTENCE | sentence='{transfer_sentence}'")
+        else:
+            response = "I'm transferring you now. Please hold."
+        
+        # Mark transfer as requested before initiating
+        self._transfer_requested = True
+        
+        # Perform the actual LiveKit transfer
+        try:
+            # Get LiveKit credentials from environment
+            livekit_url = os.getenv("LIVEKIT_URL")
+            livekit_api_key = os.getenv("LIVEKIT_API_KEY")
+            livekit_api_secret = os.getenv("LIVEKIT_API_SECRET")
             
-            # 5. Execute SIP REFER transfer
-            livekit_api = api.LiveKitAPI(
-                os.getenv('LIVEKIT_URL'),
-                os.getenv('LIVEKIT_API_KEY'),
-                os.getenv('LIVEKIT_API_SECRET')
-            )
+            if not all([livekit_url, livekit_api_key, livekit_api_secret]):
+                self.logger.error("TRANSFER_MISSING_CREDENTIALS | LiveKit credentials not configured")
+                return "Transfer failed: LiveKit credentials not configured."
             
+            # Create transfer request
             transfer_request = TransferSIPParticipantRequest(
                 participant_identity=participant_identity,
-                room_name=room.name,
-                transfer_to=target_uri
+                room_name=room_name,
+                transfer_to=transfer_to,
+                play_dialtone=False  # Cold transfer - no dialtone
             )
             
-            await livekit_api.sip.transfer_sip_participant(transfer_request)
+            self.logger.info(f"TRANSFER_REQUEST_CREATED | participant={participant_identity} | room={room_name} | to={transfer_to}")
             
-            # Close the connection effectively ending the agent's part
-            # But give it a moment for the REFER to go through
-            await asyncio.sleep(2)
-            
-            return "Transferring your call now."
-            
+            # Execute transfer using LiveKit API
+            async with api.LiveKitAPI(
+                url=livekit_url,
+                api_key=livekit_api_key,
+                api_secret=livekit_api_secret
+            ) as livekit_api:
+                await livekit_api.sip.transfer_sip_participant(transfer_request)
+                self.logger.info(f"TRANSFER_SUCCESS | participant={participant_identity} | room={room_name} | to={transfer_to} | cold_transfer=true")
+                return response
+                
         except Exception as e:
-            self.logger.error(f"TRANSFER_ERROR | error={str(e)}", exc_info=True)
-            # Use 'booking_state' of self to check if error logging works. (Wait, this is unrelated)
-            return "I encountered a problem transferring your call. Please try again later."
+            self.logger.error(f"TRANSFER_ERROR | error={str(e)} | participant={participant_identity} | room={room_name} | to={transfer_to}", exc_info=True)
+            self._transfer_requested = False  # Reset on error so user can try again
+            return f"I encountered an error while transferring your call. Please try again or contact support."
     
 
     @function_tool(name="book_appointment")
@@ -1602,6 +1669,9 @@ async def entrypoint(ctx: JobContext):
 
         # Create the agent instance with resolved config
         agent = create_agent(agent_data=agent_data)
+        
+        # Store room context in agent for tools that might need it (like transfer_required)
+        agent._room = ctx.room
         
         # Apply transfer config if available
         if agent_data:
