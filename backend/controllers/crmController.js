@@ -16,7 +16,7 @@ const getHubSpotOAuthUrl = (clientId, redirectUri, state) => {
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
-    scope: 'crm.objects.contacts.read crm.objects.contacts.write',
+    scope: 'crm.objects.contacts.read oauth crm.objects.contacts.write',
     state: state
   });
 
@@ -187,7 +187,7 @@ const exchangeZohoCode = async (code, clientId, clientSecret, redirectUri) => {
  * Store CRM credentials in database
  */
 const storeCRMCredentials = async (userId, platform, tokens) => {
-  const expiresAt = tokens.expires_in 
+  const expiresAt = tokens.expires_in
     ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
     : null;
 
@@ -319,7 +319,7 @@ export const storeCRMAppCredentials = async (req, res) => {
         .eq('id', existingRecord.id)
         .select()
         .single();
-      
+
       data = updateResult.data;
       error = updateResult.error;
     } else {
@@ -344,7 +344,7 @@ export const storeCRMAppCredentials = async (req, res) => {
         })
         .select()
         .single();
-      
+
       data = insertResult.data;
       error = insertResult.error;
     }
@@ -374,7 +374,7 @@ export const storeCRMAppCredentials = async (req, res) => {
 export const getCRMAppCredentials = async (req, res) => {
   try {
     const { userId } = req.user;
-    
+
     const { data, error } = await supabase
       .from('user_crm_app_credentials')
       .select('id, crm_platform, client_id, redirect_uri, is_active, created_at, updated_at')
@@ -406,7 +406,7 @@ export const initiateHubSpotOAuth = async (req, res) => {
   try {
     const { userId } = req.user;
     const state = generateRandomState();
-    
+
     // Get user's HubSpot app credentials
     const { data: appCredentials, error: appError } = await supabase
       .from('user_crm_app_credentials')
@@ -422,11 +422,11 @@ export const initiateHubSpotOAuth = async (req, res) => {
         message: 'HubSpot app credentials not found. Please configure your HubSpot app first.'
       });
     }
-    
+
     await storeOAuthState(userId, state, 'hubspot');
-    
+
     const authUrl = getHubSpotOAuthUrl(appCredentials.client_id, appCredentials.redirect_uri, state);
-    
+
     // If request accepts JSON (API call), return JSON. Otherwise redirect (browser direct access)
     if (req.headers.accept && req.headers.accept.includes('application/json')) {
       return res.json({
@@ -434,7 +434,7 @@ export const initiateHubSpotOAuth = async (req, res) => {
         authUrl: authUrl
       });
     }
-    
+
     // Browser redirect for direct access
     res.redirect(authUrl);
   } catch (error) {
@@ -487,7 +487,7 @@ export const handleHubSpotCallback = async (req, res) => {
 
     // Exchange code for tokens using user credentials
     const tokens = await exchangeHubSpotCode(code, appCredentials.client_id, appCredentials.client_secret, appCredentials.redirect_uri);
-    
+
     // Get account information
     const accountInfo = await getHubSpotAccountInfo(tokens.access_token);
     if (accountInfo) {
@@ -513,7 +513,7 @@ export const initiateZohoOAuth = async (req, res) => {
   try {
     const { userId } = req.user;
     const state = generateRandomState();
-    
+
     // Get user's Zoho app credentials
     const { data: appCredentials, error: appError } = await supabase
       .from('user_crm_app_credentials')
@@ -529,11 +529,11 @@ export const initiateZohoOAuth = async (req, res) => {
         message: 'Zoho app credentials not found. Please configure your Zoho app first.'
       });
     }
-    
+
     await storeOAuthState(userId, state, 'zoho');
-    
+
     const authUrl = getZohoOAuthUrl(appCredentials.client_id, appCredentials.redirect_uri, state);
-    
+
     // If request accepts JSON (API call), return JSON. Otherwise redirect (browser direct access)
     if (req.headers.accept && req.headers.accept.includes('application/json')) {
       return res.json({
@@ -541,7 +541,7 @@ export const initiateZohoOAuth = async (req, res) => {
         authUrl: authUrl
       });
     }
-    
+
     // Browser redirect for direct access
     res.redirect(authUrl);
   } catch (error) {
@@ -594,7 +594,7 @@ export const handleZohoCallback = async (req, res) => {
 
     // Exchange code for tokens using user credentials
     const tokens = await exchangeZohoCode(code, appCredentials.client_id, appCredentials.client_secret, appCredentials.redirect_uri);
-    
+
     // Get account information
     const accountInfo = await getZohoAccountInfo(tokens.access_token);
     if (accountInfo) {
@@ -619,7 +619,7 @@ export const handleZohoCallback = async (req, res) => {
 export const getCRMCredentials = async (req, res) => {
   try {
     const { userId } = req.user;
-    
+
     const { data, error } = await supabase
       .from('user_crm_credentials')
       .select('id, crm_platform, account_name, account_id, is_active, created_at, updated_at')
@@ -651,9 +651,9 @@ export const syncAllContacts = async (req, res) => {
   try {
     const { userId } = req.user;
     const multiCRMService = new MultiCRMService(userId);
-    
+
     const results = await multiCRMService.syncAllPlatforms();
-    
+
     res.json({
       success: true,
       results: results
@@ -676,9 +676,9 @@ export const syncPlatformContacts = async (req, res) => {
     const { userId } = req.user;
     const { platform } = req.params;
     const multiCRMService = new MultiCRMService(userId);
-    
+
     const result = await multiCRMService.syncPlatform(platform);
-    
+
     res.json({
       success: true,
       result: result
@@ -701,17 +701,17 @@ export const getCRMContacts = async (req, res) => {
     const { userId } = req.user;
     const { platform, search, limit = 100, offset = 0 } = req.query;
     const multiCRMService = new MultiCRMService(userId);
-    
+
     const filters = {
       platform: platform || undefined,
       search: search || undefined
     };
-    
+
     const contacts = await multiCRMService.getStoredContacts(filters);
-    
+
     // Apply pagination
     const paginatedContacts = contacts.slice(offset, offset + limit);
-    
+
     res.json({
       success: true,
       contacts: paginatedContacts,
@@ -738,9 +738,9 @@ export const createContactInPlatform = async (req, res) => {
     const { platform } = req.params;
     const contactData = req.body;
     const multiCRMService = new MultiCRMService(userId);
-    
+
     const result = await multiCRMService.createContactInPlatform(platform, contactData);
-    
+
     res.json({
       success: true,
       contact: result
@@ -763,9 +763,9 @@ export const disconnectCRMPlatform = async (req, res) => {
     const { userId } = req.user;
     const { platform } = req.params;
     const multiCRMService = new MultiCRMService(userId);
-    
+
     await multiCRMService.disconnectPlatform(platform);
-    
+
     res.json({
       success: true,
       message: `${platform} disconnected successfully`
