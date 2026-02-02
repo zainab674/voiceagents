@@ -1385,9 +1385,40 @@ def extract_phone_from_room(room_name: str) -> Optional[str]:
     
     return None
 
+async def fetch_system_settings() -> Dict[str, Any]:
+    """Fetch global system settings from Supabase."""
+    logger = logging.getLogger(__name__)
+    settings = {}
+    
+    try:
+        supabase_url = os.getenv('SUPABASE_URL')
+        supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+        
+        if not supabase_url or not supabase_key:
+            logger.warning("FETCH_SYSTEM_SETTINGS_SKIPPED | missing Supabase credentials")
+            return settings
+            
+        from supabase import create_client
+        supabase = create_client(supabase_url, supabase_key)
+        
+        def get_settings():
+            return supabase.table('system_settings').select('*').execute()
+            
+        result = await asyncio.to_thread(get_settings)
+        if result.data:
+            for item in result.data:
+                settings[item['key']] = item['value']
+            logger.info(f"SYSTEM_SETTINGS_FETCHED | count={len(settings)}")
+    except Exception as e:
+        logger.error(f"FETCH_SYSTEM_SETTINGS_ERROR | error={str(e)}")
+        
+    return settings
+
 # ===================== Main Entry Point =====================
 
-def create_agent(instructions: Optional[str] = None, first_message: Optional[str] = None, sms_prompt: Optional[str] = None, knowledge_base_id: Optional[str] = None, agent_data: Optional[Dict] = None) -> UnifiedAgent:
+
+def create_agent(instructions: Optional[str] = None, first_message: Optional[str] = None, sms_prompt: Optional[str] = None, knowledge_base_id: Optional[str] = None, agent_data: Optional[Dict] = None, system_settings: Optional[Dict] = None) -> UnifiedAgent:
+
     """
     Factory function to create a UnifiedAgent instance.
     This is called by the LiveKit Agents framework when a new session starts.
@@ -1437,9 +1468,15 @@ CRITICAL: When calling date-related functions (list_slots_on_day, provide_date):
     instructions = instructions + date_context
     
     # Initialize TTS and STT
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
-    cartesia_api_key = os.getenv("CARTESIA_API_KEY")
+    system_settings = system_settings or {}
+    
+    # Get API keys with fallback: system_settings (from DB) -> environment variables
+    openai_api_key = system_settings.get("openai_api_key") or os.getenv("OPENAI_API_KEY")
+    deepgram_api_key = system_settings.get("deepgram_api_key") or os.getenv("DEEPGRAM_API_KEY")
+    cartesia_api_key = system_settings.get("cartesia_api_key") or os.getenv("CARTESIA_API_KEY")
+    
+    # Get LLM model with fallback
+    llm_model = system_settings.get("openai_llm_model") or os.getenv("OPENAI_LLM_MODEL", "gpt-4o-mini")
     
     # Validate API keys are set
     if not cartesia_api_key and not deepgram_api_key and not openai_api_key:
@@ -1485,16 +1522,15 @@ CRITICAL: When calling date-related functions (list_slots_on_day, provide_date):
     
     # Create LLM instance
     # Note: LLM currently requires OpenAI - Deepgram doesn't provide LLM services
-    llm_model = os.getenv("OPENAI_LLM_MODEL", "gpt-4o-mini")
     if not openai_api_key:
         raise ValueError(
             "OPENAI_API_KEY is required for LLM. "
-            "Please set OPENAI_API_KEY in your environment. "
+            "Please set OPENAI_API_KEY in your environment or database. "
             "Note: The API key must have 'model.request' scope enabled. "
             "Check your OpenAI API key permissions at https://platform.openai.com/api-keys"
         )
     llm = lk_openai.LLM(model=llm_model, api_key=openai_api_key)
-    logger.info(f"OPENAI_LLM_CONFIGURED | model={llm_model} | Note: API key must have 'model.request' scope")
+    logger.info(f"OPENAI_LLM_CONFIGURED | model={llm_model} | provider={'db' if system_settings.get('openai_api_key') else 'env'}")
     
     logger.info(f"TTS_STT_LLM_CONFIGURED | tts_provider={tts_provider} | tts_model={tts_model} | stt_provider={stt_provider} | stt_model={stt_model} | llm_model={llm_model}")
     
@@ -1667,8 +1703,11 @@ async def entrypoint(ctx: JobContext):
             except Exception as e:
                 logger.error(f"FAILED_TO_LOAD_AGENT_CONFIG | agent_id={agent_id} | error={str(e)}")
 
+        # 4. Fetch system settings (global API keys)
+        system_settings = await fetch_system_settings()
+
         # Create the agent instance with resolved config
-        agent = create_agent(agent_data=agent_data)
+        agent = create_agent(agent_data=agent_data, system_settings=system_settings)
         
         # Store room context in agent for tools that might need it (like transfer_required)
         agent._room = ctx.room
@@ -1686,8 +1725,9 @@ async def entrypoint(ctx: JobContext):
 
         
         # Get API keys for session components
-        openai_api_key = os.getenv("OPENAI_API_KEY")
-        deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
+        openai_api_key = system_settings.get("openai_api_key") or os.getenv("OPENAI_API_KEY")
+        deepgram_api_key = system_settings.get("deepgram_api_key") or os.getenv("DEEPGRAM_API_KEY")
+
         
         # Create TTS instance - use same provider as agent
         if deepgram_api_key:

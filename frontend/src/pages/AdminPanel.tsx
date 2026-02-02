@@ -25,8 +25,11 @@ import {
   Lock,
   CreditCard,
   Settings,
-  MessageSquare
+  MessageSquare,
+  Key,
+  Save
 } from "lucide-react";
+
 import { useToast } from "@/hooks/use-toast";
 import { userApi } from "@/http/userHttp";
 import { agentTemplateApi } from "@/http/agentTemplateHttp";
@@ -35,6 +38,8 @@ import { contactApi } from "@/http/contactHttp";
 import { handleAuthError } from "@/utils/authHelper";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { systemSettingsApi } from "@/http/systemSettingsHttp";
+
 
 const AdminPanel = () => {
   const navigate = useNavigate();
@@ -152,6 +157,12 @@ const AdminPanel = () => {
   const [contactMessages, setContactMessages] = useState([]);
   const [contactMessagesLoading, setContactMessagesLoading] = useState(false);
   const [updatingContactStatus, setUpdatingContactStatus] = useState(false);
+
+  // System settings state
+  const [systemSettings, setSystemSettings] = useState([]);
+  const [systemSettingsLoading, setSystemSettingsLoading] = useState(false);
+  const [savingSystemSettings, setSavingSystemSettings] = useState(false);
+
 
   // Tab state
   const [activeTab, setActiveTab] = useState('users');
@@ -748,6 +759,77 @@ const AdminPanel = () => {
     }
   };
 
+  const fetchSystemSettings = useCallback(async (showLoading = true) => {
+    if (!isMainAdmin) return;
+    if (showLoading) setSystemSettingsLoading(true);
+
+    try {
+      const response = await systemSettingsApi.getSettings();
+      if (response.success) {
+        const fetchedSettings = response.settings;
+        const defaultKeys = [
+          { key: 'openai_api_key', description: 'OpenAI API Key for LLM and TTS', isSecret: true },
+          { key: 'deepgram_api_key', description: 'Deepgram API Key for STT and TTS', isSecret: true },
+          { key: 'cartesia_api_key', description: 'Cartesia API Key for TTS', isSecret: true },
+          { key: 'openai_llm_model', description: 'OpenAI model to use (e.g., gpt-4o-mini)', isSecret: false }
+        ];
+
+        // Merge fetched settings with defaults
+        const mergedSettings = defaultKeys.map(def => {
+          const found = fetchedSettings.find(s => s.key === def.key);
+          return found ? { ...found } : { ...def, value: '' };
+        });
+
+        // Add any extra settings from DB that are not in defaults
+        fetchedSettings.forEach(s => {
+          if (!defaultKeys.find(def => def.key === s.key)) {
+            mergedSettings.push(s);
+          }
+        });
+
+        setSystemSettings(mergedSettings);
+      }
+
+    } catch (error) {
+      console.error('Error fetching system settings:', error);
+      handleAuthError(error, navigate, toast);
+    } finally {
+      if (showLoading) setSystemSettingsLoading(false);
+    }
+  }, [isAdmin, navigate, toast]);
+
+  const handleSaveSystemSettings = async () => {
+    setSavingSystemSettings(true);
+    try {
+      // Prepare bulk update format
+      const settingsToUpdate = systemSettings.map(s => ({
+        key: s.key,
+        value: s.value
+      }));
+
+      const response = await systemSettingsApi.updateMultipleSettings(settingsToUpdate);
+      if (response.success) {
+        toast({
+          title: "Success",
+          description: "API keys and settings updated successfully."
+        });
+        fetchSystemSettings(false);
+      } else {
+        throw new Error(response.message || 'Failed to update settings');
+      }
+    } catch (error) {
+      console.error('Error saving system settings:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to save API keys",
+        variant: "destructive"
+      });
+    } finally {
+      setSavingSystemSettings(false);
+    }
+  };
+
+
   const refreshData = useCallback(async () => {
     if (!isAdmin) return;
     setRefreshing(true);
@@ -757,8 +839,10 @@ const AdminPanel = () => {
       fetchTemplates(false),
       fetchPlans(false),
       fetchStripeConfig(false),
-      fetchContactMessages(false)
+      fetchContactMessages(false),
+      fetchSystemSettings(false)
     ]);
+
     setRefreshing(false);
   }, [fetchTemplates, fetchUserStats, fetchUsers, fetchPlans, fetchStripeConfig, fetchContactMessages, isAdmin]);
 
@@ -773,6 +857,8 @@ const AdminPanel = () => {
     fetchPlans();
     fetchStripeConfig();
     fetchContactMessages();
+    fetchSystemSettings();
+
 
     const interval = setInterval(() => {
       refreshData();
@@ -972,8 +1058,11 @@ const AdminPanel = () => {
           )}
           <TabsTrigger value="plans">Plans & Pricing</TabsTrigger>
           <TabsTrigger value="stripe">Stripe Configuration</TabsTrigger>
+          {isMainAdmin && <TabsTrigger value="api-keys">API Keys</TabsTrigger>}
           <TabsTrigger value="contact">Contact Messages</TabsTrigger>
+
         </TabsList>
+
 
         <TabsContent value="users" className="space-y-6">
           {/* User Management */}
@@ -1449,6 +1538,100 @@ const AdminPanel = () => {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="api-keys" className="space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-semibold">Centralized API Keys</h2>
+              <p className="text-muted-foreground">
+                Manage your OpenAI, Deepgram, and Cartesia API keys centrally.
+              </p>
+            </div>
+          </div>
+
+          <Card className="shadow-lg max-w-3xl">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Key className="w-5 h-5" />
+                System API Keys
+                {systemSettingsLoading && <RefreshCw className="w-4 h-4 animate-spin" />}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {systemSettingsLoading && systemSettings.length === 0 ? (
+                <div className="flex items-center justify-center py-12">
+                  <RefreshCw className="w-6 h-6 animate-spin mr-2" />
+                  <span>Loading settings...</span>
+                </div>
+              ) : (
+                <>
+                  <div className="grid gap-6">
+                    {systemSettings.map((setting) => (
+                      <div key={setting.key} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor={setting.key} className="text-sm font-semibold capitalize">
+                            {setting.key.replace(/_/g, ' ')}
+                          </Label>
+                          {setting.updatedAt && (
+                            <span className="text-[10px] text-muted-foreground">
+                              Last updated: {new Date(setting.updatedAt).toLocaleString()}
+                            </span>
+                          )}
+                        </div>
+                        <div className="relative">
+                          <Input
+                            id={setting.key}
+                            type={setting.isSecret ? "password" : "text"}
+                            placeholder={`Enter ${setting.key.replace(/_/g, ' ')}...`}
+                            value={setting.value || ''}
+                            onChange={(e) => {
+                              const newValue = e.target.value;
+                              setSystemSettings(prev => prev.map(s =>
+                                s.key === setting.key ? { ...s, value: newValue } : s
+                              ));
+                            }}
+                            className="font-mono"
+                          />
+                          {setting.isSecret && setting.value && (
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                              <Lock className="w-3 h-3 text-muted-foreground" />
+                            </div>
+                          )}
+                        </div>
+                        {setting.description && (
+                          <p className="text-xs text-muted-foreground">
+                            {setting.description}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="pt-4 flex justify-end">
+                    <Button
+                      onClick={handleSaveSystemSettings}
+                      disabled={savingSystemSettings || systemSettingsLoading}
+                      className="bg-gradient-to-r from-primary to-accent"
+                    >
+                      {savingSystemSettings ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-4 h-4 mr-2" />
+                          Save API Keys
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
 
         <TabsContent value="contact" className="space-y-6">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">

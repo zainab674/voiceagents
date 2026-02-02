@@ -25,6 +25,8 @@ import emailRoute from "#routes/emailRoute.js";
 import emailCampaignRoute from "#routes/emailCampaignRoute.js";
 import paymentRoute from "#routes/paymentRoute.js";
 import contactRoute from "#routes/contactRoute.js";
+import systemSettingsRoute from "#routes/systemSettingsRoutes.js";
+
 
 const router = express.Router();
 
@@ -55,5 +57,7 @@ router.use("/email", emailRoute);
 router.use("/email-campaigns", emailCampaignRoute);
 router.use("/payments", paymentRoute);
 router.use("/contact", contactRoute);
+router.use("/system-settings", systemSettingsRoute);
+
 
 export default router;
