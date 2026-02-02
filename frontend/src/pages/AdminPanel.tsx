@@ -855,26 +855,19 @@ const AdminPanel = () => {
     setRefreshing(false);
   }, [fetchTemplates, fetchUserStats, fetchUsers, fetchPlans, fetchStripeConfig, fetchContactMessages, isAdmin]);
 
-  // Real-time polling effect
+  // On mount data fetching
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!isAdmin || authLoading) return;
 
+    // Fetch everything once on load
     fetchUsers();
     fetchUserStats();
-    fetchTemplates();
     fetchTemplates();
     fetchPlans();
     fetchStripeConfig();
     fetchContactMessages();
     fetchSystemSettings();
-
-
-    const interval = setInterval(() => {
-      refreshData();
-    }, 10000);
-
-    return () => clearInterval(interval);
-  }, [fetchTemplates, fetchUserStats, fetchUsers, fetchPlans, isAdmin, refreshData]);
+  }, [isAdmin, authLoading]); // Only run when admin status or auth loading changes (initially)
 
   useEffect(() => {
     if (authLoading) return;
