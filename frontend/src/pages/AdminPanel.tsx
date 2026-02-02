@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Search,
   Eye,
+  EyeOff,
   Layers,
   Plus,
   Globe,
@@ -152,11 +153,19 @@ const AdminPanel = () => {
   });
   const [stripeLoading, setStripeLoading] = useState(false);
   const [savingStripe, setSavingStripe] = useState(false);
+  const [stripeKeyVisible, setStripeKeyVisible] = useState(false);
 
   // Contact messages state
   const [contactMessages, setContactMessages] = useState([]);
   const [contactMessagesLoading, setContactMessagesLoading] = useState(false);
   const [updatingContactStatus, setUpdatingContactStatus] = useState(false);
+
+  // System settings visibility
+  const [visibleSettings, setVisibleSettings] = useState<Record<string, boolean>>({});
+
+  const toggleSettingVisibility = (key: string) => {
+    setVisibleSettings(prev => ({ ...prev, [key]: !prev[key] }));
+  };
 
   // System settings state
   const [systemSettings, setSystemSettings] = useState([]);
@@ -1509,18 +1518,31 @@ const AdminPanel = () => {
                 <div className="relative">
                   <Input
                     id="stripeSecretKey"
-                    type="password"
+                    type={stripeKeyVisible ? "text" : "password"}
                     placeholder="sk_test_..."
                     value={stripeConfig.stripeSecretKey}
                     onChange={(e) => setStripeConfig(prev => ({ ...prev, stripeSecretKey: e.target.value }))}
-                    className="font-mono"
+                    className="font-mono pr-10"
                   />
-                  {stripeConfig.stripeSecretKey && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                      {stripeConfig.stripeSecretKey.startsWith('sk_live_') ? 'Live Mode' : 'Test Mode'}
-                    </div>
-                  )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                    onClick={() => setStripeKeyVisible(!stripeKeyVisible)}
+                  >
+                    {stripeKeyVisible ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </Button>
                 </div>
+                {stripeConfig.stripeSecretKey && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {stripeConfig.stripeSecretKey.startsWith('sk_live_') ? 'Live Mode' : 'Test Mode'}
+                  </div>
+                )}
               </div>
 
               <div className="pt-4 flex justify-end">
@@ -1581,7 +1603,7 @@ const AdminPanel = () => {
                         <div className="relative">
                           <Input
                             id={setting.key}
-                            type={setting.isSecret ? "password" : "text"}
+                            type={setting.isSecret && !visibleSettings[setting.key] ? "password" : "text"}
                             placeholder={`Enter ${setting.key.replace(/_/g, ' ')}...`}
                             value={setting.value || ''}
                             onChange={(e) => {
@@ -1590,12 +1612,22 @@ const AdminPanel = () => {
                                 s.key === setting.key ? { ...s, value: newValue } : s
                               ));
                             }}
-                            className="font-mono"
+                            className="font-mono pr-10"
                           />
-                          {setting.isSecret && setting.value && (
-                            <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                              <Lock className="w-3 h-3 text-muted-foreground" />
-                            </div>
+                          {setting.isSecret && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                              onClick={() => toggleSettingVisibility(setting.key)}
+                            >
+                              {visibleSettings[setting.key] ? (
+                                <EyeOff className="h-4 w-4 text-muted-foreground" />
+                              ) : (
+                                <Eye className="h-4 w-4 text-muted-foreground" />
+                              )}
+                            </Button>
                           )}
                         </div>
                         {setting.description && (

@@ -35,9 +35,8 @@ export const getSystemSettings = async (req, res) => {
 
         const settings = data.map(setting => ({
             key: setting.key,
-            value: setting.is_secret ? '********' : setting.value,
+            value: setting.value, // Don't mask for admins
             description: setting.description,
-
             isSecret: setting.is_secret,
             updatedAt: setting.updated_at
         }));
