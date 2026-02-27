@@ -3,7 +3,12 @@ import { supabase } from '#lib/supabase.js';
 export const authenticateToken = async (req, res, next) => {
   try {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+    let token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+    // Fallback to query parameter for file downloads
+    if (!token && req.query.token) {
+      token = req.query.token;
+    }
 
     console.log('Auth middleware - authHeader:', authHeader ? 'Present' : 'Missing');
     console.log('Auth middleware - token length:', token ? token.length : 0);
@@ -91,7 +96,11 @@ export const authenticateToken = async (req, res, next) => {
 export const optionalAuth = async (req, res, next) => {
   try {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    let token = authHeader && authHeader.split(' ')[1];
+
+    if (!token && req.query.token) {
+      token = req.query.token;
+    }
 
     if (token) {
       const { data: { user }, error } = await supabase.auth.getUser(token);

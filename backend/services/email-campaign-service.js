@@ -1,6 +1,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
+import { formatEmailBody } from '../utils/email-formatter.js';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -105,8 +106,9 @@ export const emailCampaignService = {
                 }
 
                 try {
-                    // Personalize
-                    let htmlBody = campaign.body
+                    // Personalize & Format
+                    const formattedBody = formatEmailBody(campaign.body);
+                    let htmlBody = formattedBody
                         .replace(/{{first_name}}/g, contact.name?.split(' ')[0] || '')
                         .replace(/{{last_name}}/g, contact.name?.split(' ').slice(1).join(' ') || '')
                         .replace(/{{email}}/g, contact.email);

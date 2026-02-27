@@ -30,7 +30,8 @@ export const createAgentTemplate = async (req, res) => {
       knowledgeBaseId,
       isPublic = true,
       category,
-      tags
+      tags,
+      structuredPrompt
     } = req.body;
 
     if (!name || !description || !prompt) {
@@ -64,6 +65,7 @@ export const createAgentTemplate = async (req, res) => {
       is_public: Boolean(isPublic),
       category: normalizeString(category) || null,
       tags: normalizeTags(tags),
+      structured_prompt: structuredPrompt || null,
       created_by: userId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
@@ -225,7 +227,8 @@ export const updateAgentTemplate = async (req, res) => {
       knowledgeBaseId,
       isPublic,
       category,
-      tags
+      tags,
+      structuredPrompt
     } = req.body;
 
     const slugName = req.user.slugName;
@@ -276,6 +279,7 @@ export const updateAgentTemplate = async (req, res) => {
     if (isPublic !== undefined) updatePayload.is_public = Boolean(isPublic);
     if (category !== undefined) updatePayload.category = normalizeString(category) || null;
     if (tags !== undefined) updatePayload.tags = normalizeTags(tags);
+    if (structuredPrompt !== undefined) updatePayload.structured_prompt = structuredPrompt;
 
     const { data, error } = await supabase
       .from('agent_templates')
@@ -424,6 +428,7 @@ export const createAgentFromTemplate = async (req, res) => {
       cal_enabled: false,
       knowledge_base_id: knowledgeBaseId || template.knowledge_base_id || null,
       template_id: template.id,
+      structured_prompt: template.structured_prompt || null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };

@@ -28,7 +28,9 @@ router.get('/', authenticateToken, async (req, res) => {
       .from('campaigns')
       .select(`
         *,
-        agents(name)
+        agents(name),
+        csv_files(filename),
+        contact_lists(name)
       `)
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
@@ -52,7 +54,9 @@ router.get('/', authenticateToken, async (req, res) => {
       assistant_name: campaign.agents?.name || 'Unknown',
       contact_source: campaign.contact_source,
       contact_list_id: campaign.contact_list_id,
+      contact_list_name: campaign.contact_lists?.name || null,
       csv_file_id: campaign.csv_file_id,
+      csv_file_name: campaign.csv_files?.filename || null,
       daily_cap: campaign.daily_cap,
       calling_days: campaign.calling_days,
       start_hour: campaign.start_hour,
@@ -554,6 +558,40 @@ router.get('/:id/status', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch campaign status'
+    });
+  }
+});
+
+/**
+ * Get campaign calls
+ * GET /api/v1/campaigns/:id/calls
+ */
+router.get('/:id/calls', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { limit = 50 } = req.query;
+
+    const { data: calls, error: callsError } = await supabase
+      .from('campaign_calls')
+      .select('*')
+      .eq('campaign_id', id)
+      .order('created_at', { ascending: false })
+      .limit(parseInt(limit));
+
+    if (callsError) {
+      throw callsError;
+    }
+
+    res.json({
+      success: true,
+      data: calls
+    });
+
+  } catch (error) {
+    console.error('Error fetching campaign calls:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch campaign calls'
     });
   }
 });

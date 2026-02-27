@@ -95,6 +95,186 @@ class CsvService {
   }
 
   /**
+   * Add a single contact to a CSV file
+   */
+  async addContact({ csvFileId, contact }) {
+    try {
+      const contactToInsert = {
+        csv_file_id: csvFileId,
+        name: `${contact.first_name || ''} ${contact.last_name || ''}`.trim(),
+        phone_number: contact.phone || null,
+        email: contact.email || null,
+        company: contact.company || null,
+        do_not_call: contact.do_not_call || false
+      };
+
+      if (!contactToInsert.name && !contactToInsert.email && !contactToInsert.phone_number) {
+        return {
+          success: false,
+          error: 'Contact must have at least a name, email, or phone number'
+        };
+      }
+
+      const { data: savedContact, error } = await supabase
+        .from('csv_contacts')
+        .insert([contactToInsert])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error adding contact:', error);
+        return {
+          success: false,
+          error: error.message
+        };
+      }
+
+      // Update the total_contacts count in csv_files
+      const { error: updateError } = await supabase.rpc('increment_csv_total_contacts', {
+        f_id: csvFileId,
+        inc: 1
+      });
+
+      if (updateError) {
+        console.error('Error updating CSV total contacts:', updateError);
+        // Not a fatal error for the contact creation itself
+      }
+
+      return {
+        success: true,
+        contact: {
+          id: savedContact.id,
+          csv_file_id: savedContact.csv_file_id,
+          first_name: savedContact.name?.split(' ')[0] || '',
+          last_name: savedContact.name?.split(' ').slice(1).join(' ') || '',
+          phone: savedContact.phone_number,
+          email: savedContact.email,
+          status: 'active',
+          do_not_call: savedContact.do_not_call,
+          created_at: savedContact.created_at
+        }
+      };
+
+    } catch (error) {
+      console.error('Error adding contact:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred'
+      };
+    }
+  }
+
+  /**
+   * Update an existing contact
+   */
+  async updateContact(contactId, updates) {
+    try {
+      const dataToUpdate = {};
+      if (updates.first_name !== undefined || updates.last_name !== undefined) {
+        dataToUpdate.name = `${updates.first_name || ''} ${updates.last_name || ''}`.trim();
+      }
+      if (updates.phone !== undefined) dataToUpdate.phone_number = updates.phone;
+      if (updates.email !== undefined) dataToUpdate.email = updates.email;
+      if (updates.do_not_call !== undefined) dataToUpdate.do_not_call = updates.do_not_call;
+      if (updates.company !== undefined) dataToUpdate.company = updates.company;
+
+      const { data: updatedContact, error } = await supabase
+        .from('csv_contacts')
+        .update(dataToUpdate)
+        .eq('id', contactId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating contact:', error);
+        return {
+          success: false,
+          error: error.message
+        };
+      }
+
+      return {
+        success: true,
+        contact: {
+          id: updatedContact.id,
+          csv_file_id: updatedContact.csv_file_id,
+          first_name: updatedContact.name?.split(' ')[0] || '',
+          last_name: updatedContact.name?.split(' ').slice(1).join(' ') || '',
+          phone: updatedContact.phone_number,
+          email: updatedContact.email,
+          status: 'active',
+          do_not_call: updatedContact.do_not_call,
+          created_at: updatedContact.created_at
+        }
+      };
+
+    } catch (error) {
+      console.error('Error updating contact:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred'
+      };
+    }
+  }
+
+  /**
+   * Delete a single contact
+   */
+  async deleteContact(contactId) {
+    try {
+      // Get the csv_file_id first so we can decrement the count
+      const { data: contact, error: fetchError } = await supabase
+        .from('csv_contacts')
+        .select('csv_file_id')
+        .eq('id', contactId)
+        .single();
+
+      if (fetchError || !contact) {
+        return {
+          success: false,
+          error: 'Contact not found'
+        };
+      }
+
+      const { error: deleteError } = await supabase
+        .from('csv_contacts')
+        .delete()
+        .eq('id', contactId);
+
+      if (deleteError) {
+        console.error('Error deleting contact:', deleteError);
+        return {
+          success: false,
+          error: deleteError.message
+        };
+      }
+
+      // Update the total_contacts count in csv_files
+      const { error: updateError } = await supabase.rpc('increment_csv_total_contacts', {
+        f_id: contact.csv_file_id,
+        inc: -1
+      });
+
+      if (updateError) {
+        console.error('Error updating CSV total contacts:', updateError);
+      }
+
+      return {
+        success: true,
+        message: 'Contact deleted successfully'
+      };
+
+    } catch (error) {
+      console.error('Error deleting contact:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred'
+      };
+    }
+  }
+
+
+  /**
    * Fetch CSV files for a user
    */
   async getCsvFiles(userId) {

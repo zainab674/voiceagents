@@ -256,6 +256,122 @@ router.get('/:id/contacts', authenticateToken, async (req, res) => {
 });
 
 /**
+ * Add a single contact to a CSV file
+ * POST /api/v1/csv/:id/contacts
+ */
+router.post('/:id/contacts', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const contact = req.body;
+
+    const result = await csvService.addContact({ csvFileId: id, contact });
+
+    if (!result.success) {
+      return res.status(500).json({
+        success: false,
+        message: result.error || 'Failed to add contact'
+      });
+    }
+
+    res.json({
+      success: true,
+      contact: result.contact
+    });
+
+  } catch (error) {
+    console.error('Error adding contact:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to add contact'
+    });
+  }
+});
+
+/**
+ * Update an existing contact
+ * PATCH /api/v1/csv/contacts/:contactId
+ */
+router.patch('/contacts/:contactId', authenticateToken, async (req, res) => {
+  try {
+    const { contactId } = req.params;
+    const updates = req.body;
+
+    const result = await csvService.updateContact(contactId, updates);
+
+    if (!result.success) {
+      return res.status(500).json({
+        success: false,
+        message: result.error || 'Failed to update contact'
+      });
+    }
+
+    res.json({
+      success: true,
+      contact: result.contact
+    });
+
+  } catch (error) {
+    console.error('Error updating contact:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update contact'
+    });
+  }
+});
+
+/**
+ * Delete a single contact
+ * DELETE /api/v1/csv/contacts/:contactId
+ */
+router.delete('/contacts/:contactId', authenticateToken, async (req, res) => {
+  try {
+    const { contactId } = req.params;
+
+    const result = await csvService.deleteContact(contactId);
+
+    if (!result.success) {
+      return res.status(500).json({
+        success: false,
+        message: result.error || 'Failed to delete contact'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: result.message
+    });
+
+  } catch (error) {
+    console.error('Error deleting contact:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete contact'
+    });
+  }
+});
+
+/**
+ * Get CSV template
+ * GET /api/v1/csv/template
+ */
+router.get('/download/template', authenticateToken, (req, res) => {
+  const headers = ['first_name', 'last_name', 'phone', 'email', 'do_not_call'];
+  const sampleData = [
+    ['John', 'Doe', '1234567890', 'john@example.com', 'false'],
+    ['Jane', 'Smith', '9876543210', 'jane@example.com', 'true']
+  ];
+
+  let csvContent = headers.join(',') + '\n';
+  sampleData.forEach(row => {
+    csvContent += row.join(',') + '\n';
+  });
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename=contact_template.csv');
+  res.send(csvContent);
+});
+
+/**
  * Get CSV file statistics
  * GET /api/v1/csv/:id/stats
  */

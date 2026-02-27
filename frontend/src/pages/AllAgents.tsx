@@ -91,6 +91,47 @@ const AllAgents = () => {
   });
   const [isUpdating, setIsUpdating] = useState(false);
 
+  // Structured Prompt states
+  const [useStructuredPrompt, setUseStructuredPrompt] = useState(true);
+  const [structuredPrompt, setStructuredPrompt] = useState({
+    companyName: "",
+    industry: "",
+    agentRole: "",
+    callObjective: "",
+    servicesOffered: "",
+    operatingHours: "",
+    toneOfVoice: "Friendly",
+    actionsAllowed: ""
+  });
+
+  const generatePrompt = (data: typeof structuredPrompt) => {
+    if (!data.companyName && !data.agentRole) return editForm.prompt;
+
+    return `You are an AI ${data.agentRole || '[Agent Role]'} at ${data.companyName || '[Company Name]'}${data.industry ? ` in the ${data.industry} industry` : ''}.
+
+Objective: ${data.callObjective || 'To assist the customer with their inquiry.'}
+
+Key Information:
+${data.servicesOffered ? `- Services: ${data.servicesOffered}` : ''}
+${data.operatingHours ? `- Hours: ${data.operatingHours}` : ''}
+- Tone: ${data.toneOfVoice || 'Friendly and professional'}
+
+Allowed Actions:
+${data.actionsAllowed || '- Answer questions and provide information based on company guidelines.'}
+
+Guidelines:
+- Be polite, professional, and helpful.
+- Keep responses concise for voice interaction.
+- If unsure, offer to escalate to a human representative.`;
+  };
+
+  useEffect(() => {
+    if (useStructuredPrompt) {
+      const generated = generatePrompt(structuredPrompt);
+      if (generated) setEditForm(prev => ({ ...prev, prompt: generated }));
+    }
+  }, [structuredPrompt, useStructuredPrompt]);
+
   // Knowledge base state
   const [knowledgeBases, setKnowledgeBases] = useState([]);
   const [loadingKnowledgeBases, setLoadingKnowledgeBases] = useState(false);
@@ -368,7 +409,7 @@ const AllAgents = () => {
     setEditForm({
       name: agent.name,
       description: agent.description,
-      prompt: agent.prompt,
+      prompt: agent.prompt || "",
       smsPrompt: agent.sms_prompt || "",
       firstMessage: agent.first_message || "",
       calApiKey: agent.cal_api_key || "",
@@ -383,6 +424,14 @@ const AllAgents = () => {
       transferSentence: agent.transfer_sentence || "",
       transferCondition: agent.transfer_condition || ""
     });
+
+    if (agent.structured_prompt) {
+      setStructuredPrompt(agent.structured_prompt);
+      setUseStructuredPrompt(true);
+    } else {
+      setUseStructuredPrompt(false);
+    }
+
     setIsEditModalOpen(true);
   };
 
@@ -429,7 +478,8 @@ const AllAgents = () => {
           transferPhoneNumber: editForm.transferPhoneNumber,
           transferCountryCode: editForm.transferCountryCode,
           transferSentence: editForm.transferSentence,
-          transferCondition: editForm.transferCondition
+          transferCondition: editForm.transferCondition,
+          structuredPrompt: useStructuredPrompt ? structuredPrompt : null
         })
       });
 
@@ -766,21 +816,146 @@ const AllAgents = () => {
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold border-b pb-2">AI Prompts</h3>
 
-                {/* Agent Prompt */}
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-prompt" className="text-base font-medium">
-                    Voice Call AI Prompt <span className="text-red-500">*</span>
-                  </Label>
-                  <Textarea
-                    id="edit-prompt"
-                    placeholder="Define your AI assistant's personality, role, and instructions for voice calls..."
-                    value={editForm.prompt}
-                    onChange={(e) => setEditForm({ ...editForm, prompt: e.target.value })}
-                    className="min-h-[100px] text-base"
-                    disabled={isUpdating}
-                  />
+                {/* Prompt Configuration */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-base font-medium">Prompt Configuration</Label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">{useStructuredPrompt ? "Structured Form" : "Manual Prompt"}</span>
+                      <Switch
+                        checked={useStructuredPrompt}
+                        onCheckedChange={setUseStructuredPrompt}
+                      />
+                    </div>
+                  </div>
+
+                  {useStructuredPrompt ? (
+                    <div className="grid gap-4 border rounded-lg p-4 bg-muted/30">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-companyName">Company / Brand Name</Label>
+                          <Input
+                            id="edit-companyName"
+                            placeholder="e.g., Acme Corp"
+                            value={structuredPrompt.companyName}
+                            onChange={(e) => setStructuredPrompt({ ...structuredPrompt, companyName: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-industry">Industry</Label>
+                          <Input
+                            id="edit-industry"
+                            placeholder="e.g., Real Estate, Healthcare"
+                            value={structuredPrompt.industry}
+                            onChange={(e) => setStructuredPrompt({ ...structuredPrompt, industry: e.target.value })}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-agentRole">Agent Role</Label>
+                          <Input
+                            id="edit-agentRole"
+                            placeholder="e.g., Sales Assistant, Support Agent"
+                            value={structuredPrompt.agentRole}
+                            onChange={(e) => setStructuredPrompt({ ...structuredPrompt, agentRole: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-callObjective">Call Objective</Label>
+                          <Input
+                            id="edit-callObjective"
+                            placeholder="e.g., Lead Qualification, Booking"
+                            value={structuredPrompt.callObjective}
+                            onChange={(e) => setStructuredPrompt({ ...structuredPrompt, callObjective: e.target.value })}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-servicesOffered">Services Offered</Label>
+                        <Textarea
+                          id="edit-servicesOffered"
+                          placeholder="List your key services..."
+                          value={structuredPrompt.servicesOffered}
+                          onChange={(e) => setStructuredPrompt({ ...structuredPrompt, servicesOffered: e.target.value })}
+                          className="min-h-[80px]"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-operatingHours">Operating Hours</Label>
+                          <Input
+                            id="edit-operatingHours"
+                            placeholder="e.g., Mon-Fri 9am-5pm"
+                            value={structuredPrompt.operatingHours}
+                            onChange={(e) => setStructuredPrompt({ ...structuredPrompt, operatingHours: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-toneOfVoice">Tone of Voice</Label>
+                          <Select
+                            value={structuredPrompt.toneOfVoice}
+                            onValueChange={(value) => setStructuredPrompt({ ...structuredPrompt, toneOfVoice: value })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Friendly">Friendly</SelectItem>
+                              <SelectItem value="Professional">Professional</SelectItem>
+                              <SelectItem value="Conversational">Conversational</SelectItem>
+                              <SelectItem value="Empathetic">Empathetic</SelectItem>
+                              <SelectItem value="Direct">Direct</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-actionsAllowed">Actions Allowed</Label>
+                        <Textarea
+                          id="edit-actionsAllowed"
+                          placeholder="e.g., Schedule visits, collect info, escalate..."
+                          value={structuredPrompt.actionsAllowed}
+                          onChange={(e) => setStructuredPrompt({ ...structuredPrompt, actionsAllowed: e.target.value })}
+                          className="min-h-[80px]"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid gap-2">
+                      <Label htmlFor="edit-prompt" className="text-base font-medium">
+                        Voice Call AI Prompt <span className="text-red-500">*</span>
+                      </Label>
+                      <Textarea
+                        id="edit-prompt"
+                        placeholder="Define your AI assistant's personality, role, and instructions for voice calls..."
+                        value={editForm.prompt}
+                        onChange={(e) => setEditForm({ ...editForm, prompt: e.target.value })}
+                        className="min-h-[100px] text-base"
+                        disabled={isUpdating}
+                      />
+                    </div>
+                  )}
+
+                  {useStructuredPrompt && (
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium text-muted-foreground">Generated Prompt (You can refine this manually)</Label>
+                      <Textarea
+                        className="p-3 bg-muted rounded-md text-sm whitespace-pre-wrap min-h-[150px] overflow-y-auto border italic font-normal"
+                        value={editForm.prompt}
+                        onChange={(e) => setEditForm(prev => ({ ...prev, prompt: e.target.value }))}
+                        disabled={isUpdating}
+                      />
+                    </div>
+                  )}
                   <p className="text-sm text-muted-foreground">
-                    Core instruction that defines how your AI agent will behave during voice calls
+                    {useStructuredPrompt
+                      ? "Fill in your business details above to auto-generate an optimized system prompt."
+                      : "Core instruction that defines how your AI agent will behave during voice calls"}
                   </p>
                 </div>
 

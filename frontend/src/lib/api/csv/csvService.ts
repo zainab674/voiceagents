@@ -247,6 +247,96 @@ export const deleteCsvFile = async (csvFileId: string): Promise<{ success: boole
 };
 
 /**
+ * Add a single contact to a CSV file
+ */
+export const addContact = async (csvFileId: string, contact: Partial<CsvContact>): Promise<{ success: boolean; contact?: CsvContact; error?: string }> => {
+  try {
+    const token = (await supabase.auth.getSession()).data.session?.access_token;
+    if (!token) {
+      return { success: false, error: 'Authentication required' };
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/v1/csv/${csvFileId}/contacts`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(contact)
+    });
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error adding contact:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+};
+
+/**
+ * Update an existing contact
+ */
+export const updateContact = async (contactId: string, updates: Partial<CsvContact>): Promise<{ success: boolean; contact?: CsvContact; error?: string }> => {
+  try {
+    const token = (await supabase.auth.getSession()).data.session?.access_token;
+    if (!token) {
+      return { success: false, error: 'Authentication required' };
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/v1/csv/contacts/${contactId}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(updates)
+    });
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error updating contact:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+};
+
+/**
+ * Delete a single contact
+ */
+export const deleteContact = async (contactId: string): Promise<{ success: boolean; message?: string; error?: string }> => {
+  try {
+    const token = (await supabase.auth.getSession()).data.session?.access_token;
+    if (!token) {
+      return { success: false, error: 'Authentication required' };
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/v1/csv/contacts/${contactId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error deleting contact:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+};
+
+/**
+ * Download CSV template
+ */
+export const downloadTemplate = async (): Promise<void> => {
+  try {
+    const token = (await supabase.auth.getSession()).data.session?.access_token;
+    if (!token) return;
+
+    window.location.href = `${API_BASE_URL}/api/v1/csv/download/template?token=${token}`;
+  } catch (error) {
+    console.error('Error downloading template:', error);
+  }
+};
+
+/**
  * Parse CSV content (client-side parsing for preview)
  */
 export const parseCsvContent = (csvText: string): CsvContact[] => {

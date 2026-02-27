@@ -13,7 +13,7 @@ import { startCampaign } from "@/lib/api/campaigns/startCampaign";
 import { pauseCampaign } from "@/lib/api/campaigns/pauseCampaign";
 import { resumeCampaign } from "@/lib/api/campaigns/resumeCampaign";
 import { stopCampaign } from "@/lib/api/campaigns/stopCampaign";
-// Removed direct Supabase import - using backend API instead
+import { supabase } from '@/lib/supabase';
 
 interface CampaignDetailsDialogProps {
   open: boolean;
@@ -42,17 +42,17 @@ export function CampaignDetailsDialog({ open, onOpenChange, campaignId, campaign
 
       if (statusResult.success && statusResult.campaign) {
         setCampaignStatus(statusResult.campaign);
-        
+
         // Get assistant phone number
-        if (statusResult.campaign.campaign?.assistant_id) {
+        if (statusResult.campaign.assistant_id) {
           try {
             const { data: assistantPhone } = await supabase
               .from('phone_number')
               .select('number')
-              .eq('inbound_assistant_id', statusResult.campaign.campaign.assistant_id)
+              .eq('inbound_assistant_id', statusResult.campaign.assistant_id)
               .eq('status', 'active')
               .single();
-            
+
             if (assistantPhone) {
               setAssistantPhoneNumber(assistantPhone.number);
             }
@@ -86,13 +86,7 @@ export function CampaignDetailsDialog({ open, onOpenChange, campaignId, campaign
     }
   }, [open, campaignId]);
 
-  // Auto-refresh every 10 seconds when dialog is open
-  useEffect(() => {
-    if (!open) return;
 
-    const interval = setInterval(refreshData, 10000);
-    return () => clearInterval(interval);
-  }, [open]);
 
   const handleStartCampaign = async () => {
     const result = await startCampaign({ campaignId });
@@ -197,33 +191,33 @@ export function CampaignDetailsDialog({ open, onOpenChange, campaignId, campaign
               >
                 <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
               </Button>
-              {campaignStatus?.campaign && (
+              {campaignStatus && (
                 <div className="flex items-center gap-2">
-                  {campaignStatus.campaign.execution_status === 'idle' && (
+                  {campaignStatus.execution_status === 'idle' && (
                     <Button size="sm" onClick={handleStartCampaign}>
                       <Play className="w-4 h-4 mr-2" />
                       Start
                     </Button>
                   )}
-                  {campaignStatus.campaign.execution_status === 'running' && (
+                  {campaignStatus.execution_status === 'running' && (
                     <Button size="sm" variant="outline" onClick={handlePauseCampaign}>
                       <Pause className="w-4 h-4 mr-2" />
                       Pause
                     </Button>
                   )}
-                  {campaignStatus.campaign.execution_status === 'paused' && (
+                  {campaignStatus.execution_status === 'paused' && (
                     <Button size="sm" onClick={handleResumeCampaign}>
                       <Play className="w-4 h-4 mr-2" />
                       Resume
                     </Button>
                   )}
-                  {(campaignStatus.campaign.execution_status === 'running' || 
-                    campaignStatus.campaign.execution_status === 'paused') && (
-                    <Button size="sm" variant="destructive" onClick={handleStopCampaign}>
-                      <Square className="w-4 h-4 mr-2" />
-                      Stop
-                    </Button>
-                  )}
+                  {(campaignStatus.execution_status === 'running' ||
+                    campaignStatus.execution_status === 'paused') && (
+                      <Button size="sm" variant="destructive" onClick={handleStopCampaign}>
+                        <Square className="w-4 h-4 mr-2" />
+                        Stop
+                      </Button>
+                    )}
                 </div>
               )}
             </div>
@@ -235,7 +229,7 @@ export function CampaignDetailsDialog({ open, onOpenChange, campaignId, campaign
             <RefreshCw className="w-6 h-6 animate-spin" />
             <span className="ml-2">Loading campaign data...</span>
           </div>
-        ) : campaignStatus?.campaign ? (
+        ) : campaignStatus ? (
           <Tabs defaultValue="overview" className="w-full">
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -250,14 +244,14 @@ export function CampaignDetailsDialog({ open, onOpenChange, campaignId, campaign
                     <CardTitle className="text-sm font-medium">Status</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <Badge 
-                      variant={campaignStatus.campaign?.execution_status === 'running' ? 'default' : 'secondary'}
-                      className={campaignStatus.campaign?.execution_status === 'running' 
-                        ? 'bg-green-100 text-green-800' 
+                    <Badge
+                      variant={campaignStatus.execution_status === 'running' ? 'default' : 'secondary'}
+                      className={campaignStatus.execution_status === 'running'
+                        ? 'bg-green-100 text-green-800'
                         : 'bg-gray-100 text-gray-800'
                       }
                     >
-                      {campaignStatus.campaign?.execution_status || 'unknown'}
+                      {campaignStatus.execution_status || 'unknown'}
                     </Badge>
                   </CardContent>
                 </Card>
@@ -268,7 +262,7 @@ export function CampaignDetailsDialog({ open, onOpenChange, campaignId, campaign
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">
-                      {campaignStatus.campaign?.current_daily_calls || 0} / {campaignStatus.campaign?.daily_cap || 0}
+                      {campaignStatus.current_daily_calls || 0} / {campaignStatus.daily_cap || 0}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       calls today
@@ -282,7 +276,7 @@ export function CampaignDetailsDialog({ open, onOpenChange, campaignId, campaign
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">
-                      {campaignStatus.campaign?.total_calls_made || 0}
+                      {campaignStatus.total_calls_made || 0}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       calls made
@@ -296,8 +290,8 @@ export function CampaignDetailsDialog({ open, onOpenChange, campaignId, campaign
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">
-                      {(campaignStatus.campaign?.total_calls_made || 0) > 0 
-                        ? Math.round(((campaignStatus.campaign?.total_calls_answered || 0) / (campaignStatus.campaign?.total_calls_made || 1)) * 100)
+                      {(campaignStatus.total_calls_made || 0) > 0
+                        ? Math.round(((campaignStatus.total_calls_answered || 0) / (campaignStatus.total_calls_made || 1)) * 100)
                         : 0}%
                     </div>
                     <div className="text-xs text-muted-foreground">
@@ -308,7 +302,7 @@ export function CampaignDetailsDialog({ open, onOpenChange, campaignId, campaign
               </div>
 
               {/* Campaign Prompt Section */}
-              {campaignStatus.campaign?.campaign_prompt && (
+              {campaignStatus.campaign_prompt && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-sm font-medium">Campaign Prompt</CardTitle>
@@ -316,7 +310,7 @@ export function CampaignDetailsDialog({ open, onOpenChange, campaignId, campaign
                   <CardContent>
                     <div className="bg-gray-50 p-4 rounded-lg">
                       <div className="text-sm text-gray-700 whitespace-pre-wrap">
-                        {campaignStatus.campaign.campaign_prompt}
+                        {campaignStatus.campaign_prompt}
                       </div>
                     </div>
                     <div className="mt-2 text-xs text-gray-500">
@@ -336,15 +330,15 @@ export function CampaignDetailsDialog({ open, onOpenChange, campaignId, campaign
                     <div className="flex justify-between">
                       <span className="text-sm text-muted-foreground">Days:</span>
                       <span className="text-sm font-medium">
-                        {campaignStatus.campaign?.calling_days?.join(', ') || 'Not set'}
+                        {campaignStatus.calling_days?.join(', ') || 'Not set'}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm text-muted-foreground">Hours:</span>
                       <span className="text-sm font-medium">
-                        {(campaignStatus.campaign?.start_hour === 0 && campaignStatus.campaign?.end_hour === 0) 
-                          ? '24/7' 
-                          : `${formatHour(campaignStatus.campaign?.start_hour || 0)} - ${formatHour(campaignStatus.campaign?.end_hour || 0)}`
+                        {(campaignStatus.start_hour === 0 && campaignStatus.end_hour === 0)
+                          ? '24/7'
+                          : `${formatHour(campaignStatus.start_hour || 0)} - ${formatHour(campaignStatus.end_hour || 0)}`
                         }
                       </span>
                     </div>
@@ -357,8 +351,8 @@ export function CampaignDetailsDialog({ open, onOpenChange, campaignId, campaign
                     <div className="flex justify-between">
                       <span className="text-sm text-muted-foreground">Next Call:</span>
                       <span className="text-sm font-medium">
-                        {campaignStatus.campaign?.next_call_at 
-                          ? formatDateTime(campaignStatus.campaign.next_call_at)
+                        {campaignStatus.next_call_at
+                          ? formatDateTime(campaignStatus.next_call_at)
                           : 'Not scheduled'
                         }
                       </span>
@@ -498,7 +492,7 @@ export function CampaignDetailsDialog({ open, onOpenChange, campaignId, campaign
                     <div className="flex justify-between">
                       <span className="text-sm text-muted-foreground">Answer Rate:</span>
                       <span className="text-sm font-medium">
-                        {(campaignStatus.stats?.total || 0) > 0 
+                        {(campaignStatus.stats?.total || 0) > 0
                           ? Math.round(((campaignStatus.stats?.answered || 0) / (campaignStatus.stats?.total || 1)) * 100)
                           : 0}%
                       </span>
@@ -506,7 +500,7 @@ export function CampaignDetailsDialog({ open, onOpenChange, campaignId, campaign
                     <div className="flex justify-between">
                       <span className="text-sm text-muted-foreground">Success Rate:</span>
                       <span className="text-sm font-medium">
-                        {(campaignStatus.stats?.total || 0) > 0 
+                        {(campaignStatus.stats?.total || 0) > 0
                           ? Math.round(((campaignStatus.stats?.completed || 0) / (campaignStatus.stats?.total || 1)) * 100)
                           : 0}%
                       </span>
@@ -514,7 +508,7 @@ export function CampaignDetailsDialog({ open, onOpenChange, campaignId, campaign
                     <div className="flex justify-between">
                       <span className="text-sm text-muted-foreground">Interest Rate:</span>
                       <span className="text-sm font-medium">
-                        {(campaignStatus.stats?.answered || 0) > 0 
+                        {(campaignStatus.stats?.answered || 0) > 0
                           ? Math.round(((campaignStatus.stats?.interested || 0) / (campaignStatus.stats?.answered || 1)) * 100)
                           : 0}%
                       </span>

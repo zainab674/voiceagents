@@ -3,6 +3,7 @@ import * as xlsx from 'xlsx';
 import { OpenAI } from 'openai';
 import { csvService } from '#services/csv-service.js';
 import { createClient } from '@supabase/supabase-js';
+import { formatEmailBody } from '../utils/email-formatter.js';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -175,7 +176,8 @@ export const sendBulkEmails = async (req, res) => {
                 if (!contact.email) continue;
 
                 // Simple template replacement
-                let personalizedBody = htmlBody
+                const formattedBody = formatEmailBody(htmlBody);
+                let personalizedBody = formattedBody
                     .replace(/{{first_name}}/g, contact.first_name || '')
                     .replace(/{{last_name}}/g, contact.last_name || '')
                     .replace(/{{email}}/g, contact.email);

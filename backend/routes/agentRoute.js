@@ -36,7 +36,7 @@ router.get("/test", authenticateToken, async (req, res) => {
 // Create a new agent
 router.post("/", authenticateToken, async (req, res) => {
   try {
-    const { name, description, prompt, smsPrompt, firstMessage, calApiKey, calEventTypeSlug, calTimezone, calEventTypeId, calEventTitle, calEventLength, knowledgeBaseId, templateId } = req.body;
+    const { name, description, prompt, structuredPrompt, smsPrompt, firstMessage, calApiKey, calEventTypeSlug, calTimezone, calEventTypeId, calEventTitle, calEventLength, knowledgeBaseId, templateId } = req.body;
     const userId = req.user.userId;
 
     console.log('Creating agent for user:', userId);
@@ -101,7 +101,8 @@ router.post("/", authenticateToken, async (req, res) => {
           transfer_country_code: req.body.transferCountryCode || '+1',
           transfer_sentence: req.body.transferSentence || null,
           transfer_condition: req.body.transferCondition || null,
-          language: req.body.language || 'en'
+          language: req.body.language || 'en',
+          structured_prompt: structuredPrompt || null
         }
       ])
       .select();
@@ -216,7 +217,7 @@ router.get("/:agentId", authenticateToken, async (req, res) => {
 router.put("/:agentId", authenticateToken, async (req, res) => {
   try {
     const { agentId } = req.params;
-    const { name, description, prompt, smsPrompt, firstMessage, calApiKey, calEventTypeSlug, calEventTypeId, calTimezone, knowledgeBaseId } = req.body;
+    const { name, description, prompt, structuredPrompt, smsPrompt, firstMessage, calApiKey, calEventTypeSlug, calEventTypeId, calTimezone, knowledgeBaseId } = req.body;
     const userId = req.user.userId;
 
     if (!name || !description || !prompt) {
@@ -274,7 +275,8 @@ router.put("/:agentId", authenticateToken, async (req, res) => {
         transfer_country_code: req.body.transferCountryCode !== undefined ? req.body.transferCountryCode : undefined,
         transfer_sentence: req.body.transferSentence !== undefined ? req.body.transferSentence : undefined,
         transfer_condition: req.body.transferCondition !== undefined ? req.body.transferCondition : undefined,
-        language: req.body.language || undefined
+        language: req.body.language || undefined,
+        structured_prompt: structuredPrompt !== undefined ? structuredPrompt : undefined
       })
       .eq('id', agentId)
       .eq('user_id', userId)

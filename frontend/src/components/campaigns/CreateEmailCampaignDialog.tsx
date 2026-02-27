@@ -35,6 +35,7 @@ export const CreateEmailCampaignDialog: React.FC<CreateEmailCampaignDialogProps>
     const [prompt, setPrompt] = useState("");
     const [isScheduled, setIsScheduled] = useState(false);
     const [scheduledAt, setScheduledAt] = useState("");
+    const [viewMode, setViewMode] = useState<"write" | "preview">("write");
 
     // Lists/Files (Mocked or fetched)
     const [csvFiles, setCsvFiles] = useState<{ id: string; original_filename: string }[]>([]);
@@ -252,7 +253,23 @@ export const CreateEmailCampaignDialog: React.FC<CreateEmailCampaignDialogProps>
 
                     <div className="space-y-2">
                         <div className="flex items-center justify-between">
-                            <Label>Email Body</Label>
+                            <div className="flex items-center gap-4">
+                                <Label>Email Body</Label>
+                                <div className="flex bg-muted p-1 rounded-md text-sm">
+                                    <button
+                                        onClick={() => setViewMode("write")}
+                                        className={`px-3 py-1 rounded-sm transition-colors ${viewMode === 'write' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                                    >
+                                        Write
+                                    </button>
+                                    <button
+                                        onClick={() => setViewMode("preview")}
+                                        className={`px-3 py-1 rounded-sm transition-colors ${viewMode === 'preview' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                                    >
+                                        Preview
+                                    </button>
+                                </div>
+                            </div>
                             <div className="flex gap-2">
                                 <Input
                                     value={prompt}
@@ -265,12 +282,36 @@ export const CreateEmailCampaignDialog: React.FC<CreateEmailCampaignDialogProps>
                                 </Button>
                             </div>
                         </div>
-                        <Textarea
-                            value={body}
-                            onChange={(e) => setBody(e.target.value)}
-                            className="min-h-[300px]"
-                            placeholder="Hello {{first_name}}..."
-                        />
+
+                        {viewMode === 'write' ? (
+                            <Textarea
+                                value={body}
+                                onChange={(e) => setBody(e.target.value)}
+                                className="min-h-[300px]"
+                                placeholder="Hello {{first_name}}..."
+                            />
+                        ) : (
+                            <div className="min-h-[300px] p-4 rounded-md border bg-muted/30 overflow-y-auto prose prose-sm max-w-none">
+                                {body ? (
+                                    <div
+                                        dangerouslySetInnerHTML={{
+                                            __html: body
+                                                .trim()
+                                                .replace(/&/g, '&amp;')
+                                                .replace(/</g, '&lt;')
+                                                .replace(/>/g, '&gt;')
+                                                .replace(/"/g, '&quot;')
+                                                .replace(/'/g, '&#039;')
+                                                .split(/\n\s*\n/)
+                                                .map(para => `<p style="margin-bottom: 1em;">${para.split('\n').join('<br />')}</p>`)
+                                                .join('')
+                                        }}
+                                    />
+                                ) : (
+                                    <p className="text-muted-foreground italic">No content to preview</p>
+                                )}
+                            </div>
+                        )}
                         <p className="text-xs text-muted-foreground">Supported variables: {'{{first_name}}'}, {'{{last_name}}'}, {'{{email}}'}</p>
                     </div>
                 </div>

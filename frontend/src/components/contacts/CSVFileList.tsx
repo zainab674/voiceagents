@@ -4,8 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FileText, Upload, Eye, Trash2, Users, Calendar } from 'lucide-react';
-import { fetchCsvFiles, fetchCsvStats, deleteCsvFile, CsvFile } from '@/lib/api/csv/csvService';
+import { FileText, Upload, Eye, Trash2, Users, Calendar, Download } from 'lucide-react';
+import { fetchCsvFiles, fetchCsvStats, deleteCsvFile, downloadTemplate, CsvFile } from '@/lib/api/csv/csvService';
 import { CSVUploadDialog } from './CSVUploadDialog';
 
 interface CSVFileListProps {
@@ -50,7 +50,7 @@ export function CSVFileList({ onFileSelect, selectedFileId }: CSVFileListProps) 
     try {
       setDeletingFileId(fileId);
       const result = await deleteCsvFile(fileId);
-      
+
       if (result.success) {
         setCsvFiles(prev => prev.filter(file => file.id !== fileId));
         if (selectedFileId === fileId) {
@@ -114,10 +114,16 @@ export function CSVFileList({ onFileSelect, selectedFileId }: CSVFileListProps) 
               <FileText className="h-5 w-5" />
               CSV Files
             </CardTitle>
-            <Button onClick={() => setUploadDialogOpen(true)} size="sm">
-              <Upload className="h-4 w-4 mr-2" />
-              Upload CSV
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button onClick={downloadTemplate} variant="outline" size="sm">
+                <Download className="h-4 w-4 mr-2" />
+                Sample CSV
+              </Button>
+              <Button onClick={() => setUploadDialogOpen(true)} size="sm">
+                <Upload className="h-4 w-4 mr-2" />
+                Upload CSV
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -126,10 +132,16 @@ export function CSVFileList({ onFileSelect, selectedFileId }: CSVFileListProps) 
               <FileText className="h-12 w-12 mx-auto mb-4 text-gray-300" />
               <p className="text-lg font-medium mb-2">No CSV files uploaded yet</p>
               <p className="text-sm mb-4">Upload your first CSV file to get started</p>
-              <Button onClick={() => setUploadDialogOpen(true)}>
-                <Upload className="h-4 w-4 mr-2" />
-                Upload CSV File
-              </Button>
+              <div className="flex gap-2 justify-center">
+                <Button onClick={downloadTemplate} variant="outline">
+                  <Download className="h-4 w-4 mr-2" />
+                  Download Sample CSV
+                </Button>
+                <Button onClick={() => setUploadDialogOpen(true)}>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload CSV File
+                </Button>
+              </div>
             </div>
           ) : (
             <div className="space-y-4">
@@ -145,11 +157,10 @@ export function CSVFileList({ onFileSelect, selectedFileId }: CSVFileListProps) 
                 </TableHeader>
                 <TableBody>
                   {csvFiles.map((file) => (
-                    <TableRow 
+                    <TableRow
                       key={file.id}
-                      className={`cursor-pointer hover:bg-gray-50 ${
-                        selectedFileId === file.id ? 'bg-blue-50 border-blue-200' : ''
-                      }`}
+                      className={`cursor-pointer hover:bg-gray-50 ${selectedFileId === file.id ? 'bg-blue-50 border-blue-200' : ''
+                        }`}
                       onClick={() => onFileSelect(file.id, file.name)}
                     >
                       <TableCell className="font-medium">
