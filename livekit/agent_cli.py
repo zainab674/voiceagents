@@ -48,9 +48,14 @@ def validate_environment():
         "SUPABASE_SERVICE_ROLE_KEY"
     ]
     
-    # Check for OpenAI API key (required)
+    # Check for OpenAI API key (required for LLM)
     if not os.getenv("OPENAI_API_KEY"):
-        logger.error("❌ OPENAI_API_KEY is required")
+        logger.error("❌ OPENAI_API_KEY is required for the Brain (LLM)")
+        sys.exit(1)
+        
+    # Check for TTS API keys
+    if not any([os.getenv("ELEVENLABS_API_KEY"), os.getenv("DEEPGRAM_API_KEY"), os.getenv("OPENAI_API_KEY")]):
+        logger.error("❌ At least one TTS API key (ELEVENLABS_API_KEY, DEEPGRAM_API_KEY, or OPENAI_API_KEY) is required")
         sys.exit(1)
     
     missing_vars = [var for var in required_vars if not os.getenv(var)]

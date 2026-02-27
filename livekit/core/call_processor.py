@@ -22,12 +22,16 @@ from livekit.plugins import openai
 
 
 def create_tts_instance(settings):
-    """Create TTS instance using OpenAI TTS."""
+    """Create TTS instance using Eleven Labs TTS."""
     logger = get_logger(__name__)
-    import os
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    tts = openai.TTS(model="tts-1", voice="alloy", api_key=openai_api_key)
-    logger.info("OPENAI_TTS_CONFIGURED | model=tts-1 | voice=alloy")
+    from livekit.plugins import elevenlabs
+    
+    tts = elevenlabs.TTS(
+        api_key=settings.elevenlabs.api_key,
+        voice_id=settings.elevenlabs.voice_id,
+        model_id=settings.elevenlabs.model_id
+    )
+    logger.info(f"ELEVENLABS_TTS_CONFIGURED | voice_id={settings.elevenlabs.voice_id}")
     return tts
 
 

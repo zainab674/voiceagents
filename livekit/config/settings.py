@@ -50,6 +50,14 @@ class DeepgramSettings:
         self.api_key: str = os.getenv("DEEPGRAM_API_KEY", "")
         self.model: str = os.getenv("DEEPGRAM_MODEL", "flux-general-en")
         self.eager_eot_threshold: float = float(os.getenv("DEEPGRAM_EAGER_EOT_THRESHOLD", "0.4"))
+        
+
+class ElevenLabsSettings:
+    """Eleven Labs TTS configuration."""
+    def __init__(self):
+        self.api_key: str = os.getenv("ELEVENLABS_API_KEY", "")
+        self.voice_id: str = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")  # Default Rachel voice
+        self.model_id: str = os.getenv("ELEVENLABS_MODEL_ID", "eleven_monolingual_v1")
 
 
 class Settings:
@@ -62,6 +70,7 @@ class Settings:
         self.livekit: LiveKitSettings = LiveKitSettings()
         self.openai: OpenAISettings = OpenAISettings()
         self.deepgram: DeepgramSettings = DeepgramSettings()
+        self.elevenlabs: ElevenLabsSettings = ElevenLabsSettings()
         
         # General settings
         self.debug: bool = os.getenv("DEBUG", "false").lower() == "true"

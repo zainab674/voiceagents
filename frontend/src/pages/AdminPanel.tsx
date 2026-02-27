@@ -841,7 +841,7 @@ Guidelines:
         const defaultKeys = [
           { key: 'openai_api_key', description: 'OpenAI API Key for LLM and TTS', isSecret: true },
           { key: 'deepgram_api_key', description: 'Deepgram API Key for STT and TTS', isSecret: true },
-          { key: 'cartesia_api_key', description: 'Cartesia API Key for TTS', isSecret: true },
+          { key: 'elevenlabs_api_key', description: 'Eleven Labs API Key for TTS', isSecret: true },
           { key: 'openai_llm_model', description: 'OpenAI model to use (e.g., gpt-4o-mini)', isSecret: false }
         ];
 

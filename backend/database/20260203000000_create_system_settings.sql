@@ -37,6 +37,6 @@ INSERT INTO system_settings (key, value, description, is_secret)
 VALUES 
     ('openai_api_key', '', 'OpenAI API Key for LLM and TTS', true),
     ('deepgram_api_key', '', 'Deepgram API Key for STT and TTS', true),
-    ('cartesia_api_key', '', 'Cartesia API Key for TTS', true),
+    ('elevenlabs_api_key', '', 'Eleven Labs API Key for TTS', true),
     ('openai_llm_model', 'gpt-4o-mini', 'OpenAI model to use for the AI agent', false)
 ON CONFLICT (key) DO NOTHING;

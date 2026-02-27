@@ -35,7 +35,7 @@ from cal_calendar_api import CalComCalendar, AvailableSlot, CalendarResult, Cale
 from livekit.plugins import openai as lk_openai  # LLM, TTS
 from livekit.plugins import silero              # VAD
 from livekit.plugins import deepgram            # Deepgram STT
-from livekit.plugins import cartesia            # Cartesia TTS
+from livekit.plugins import elevenlabs          # Eleven Labs TTS
 
 # ⬇️ AI Analysis Service
 from services.call_outcome_service import CallOutcomeService, CallOutcomeAnalysis
@@ -1473,38 +1473,55 @@ CRITICAL: When calling date-related functions (list_slots_on_day, provide_date):
     # Get API keys with fallback: system_settings (from DB) -> environment variables
     openai_api_key = system_settings.get("openai_api_key") or os.getenv("OPENAI_API_KEY")
     deepgram_api_key = system_settings.get("deepgram_api_key") or os.getenv("DEEPGRAM_API_KEY")
-    cartesia_api_key = system_settings.get("cartesia_api_key") or os.getenv("CARTESIA_API_KEY")
+    # Cascading fallback: Agent Settings -> Admin Dashboard (DB) -> Environment Variable (.env)
+    elevenlabs_api_key = (agent_data.get("elevenlabs_api_key") if agent_data else None) or \
+                         system_settings.get("elevenlabs_api_key") or \
+                         os.getenv("ELEVENLABS_API_KEY")
     
     # Get LLM model with fallback
     llm_model = system_settings.get("openai_llm_model") or os.getenv("OPENAI_LLM_MODEL", "gpt-4o-mini")
     
     # Validate API keys are set
-    if not cartesia_api_key and not deepgram_api_key and not openai_api_key:
+    if not elevenlabs_api_key and not deepgram_api_key and not openai_api_key:
         logger.error(
-            "None of the required API keys (CARTESIA_API_KEY, DEEPGRAM_API_KEY, OPENAI_API_KEY) are set. "
+            "None of the required API keys (ELEVENLABS_API_KEY, DEEPGRAM_API_KEY, OPENAI_API_KEY) are set. "
             "At least one is needed for TTS."
         )
         raise ValueError("No TTS API keys found in environment")
 
-    # Create TTS instance - prefer Cartesia, then Deepgram, fallback to OpenAI
-    if cartesia_api_key:
-        tts = cartesia.TTS(api_key=cartesia_api_key, model="sonic-english")
-        tts_provider = "cartesia"
-        tts_model = "sonic-english"
-        logger.info("CARTESIA_TTS_CONFIGURED | using Cartesia for TTS")
-    elif deepgram_api_key:
+    # Create TTS instance - prefer Eleven Labs, then Deepgram, fallback to OpenAI
+    # If Eleven Labs fails or has no key, we try the next one in line
+    tts = None
+    tts_provider = None
+    tts_model = None
+
+    if elevenlabs_api_key:
+        try:
+            # We don't do a network check here to avoid latency, but we prepare for fallback
+            tts = elevenlabs.TTS(api_key=elevenlabs_api_key)
+            tts_provider = "elevenlabs"
+            tts_model = "eleven_monolingual_v1"
+            key_source = "agent" if agent_data and agent_data.get("elevenlabs_api_key") else \
+                         "db" if system_settings.get("elevenlabs_api_key") else "env"
+            logger.info(f"ELEVENLABS_TTS_CONFIGURED | source={key_source} | voice_id=Rachel")
+        except Exception as e:
+            logger.error(f"ELEVENLABS_INIT_FAILED | error={str(e)} | falling_back_to_deepgram")
+            elevenlabs_api_key = None # Force fallback to next provider
+
+    if not tts and deepgram_api_key:
         tts = deepgram.TTS(model="aura-2-andromeda-en", api_key=deepgram_api_key)
         tts_provider = "deepgram"
         tts_model = "aura-2-andromeda-en"
         logger.info("DEEPGRAM_TTS_CONFIGURED | using Deepgram for TTS")
-    elif openai_api_key:
+        
+    if not tts and openai_api_key:
         tts = lk_openai.TTS(model="tts-1", voice="alloy", api_key=openai_api_key)
         tts_provider = "openai"
         tts_model = "tts-1"
-        logger.warning("OPENAI_TTS_CONFIGURED | using OpenAI for TTS (consider using Cartesia or Deepgram)")
-    else:
-        # This shouldn't be reached due to the check above
-        raise ValueError("No TTS API keys found in environment")
+        logger.info("OPENAI_TTS_CONFIGURED | using OpenAI for TTS (consider using Eleven Labs or Deepgram)")
+
+    if not tts:
+        raise ValueError("No TTS provider could be initialized. Please check your API keys.")
     
     # Create STT instance - prefer Deepgram if available, fallback to OpenAI
     if deepgram_api_key:
@@ -1727,17 +1744,21 @@ async def entrypoint(ctx: JobContext):
         # Get API keys for session components
         openai_api_key = system_settings.get("openai_api_key") or os.getenv("OPENAI_API_KEY")
         deepgram_api_key = system_settings.get("deepgram_api_key") or os.getenv("DEEPGRAM_API_KEY")
+        elevenlabs_api_key = system_settings.get("elevenlabs_api_key") or os.getenv("ELEVENLABS_API_KEY")
 
         
         # Create TTS instance - use same provider as agent
-        if deepgram_api_key:
+        if elevenlabs_api_key:
+            session_tts = elevenlabs.TTS(api_key=elevenlabs_api_key)
+            logger.info("SESSION_ELEVENLABS_TTS_CONFIGURED | using Eleven Labs for TTS")
+        elif deepgram_api_key:
             session_tts = deepgram.TTS(model="aura-2-andromeda-en", api_key=deepgram_api_key)
             logger.info("SESSION_DEEPGRAM_TTS_CONFIGURED | using Deepgram for TTS")
         elif openai_api_key:
             session_tts = lk_openai.TTS(model="tts-1", voice="alloy", api_key=openai_api_key)
             logger.warning("SESSION_OPENAI_TTS_CONFIGURED | using OpenAI for TTS")
         else:
-            raise ValueError("Either DEEPGRAM_API_KEY or OPENAI_API_KEY must be set for TTS")
+            raise ValueError("Either ELEVENLABS_API_KEY, DEEPGRAM_API_KEY or OPENAI_API_KEY must be set for TTS")
         
         # Create STT instance - use same provider as agent
         if deepgram_api_key:
