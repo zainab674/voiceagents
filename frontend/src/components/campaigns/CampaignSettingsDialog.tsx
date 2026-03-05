@@ -45,7 +45,7 @@ export function CampaignSettingsDialog({ open, onOpenChange, onSave }: CampaignS
   const [assistants, setAssistants] = useState<Assistant[]>([]);
   const [csvFiles, setCsvFiles] = useState<CsvFile[]>([]);
   const [loading, setLoading] = useState(false);
-  
+
   const [formData, setFormData] = useState<CampaignSettingsData>({
     name: '',
     assistantId: '',
@@ -67,7 +67,7 @@ export function CampaignSettingsDialog({ open, onOpenChange, onSave }: CampaignS
             fetchAssistants(),
             fetchCsvFiles()
           ]);
-          
+
           // fetchAssistants returns Assistant[] directly
           setAssistants(assistantsRes || []);
           // fetchCsvFiles returns { success: boolean, csvFiles: CsvFile[] }
@@ -86,7 +86,7 @@ export function CampaignSettingsDialog({ open, onOpenChange, onSave }: CampaignS
           setLoading(false);
         }
       };
-      
+
       fetchData();
     }
   }, [open, user?.id]);
@@ -95,13 +95,13 @@ export function CampaignSettingsDialog({ open, onOpenChange, onSave }: CampaignS
     if (!formData.name || !formData.assistantId || !formData.csvFileId) {
       return; // Basic validation
     }
-    
+
     // Add contactSource since this dialog only supports CSV files
     onSave({
       ...formData,
       contactSource: 'csv_file' as const
     });
-    
+
     // Reset form
     setFormData({
       name: '',
@@ -295,17 +295,17 @@ export function CampaignSettingsDialog({ open, onOpenChange, onSave }: CampaignS
 
             <div className="space-y-3">
               <Label className="text-sm font-medium text-foreground">
-                Local Calling Hours
+                Calling Time Range
               </Label>
               <div className="space-y-3">
                 <div className="px-4">
                   <Slider
                     value={[formData.startHour, formData.endHour === 0 ? 24 : formData.endHour]}
-                    onValueChange={([start, end]) => 
-                      setFormData(prev => ({ 
-                        ...prev, 
-                        startHour: start, 
-                        endHour: end === 24 ? 24 : end 
+                    onValueChange={([start, end]) =>
+                      setFormData(prev => ({
+                        ...prev,
+                        startHour: start,
+                        endHour: end === 24 ? 24 : end
                       }))
                     }
                     min={0}
@@ -328,7 +328,7 @@ export function CampaignSettingsDialog({ open, onOpenChange, onSave }: CampaignS
             <Button variant="outline" onClick={handleClose}>
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={handleSave}
               disabled={!formData.name || !formData.assistantId || !formData.csvFileId}
               className="px-6"

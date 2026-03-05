@@ -14,6 +14,7 @@ import {
   mapNumberController,
   createTrunkController,
   deleteTrunkController,
+  unassignNumberController,
   // LiveKit SIP Functions
   listInboundTrunksController,
   listDispatchRulesController,
@@ -50,6 +51,7 @@ router.post("/trunk/attach", authenticateToken, attachToTrunkController);
 router.post("/map", authenticateToken, mapNumberController);
 router.post("/trunk/create", authenticateToken, createTrunkController);
 router.delete("/trunk/:trunkSid", authenticateToken, deleteTrunkController);
+router.post("/unassign", authenticateToken, unassignNumberController);
 
 // ------------------- LiveKit SIP Functions (require auth) -------------------
 router.get("/sip/inbound-trunks", authenticateToken, listInboundTrunksController);

@@ -225,14 +225,49 @@ export class PhoneNumberService {
         return { success: false, message: 'Failed to check phone number assignment' };
       }
 
-      return { 
-        success: true, 
+      return {
+        success: true,
         assigned: !!data.inbound_assistant_id && data.status === 'active',
         phoneNumberId: data.id,
         assistantId: data.inbound_assistant_id
       };
     } catch (error) {
       console.error('PhoneNumberService.isPhoneNumberAssigned error:', error);
+      return { success: false, message: 'Internal server error' };
+    }
+  }
+  /**
+   * Get global phone number assignment (across all users)
+   */
+  static async getGlobalPhoneNumberAssignment(phoneNumber) {
+    try {
+      if (!supa) {
+        return { success: false, message: 'Database connection not configured' };
+      }
+
+      const { data, error } = await supa
+        .from('phone_number')
+        .select('id, user_id, inbound_assistant_id, status')
+        .eq('number', phoneNumber)
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          return { success: true, assigned: false };
+        }
+        console.error('Error checking global phone number assignment:', error);
+        return { success: false, message: 'Failed to check phone number assignment' };
+      }
+
+      return {
+        success: true,
+        assigned: !!data.inbound_assistant_id && data.status === 'active',
+        userId: data.user_id,
+        phoneNumberId: data.id,
+        assistantId: data.inbound_assistant_id
+      };
+    } catch (error) {
+      console.error('PhoneNumberService.getGlobalPhoneNumberAssignment error:', error);
       return { success: false, message: 'Internal server error' };
     }
   }
@@ -246,3 +281,4 @@ export const updatePhoneNumber = (phoneNumberId, updateData, userId) => PhoneNum
 export const deletePhoneNumber = (phoneNumberId, userId) => PhoneNumberService.deletePhoneNumber(phoneNumberId, userId);
 export const getPhoneNumbersByAssistant = (assistantId, userId) => PhoneNumberService.getPhoneNumbersByAssistant(assistantId, userId);
 export const isPhoneNumberAssigned = (phoneNumber, userId) => PhoneNumberService.isPhoneNumberAssigned(phoneNumber, userId);
+export const getGlobalPhoneNumberAssignment = (phoneNumber) => PhoneNumberService.getGlobalPhoneNumberAssignment(phoneNumber);

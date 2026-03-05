@@ -38,6 +38,12 @@ interface PhoneNumber {
   user_id: string;
   created_at: string;
   updated_at: string;
+  agents: {
+    id: string;
+    name: string;
+    description: string;
+  } | null;
+  is_other_user?: boolean;
   // Legacy fields for compatibility
   sid: string;
   phoneNumber: string;
@@ -353,6 +359,57 @@ const TrunkManagement = () => {
     }
   };
 
+  const handleUnassign = async (phoneSid: string, phoneNumber: string) => {
+    if (!hasCredentials) {
+      toast({
+        title: "Error",
+        description: "Please configure your Twilio credentials first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to unassign ${phoneNumber}? This will delete associated LiveKit SIP trunks and rules.`)) {
+      return;
+    }
+
+    setLoading(prev => ({ ...prev, assigning: true }));
+
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'}/api/v1/twilio/unassign`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ phoneSid, phoneNumber }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        toast({
+          title: "Unassigned",
+          description: `Phone number ${phoneNumber} has been unassigned successfully.`,
+        });
+        fetchPhoneNumbers();
+        fetchDispatchRules();
+      } else {
+        throw new Error(data.message || "Failed to unassign number");
+      }
+    } catch (error: any) {
+      console.error('Error unassigning number:', error);
+      toast({
+        title: "Failed to unassign",
+        description: error.message || "Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(prev => ({ ...prev, assigning: false }));
+    }
+  };
+
+
 
 
 
@@ -576,10 +633,12 @@ const TrunkManagement = () => {
                           const isForeignUsage = number.usage === "foreign";
                           const hasTrunk = number.trunkSid && number.trunkSid !== null;
 
-                          // Priority: If has trunk, it's assigned regardless of URL
-                          const isAssigned = hasTrunk;
-                          const isUnused = !hasTrunk && ((number.usage === "unused" && !number.mapped) || (isDemoUrl && isDemoUsage));
-                          const isUsed = !isUnused && !isAssigned && !isForeignUsage;
+                          // Priority: Only mark as assigned if it's OURS or MAPPED to us AND has an assistant
+                          const isAssigned = (number.usage === 'ours' || number.mapped) && Boolean(number.inbound_assistant_id);
+                          const isOtherAssigned = number.is_other_user || (!isAssigned && hasTrunk);
+
+                          const isUnused = !isAssigned && !isOtherAssigned && ((number.usage === "unused" && !number.mapped) || (isDemoUrl || isDemoUsage));
+                          const isUsed = !isUnused && !isAssigned && !isOtherAssigned && !isForeignUsage;
 
                           return (
                             <tr
@@ -601,57 +660,73 @@ const TrunkManagement = () => {
                               <td className="p-3">
                                 <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${isAssigned
                                   ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                                  : isDemoUrl || isDemoUsage
-                                    ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
-                                    : isForeignUsage
-                                      ? "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
-                                      : isUnused
-                                        ? "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
-                                        : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                                  : isOtherAssigned
+                                    ? "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
+                                    : isDemoUrl || isDemoUsage
+                                      ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+                                      : isForeignUsage
+                                        ? "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
+                                        : isUnused
+                                          ? "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
+                                          : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
                                   }`}>
-                                  {isAssigned ? "Assigned" : isDemoUrl || isDemoUsage ? "Demo (Unused)" : isForeignUsage ? "Used (External)" : isUnused ? "Unused" : "Used"}
+                                  {isAssigned ? "Assigned" : isOtherAssigned ? "Used (Other)" : isDemoUrl || isDemoUsage ? "Demo (Unused)" : isForeignUsage ? "Used (External)" : isUnused ? "Unused" : "Used"}
                                 </span>
                               </td>
                               <td className="p-3">
-                                {isUnused ? (
-                                  <Select
-                                    value={selectedPhoneNumber === number.phoneNumber ? selectedAgent : ""}
-                                    onValueChange={(value) => {
-                                      setSelectedPhoneNumber(number.phoneNumber);
-                                      setSelectedAgent(value);
-                                    }}
-                                  >
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="Select assistant" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {agents.map((agent) => (
-                                        <SelectItem key={agent.id} value={agent.id}>
-                                          {agent.name}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                ) : isAssigned ? (
-                                  <span className="text-green-600 dark:text-green-400 text-sm font-medium">Assigned to trunk</span>
-                                ) : (
-                                  <span className="text-muted-foreground text-sm">Already assigned</span>
-                                )}
+                                <td className="p-3">
+                                  {number.inbound_assistant_id ? (
+                                    <span className={`${isAssigned ? "text-green-600 dark:text-green-400" : "text-purple-600 dark:text-purple-400"} text-sm font-medium`}>
+                                      {number.agents?.name || "Assigned assistant"}
+                                    </span>
+                                  ) : (
+                                    <Select
+                                      value={selectedPhoneNumber === number.phoneNumber ? selectedAgent : ""}
+                                      onValueChange={(value) => {
+                                        setSelectedPhoneNumber(number.phoneNumber);
+                                        setSelectedAgent(value);
+                                      }}
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Select assistant" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {agents.map((agent) => (
+                                          <SelectItem key={agent.id} value={agent.id}>
+                                            {agent.name}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  )}
+                                </td>
                               </td>
                               <td className="p-3">
-                                {isUnused ? (
-                                  <Button
-                                    size="sm"
-                                    onClick={() => assignNumberToAgent(number.phoneNumber, selectedAgent)}
-                                    disabled={loading.phoneNumbers || loading.assigning || selectedPhoneNumber !== number.phoneNumber || !selectedAgent}
-                                  >
-                                    {loading.assigning ? "Assigning..." : "Assign"}
-                                  </Button>
-                                ) : isAssigned ? (
-                                  <span className="text-green-600 dark:text-green-400 text-sm">✓</span>
-                                ) : (
-                                  <span className="text-muted-foreground text-sm">—</span>
-                                )}
+                                <div className="flex items-center gap-2">
+                                  {!number.inbound_assistant_id ? (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => assignNumberToAgent(number.phoneNumber, selectedAgent)}
+                                      disabled={loading.phoneNumbers || loading.assigning || selectedPhoneNumber !== number.phoneNumber || !selectedAgent}
+                                    >
+                                      {loading.assigning && selectedPhoneNumber === number.phoneNumber ? "Assigning..." : "Assign"}
+                                    </Button>
+                                  ) : (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-green-600 dark:text-green-400 text-sm">✓</span>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 w-8 p-0"
+                                        onClick={() => handleUnassign(number.sid, number.phoneNumber)}
+                                        disabled={loading.assigning}
+                                        title="Unassign Number"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </Button>
+                                    </div>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           );

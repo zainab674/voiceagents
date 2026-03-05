@@ -47,19 +47,19 @@ function readId(obj, ...keys) {
   return undefined;
 }
 
-function sha256(s) { 
-  return crypto.createHash('sha256').update(String(s), 'utf8').digest('hex'); 
+function sha256(s) {
+  return crypto.createHash('sha256').update(String(s), 'utf8').digest('hex');
 }
 
-function preview(s, n = 80) { 
-  const str = String(s || ''); 
-  return str.length > n ? `${str.slice(0, n)}…` : str; 
+function preview(s, n = 80) {
+  const str = String(s || '');
+  return str.length > n ? `${str.slice(0, n)}…` : str;
 }
 
 async function resolveInboundTrunkId(ctx, { trunkId, trunkName }) {
-  if (trunkId) { 
-    log(ctx, 'resolveInboundTrunkId: using body trunkId', { trunkId }); 
-    return trunkId; 
+  if (trunkId) {
+    log(ctx, 'resolveInboundTrunkId: using body trunkId', { trunkId });
+    return trunkId;
   }
 
   const trunks = await lk.listSipInboundTrunk();
@@ -167,13 +167,13 @@ async function findRuleCoveringTrunkAndNumber(ctx, trunkId, numE164) {
 }
 
 async function resolveAssistantId(ctx, { phoneNumber, assistantId }) {
-  if (assistantId) { 
-    log(ctx, 'assistantId: provided', { assistantId }); 
-    return assistantId; 
+  if (assistantId) {
+    log(ctx, 'assistantId: provided', { assistantId });
+    return assistantId;
   }
-  if (!supa || !phoneNumber) { 
-    log(ctx, 'assistantId: no supabase or phoneNumber'); 
-    return null; 
+  if (!supa || !phoneNumber) {
+    log(ctx, 'assistantId: no supabase or phoneNumber');
+    return null;
   }
   try {
     const { data: mapping, error } = await supa
@@ -414,6 +414,7 @@ export const resolveAssistant = async (assistantId) => {
   }
 };
 
+
 export const createAssistantTrunk = async ({ assistantId, assistantName, phoneNumber, userId }) => {
   const ctx = { route: 'createAssistantTrunk', rid: rid() };
   log(ctx, 'creating assistant trunk', { assistantId, assistantName, phoneNumber, userId });
@@ -421,21 +422,21 @@ export const createAssistantTrunk = async ({ assistantId, assistantName, phoneNu
   try {
     const e164 = toE164(phoneNumber);
     const agentName = process.env.LK_AGENT_NAME || 'ai';
-    
+
     // Check if trunk already exists for this phone number
     try {
       const existingTrunks = await lk.listSipInboundTrunk();
-      const existingTrunk = existingTrunks.find(trunk => 
+      const existingTrunk = existingTrunks.find(trunk =>
         trunk.numbers && trunk.numbers.includes(e164)
       );
-      
+
       if (existingTrunk) {
         console.log(`⚠️ Trunk already exists for phone number ${e164}:`, existingTrunk.sipTrunkId);
-        log(ctx, 'trunk already exists, skipping creation', { 
+        log(ctx, 'trunk already exists, skipping creation', {
           existingTrunkId: existingTrunk.sipTrunkId,
-          phoneNumber: e164 
+          phoneNumber: e164
         });
-        
+
         // Return existing trunk info
         return {
           success: true,
@@ -455,10 +456,10 @@ export const createAssistantTrunk = async ({ assistantId, assistantName, phoneNu
       console.warn('Could not check for existing trunks:', listError.message);
       // Continue with creation if we can't check
     }
-    
+
     // Create unique, safe trunk name (like SaaS project)
     const trunkName = `ast-${assistantName}-${Date.now()}`.toLowerCase().replace(/[^a-z0-9-]+/g, '-');
-    
+
     log(ctx, 'creating assistant trunk with positional signature', { trunkName, e164 });
 
     // ✅ IMPORTANT: Use positional signature (name, numbers, opts) like SaaS project
@@ -475,21 +476,21 @@ export const createAssistantTrunk = async ({ assistantId, assistantName, phoneNu
         }),
       }
     );
-    
+
     const trunkId = readId(trunk, 'sip_trunk_id', 'sipTrunkId', 'id');
     log(ctx, 'created assistant trunk', { trunkId, trunkName, numbers: [e164] });
 
     // Create outbound trunk for making calls
     let outboundTrunkId = null;
     let outboundTrunkName = null;
-    
+
     if (userId) {
       try {
         console.log(`🔍 Getting SIP config for user ${userId} to create outbound trunk`);
-        
+
         // Import the SIP config function
         const { getSipConfigForLiveKit } = await import('./twilio-trunk-service.js');
-        
+
         const sipConfig = await getSipConfigForLiveKit(userId);
         console.log(`📊 Retrieved SIP config successfully:`, {
           domainName: sipConfig.domainName,
@@ -498,11 +499,11 @@ export const createAssistantTrunk = async ({ assistantId, assistantName, phoneNu
           trunkSid: sipConfig.trunkSid,
           credentialListSid: sipConfig.credentialListSid
         });
-        
+
         // Create corresponding outbound trunk for making calls
         outboundTrunkName = sipConfig.domainName.replace('.pstn.twilio.com', ''); // Remove .pstn.twilio.com suffix
         log(ctx, 'creating outbound trunk', { assistantId, assistantName, phoneNumber: e164, outboundTrunkName });
-        
+
         const destinationCountry = process.env.SIP_DESTINATION_COUNTRY || 'US';
 
         // Debug Twilio credentials
@@ -536,7 +537,7 @@ export const createAssistantTrunk = async ({ assistantId, assistantName, phoneNu
           phoneNumber: e164,
           trunkOptions
         });
-        
+
         const outboundTrunk = await lk.createSipOutboundTrunk(
           outboundTrunkName,
           sipConfig.domainName,  // Dynamic domain name
@@ -622,25 +623,106 @@ export const createAssistantTrunk = async ({ assistantId, assistantName, phoneNu
   }
 };
 
+export const deleteAssistantTrunk = async (ctx, { trunkId, outboundTrunkId }) => {
+  log(ctx, 'deleting trunk + rules', { trunkId, outboundTrunkId });
+
+  // delete rules referencing this trunk
+  const rules = await lk.listSipDispatchRule();
+  const trunkRules = rules.filter((r) => {
+    const tids = r?.trunk_ids ?? r?.trunkIds ?? [];
+    return tids.includes(trunkId);
+  });
+
+  for (const r of trunkRules) {
+    const rid = readId(r, 'sip_dispatch_rule_id', 'sipDispatchRuleId', 'id');
+    if (rid) await deleteDispatchRule(ctx, rid);
+  }
+
+  // Delete inbound trunk
+  let inboundDeleted = false;
+  try {
+    await lk.deleteSipTrunk(trunkId);
+    log(ctx, 'deleteSipTrunk (inbound) OK', { trunkId });
+    inboundDeleted = true;
+  } catch (e1) {
+    logErr(ctx, 'deleteSipTrunk (inbound) failed', e1);
+  }
+
+  // Delete outbound trunk if provided
+  let outboundDeleted = true; // Default to true if no outbound trunk
+  if (outboundTrunkId) {
+    outboundDeleted = false;
+    try {
+      await lk.deleteSipTrunk(outboundTrunkId);
+      log(ctx, 'deleteSipTrunk (outbound) OK', { outboundTrunkId });
+      outboundDeleted = true;
+    } catch (e1) {
+      logErr(ctx, 'deleteSipTrunk (outbound) failed', e1);
+    }
+  }
+
+  return inboundDeleted && outboundDeleted;
+};
+
+export const unassignNumber = async ({ phoneNumber, assistantId, outboundTrunkId: bodyOutboundTrunkId }) => {
+  const ctx = { route: 'unassignNumber', rid: rid() };
+  try {
+    if (!phoneNumber) {
+      return { success: false, message: 'phoneNumber is required' };
+    }
+
+    const e164 = toE164(phoneNumber);
+    let outboundTrunkId = bodyOutboundTrunkId;
+
+    // 1. Find inbound trunk for this DID
+    const trunks = await lk.listSipInboundTrunk();
+    const hit = trunks.find((t) => Array.isArray(t?.numbers) && t.numbers.includes(e164));
+
+    if (!hit) {
+      log(ctx, 'no inbound trunk found for DID to delete', { phoneNumber: e164 });
+      return { success: true, message: 'No resources found to delete' };
+    }
+
+    const trunkId = readId(hit, 'sip_trunk_id', 'sipTrunkId', 'id');
+
+    // 2. Delete trunks and Associated rules
+    const ok = await deleteAssistantTrunk(ctx, {
+      trunkId,
+      outboundTrunkId
+    });
+
+    if (ok) {
+      log(ctx, 'LiveKit trunks and rules deleted', { phoneNumber: e164 });
+      return { success: true, message: 'LiveKit resources cleaned up' };
+    } else {
+      return { success: false, message: 'Failed to delete some LiveKit resources' };
+    }
+  } catch (err) {
+    logErr(ctx, 'unassignNumber error', err);
+    return { success: false, message: err?.message || 'Failed to unassign number in LiveKit' };
+  }
+};
+
 export const cleanupDispatchRules = async () => {
+
   const ctx = { route: 'cleanupDispatchRules', rid: rid() };
   log(ctx, 'starting cleanup of dispatch rules');
-  
+
   try {
     const rules = await lk.listSipDispatchRule();
     log(ctx, 'found rules to check', { count: rules.length });
-    
+
     let deletedCount = 0;
     let keptCount = 0;
     const deletedRules = [];
-    
+
     for (const rule of rules) {
       const ruleId = readId(rule, 'sip_dispatch_rule_id', 'sipDispatchRuleId', 'id');
       const ruleName = rule.name || 'unnamed';
       const inboundNums = getInboundNums(rule);
-      
+
       log(ctx, 'checking rule', { ruleId, ruleName, inboundNumsCount: inboundNums.length });
-      
+
       // Check if this rule has inboundNumbers field
       if (inboundNums.length === 0) {
         log(ctx, 'deleting catch-all rule', { ruleId, ruleName });
@@ -656,9 +738,9 @@ export const cleanupDispatchRules = async () => {
         keptCount++;
       }
     }
-    
+
     log(ctx, 'cleanup complete', { deletedCount, keptCount });
-    
+
     return {
       success: true,
       message: `Cleanup complete. Deleted ${deletedCount} rules, kept ${keptCount} rules.`,
@@ -666,7 +748,7 @@ export const cleanupDispatchRules = async () => {
       keptCount,
       deletedRules,
     };
-    
+
   } catch (e) {
     logErr(ctx, 'cleanup failed', e);
     return { success: false, message: e?.message || 'Cleanup failed' };

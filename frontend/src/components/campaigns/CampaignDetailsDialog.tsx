@@ -176,353 +176,359 @@ export function CampaignDetailsDialog({ open, onOpenChange, campaignId, campaign
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden">
-        <DialogHeader className="space-y-3">
-          <div className="flex items-center justify-between">
-            <DialogTitle className="text-xl font-semibold text-foreground">
-              {campaignName}
-            </DialogTitle>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={refreshData}
-                disabled={refreshing}
-              >
-                <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-              </Button>
-              {campaignStatus && (
-                <div className="flex items-center gap-2">
-                  {campaignStatus.execution_status === 'idle' && (
-                    <Button size="sm" onClick={handleStartCampaign}>
-                      <Play className="w-4 h-4 mr-2" />
-                      Start
-                    </Button>
-                  )}
-                  {campaignStatus.execution_status === 'running' && (
-                    <Button size="sm" variant="outline" onClick={handlePauseCampaign}>
-                      <Pause className="w-4 h-4 mr-2" />
-                      Pause
-                    </Button>
-                  )}
-                  {campaignStatus.execution_status === 'paused' && (
-                    <Button size="sm" onClick={handleResumeCampaign}>
-                      <Play className="w-4 h-4 mr-2" />
-                      Resume
-                    </Button>
-                  )}
-                  {(campaignStatus.execution_status === 'running' ||
-                    campaignStatus.execution_status === 'paused') && (
-                      <Button size="sm" variant="destructive" onClick={handleStopCampaign}>
-                        <Square className="w-4 h-4 mr-2" />
-                        Stop
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col p-0">
+        <div className="p-6 pb-2 shrink-0 border-b">
+          <DialogHeader className="space-y-3">
+            <div className="flex items-center justify-between">
+              <DialogTitle className="text-xl font-semibold text-foreground">
+                {campaignName}
+              </DialogTitle>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={refreshData}
+                  disabled={refreshing}
+                >
+                  <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                </Button>
+                {campaignStatus && (
+                  <div className="flex items-center gap-2">
+                    {campaignStatus.execution_status === 'idle' && (
+                      <Button size="sm" onClick={handleStartCampaign}>
+                        <Play className="w-4 h-4 mr-2" />
+                        Start
                       </Button>
                     )}
-                </div>
-              )}
+                    {campaignStatus.execution_status === 'running' && (
+                      <Button size="sm" variant="outline" onClick={handlePauseCampaign}>
+                        <Pause className="w-4 h-4 mr-2" />
+                        Pause
+                      </Button>
+                    )}
+                    {campaignStatus.execution_status === 'paused' && (
+                      <Button size="sm" onClick={handleResumeCampaign}>
+                        <Play className="w-4 h-4 mr-2" />
+                        Resume
+                      </Button>
+                    )}
+                    {(campaignStatus.execution_status === 'running' ||
+                      campaignStatus.execution_status === 'paused') && (
+                        <Button size="sm" variant="destructive" onClick={handleStopCampaign}>
+                          <Square className="w-4 h-4 mr-2" />
+                          Stop
+                        </Button>
+                      )}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        </DialogHeader>
+          </DialogHeader>
+        </div>
 
-        {loading ? (
-          <div className="flex items-center justify-center py-8">
-            <RefreshCw className="w-6 h-6 animate-spin" />
-            <span className="ml-2">Loading campaign data...</span>
-          </div>
-        ) : campaignStatus ? (
-          <Tabs defaultValue="overview" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="calls">Calls</TabsTrigger>
-              <TabsTrigger value="metrics">Metrics</TabsTrigger>
-            </TabsList>
+        <div className="flex-1 overflow-hidden p-6 flex flex-col">
+          {loading ? (
+            <div className="flex flex-1 items-center justify-center py-8">
+              <RefreshCw className="w-6 h-6 animate-spin" />
+              <span className="ml-2">Loading campaign data...</span>
+            </div>
+          ) : campaignStatus ? (
+            <Tabs defaultValue="overview" className="w-full h-full flex flex-col overflow-hidden">
+              <TabsList className="grid w-full grid-cols-3 shrink-0">
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="calls">Calls</TabsTrigger>
+                <TabsTrigger value="metrics">Metrics</TabsTrigger>
+              </TabsList>
 
-            <TabsContent value="overview" className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">Status</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Badge
-                      variant={campaignStatus.execution_status === 'running' ? 'default' : 'secondary'}
-                      className={campaignStatus.execution_status === 'running'
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-gray-100 text-gray-800'
-                      }
-                    >
-                      {campaignStatus.execution_status || 'unknown'}
-                    </Badge>
-                  </CardContent>
-                </Card>
+              <div className="flex-1 overflow-y-auto mt-4 pr-2 -mr-2">
+                <TabsContent value="overview" className="space-y-4 m-0 mt-0">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium">Status</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <Badge
+                          variant={campaignStatus.execution_status === 'running' ? 'default' : 'secondary'}
+                          className={campaignStatus.execution_status === 'running'
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-gray-100 text-gray-800'
+                          }
+                        >
+                          {campaignStatus.execution_status || 'unknown'}
+                        </Badge>
+                      </CardContent>
+                    </Card>
 
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">Daily Progress</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">
-                      {campaignStatus.current_daily_calls || 0} / {campaignStatus.daily_cap || 0}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      calls today
-                    </div>
-                  </CardContent>
-                </Card>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium">Daily Progress</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold">
+                          {campaignStatus.current_daily_calls || 0} / {campaignStatus.daily_cap || 0}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          calls today
+                        </div>
+                      </CardContent>
+                    </Card>
 
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">Total Calls</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">
-                      {campaignStatus.total_calls_made || 0}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      calls made
-                    </div>
-                  </CardContent>
-                </Card>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium">Total Calls</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold">
+                          {campaignStatus.total_calls_made || 0}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          calls made
+                        </div>
+                      </CardContent>
+                    </Card>
 
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">Answer Rate</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">
-                      {(campaignStatus.total_calls_made || 0) > 0
-                        ? Math.round(((campaignStatus.total_calls_answered || 0) / (campaignStatus.total_calls_made || 1)) * 100)
-                        : 0}%
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      answered
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium">Answer Rate</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold">
+                          {(campaignStatus.total_calls_made || 0) > 0
+                            ? Math.round(((campaignStatus.total_calls_answered || 0) / (campaignStatus.total_calls_made || 1)) * 100)
+                            : 0}%
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          answered
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
 
-              {/* Campaign Prompt Section */}
-              {campaignStatus.campaign_prompt && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm font-medium">Campaign Prompt</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="bg-gray-50 p-4 rounded-lg">
-                      <div className="text-sm text-gray-700 whitespace-pre-wrap">
-                        {campaignStatus.campaign_prompt}
-                      </div>
-                    </div>
-                    <div className="mt-2 text-xs text-gray-500">
-                      This is the script your AI agent will follow during outbound calls.
-                      Placeholders like {`{name}`}, {`{email}`}, and {`{phone}`} will be replaced with actual contact information.
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm font-medium">Calling Schedule</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Days:</span>
-                      <span className="text-sm font-medium">
-                        {campaignStatus.calling_days?.join(', ') || 'Not set'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Hours:</span>
-                      <span className="text-sm font-medium">
-                        {(campaignStatus.start_hour === 0 && campaignStatus.end_hour === 0)
-                          ? '24/7'
-                          : `${formatHour(campaignStatus.start_hour || 0)} - ${formatHour(campaignStatus.end_hour || 0)}`
-                        }
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Calling From:</span>
-                      <span className="text-sm font-medium">
-                        {assistantPhoneNumber || 'Not configured'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Next Call:</span>
-                      <span className="text-sm font-medium">
-                        {campaignStatus.next_call_at
-                          ? formatDateTime(campaignStatus.next_call_at)
-                          : 'Not scheduled'
-                        }
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm font-medium">Queue Status</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Queued:</span>
-                      <span className="text-sm font-medium">{campaignStatus.queueStatus?.queued || 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Processing:</span>
-                      <span className="text-sm font-medium">{campaignStatus.queueStatus?.processing || 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Completed:</span>
-                      <span className="text-sm font-medium">{campaignStatus.queueStatus?.completed || 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Failed:</span>
-                      <span className="text-sm font-medium">{campaignStatus.queueStatus?.failed || 0}</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="calls" className="space-y-4">
-              <div className="border rounded-lg">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Contact</TableHead>
-                      <TableHead>Phone</TableHead>
-                      <TableHead>Duration</TableHead>
-                      <TableHead>Outcome</TableHead>
-                      <TableHead>Time</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {calls.map((call) => (
-                      <TableRow key={call.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            {getStatusIcon(call.status)}
-                            <span className="text-sm capitalize">{call.status}</span>
+                  {/* Campaign Prompt Section */}
+                  {campaignStatus.campaign_prompt && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-sm font-medium">Campaign Prompt</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="bg-gray-50 p-4 rounded-lg max-h-[300px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200">
+                          <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                            {campaignStatus.campaign_prompt}
                           </div>
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          {call.contact_name || 'Unknown'}
-                        </TableCell>
-                        <TableCell>
-                          {call.phone_number}
-                        </TableCell>
-                        <TableCell>
-                          {call.call_duration > 0 ? formatDuration(call.call_duration) : '-'}
-                        </TableCell>
-                        <TableCell>
-                          {getOutcomeBadge(call.outcome)}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {formatDateTime(call.started_at)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                        </div>
+                        <div className="mt-2 text-xs text-gray-500">
+                          This is the script your AI agent will follow during outbound calls.
+                          Placeholders like {`{name}`}, {`{email}`}, and {`{phone}`} will be replaced with actual contact information.
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-sm font-medium">Calling Schedule</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Days:</span>
+                          <span className="text-sm font-medium">
+                            {campaignStatus.calling_days?.join(', ') || 'Not set'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Hours:</span>
+                          <span className="text-sm font-medium">
+                            {(campaignStatus.start_hour === 0 && campaignStatus.end_hour === 0)
+                              ? '24/7'
+                              : `${formatHour(campaignStatus.start_hour || 0)} - ${formatHour(campaignStatus.end_hour || 0)}`
+                            }
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Calling From:</span>
+                          <span className="text-sm font-medium">
+                            {assistantPhoneNumber || 'Not configured'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Next Call:</span>
+                          <span className="text-sm font-medium">
+                            {campaignStatus.next_call_at
+                              ? formatDateTime(campaignStatus.next_call_at)
+                              : 'Not scheduled'
+                            }
+                          </span>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-sm font-medium">Queue Status</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Queued:</span>
+                          <span className="text-sm font-medium">{campaignStatus.queueStatus?.queued || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Processing:</span>
+                          <span className="text-sm font-medium">{campaignStatus.queueStatus?.processing || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Completed:</span>
+                          <span className="text-sm font-medium">{campaignStatus.queueStatus?.completed || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Failed:</span>
+                          <span className="text-sm font-medium">{campaignStatus.queueStatus?.failed || 0}</span>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="calls" className="space-y-4 m-0 mt-0">
+                  <div className="border rounded-lg">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Contact</TableHead>
+                          <TableHead>Phone</TableHead>
+                          <TableHead>Duration</TableHead>
+                          <TableHead>Outcome</TableHead>
+                          <TableHead>Time</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {calls.map((call) => (
+                          <TableRow key={call.id}>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                {getStatusIcon(call.status)}
+                                <span className="text-sm capitalize">{call.status}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="font-medium">
+                              {call.contact_name || 'Unknown'}
+                            </TableCell>
+                            <TableCell>
+                              {call.phone_number}
+                            </TableCell>
+                            <TableCell>
+                              {call.call_duration > 0 ? formatDuration(call.call_duration) : '-'}
+                            </TableCell>
+                            <TableCell>
+                              {getOutcomeBadge(call.outcome)}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {formatDateTime(call.started_at)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="metrics" className="space-y-4 m-0 mt-0">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium">Call Statistics</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Total:</span>
+                          <span className="text-sm font-medium">{campaignStatus.stats?.total || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Completed:</span>
+                          <span className="text-sm font-medium">{campaignStatus.stats?.completed || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Failed:</span>
+                          <span className="text-sm font-medium">{campaignStatus.stats?.failed || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">No Answer:</span>
+                          <span className="text-sm font-medium">{campaignStatus.stats?.noAnswer || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Busy:</span>
+                          <span className="text-sm font-medium">{campaignStatus.stats?.busy || 0}</span>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium">Outcomes</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Interested:</span>
+                          <span className="text-sm font-medium text-green-600">{campaignStatus.stats?.interested || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Not Interested:</span>
+                          <span className="text-sm font-medium text-red-600">{campaignStatus.stats?.notInterested || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Callback:</span>
+                          <span className="text-sm font-medium text-yellow-600">{campaignStatus.stats?.callback || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Do Not Call:</span>
+                          <span className="text-sm font-medium text-gray-600">{campaignStatus.stats?.doNotCall || 0}</span>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium">Performance</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Answer Rate:</span>
+                          <span className="text-sm font-medium">
+                            {(campaignStatus.stats?.total || 0) > 0
+                              ? Math.round(((campaignStatus.stats?.answered || 0) / (campaignStatus.stats?.total || 1)) * 100)
+                              : 0}%
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Success Rate:</span>
+                          <span className="text-sm font-medium">
+                            {(campaignStatus.stats?.total || 0) > 0
+                              ? Math.round(((campaignStatus.stats?.completed || 0) / (campaignStatus.stats?.total || 1)) * 100)
+                              : 0}%
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Interest Rate:</span>
+                          <span className="text-sm font-medium">
+                            {(campaignStatus.stats?.answered || 0) > 0
+                              ? Math.round(((campaignStatus.stats?.interested || 0) / (campaignStatus.stats?.answered || 1)) * 100)
+                              : 0}%
+                          </span>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </TabsContent>
               </div>
-            </TabsContent>
-
-            <TabsContent value="metrics" className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">Call Statistics</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Total:</span>
-                      <span className="text-sm font-medium">{campaignStatus.stats?.total || 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Completed:</span>
-                      <span className="text-sm font-medium">{campaignStatus.stats?.completed || 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Failed:</span>
-                      <span className="text-sm font-medium">{campaignStatus.stats?.failed || 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">No Answer:</span>
-                      <span className="text-sm font-medium">{campaignStatus.stats?.noAnswer || 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Busy:</span>
-                      <span className="text-sm font-medium">{campaignStatus.stats?.busy || 0}</span>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">Outcomes</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Interested:</span>
-                      <span className="text-sm font-medium text-green-600">{campaignStatus.stats?.interested || 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Not Interested:</span>
-                      <span className="text-sm font-medium text-red-600">{campaignStatus.stats?.notInterested || 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Callback:</span>
-                      <span className="text-sm font-medium text-yellow-600">{campaignStatus.stats?.callback || 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Do Not Call:</span>
-                      <span className="text-sm font-medium text-gray-600">{campaignStatus.stats?.doNotCall || 0}</span>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">Performance</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Answer Rate:</span>
-                      <span className="text-sm font-medium">
-                        {(campaignStatus.stats?.total || 0) > 0
-                          ? Math.round(((campaignStatus.stats?.answered || 0) / (campaignStatus.stats?.total || 1)) * 100)
-                          : 0}%
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Success Rate:</span>
-                      <span className="text-sm font-medium">
-                        {(campaignStatus.stats?.total || 0) > 0
-                          ? Math.round(((campaignStatus.stats?.completed || 0) / (campaignStatus.stats?.total || 1)) * 100)
-                          : 0}%
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Interest Rate:</span>
-                      <span className="text-sm font-medium">
-                        {(campaignStatus.stats?.answered || 0) > 0
-                          ? Math.round(((campaignStatus.stats?.interested || 0) / (campaignStatus.stats?.answered || 1)) * 100)
-                          : 0}%
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </TabsContent>
-          </Tabs>
-        ) : (
-          <div className="flex items-center justify-center py-8">
-            <span>Failed to load campaign data</span>
-          </div>
-        )}
+            </Tabs>
+          ) : (
+            <div className="flex-1 flex items-center justify-center py-8">
+              <span>Failed to load campaign data</span>
+            </div>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );

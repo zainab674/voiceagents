@@ -15,7 +15,7 @@ export async function createMainTrunkForUser({ accountSid, authToken, userId, la
 
   // Generate unique trunk name
   const trunkName = `main-trunk-${userId.slice(0, 8)}-${Date.now()}`;
-  
+
   console.log(`Creating main trunk for user ${userId}: ${trunkName}`);
 
   try {
@@ -27,12 +27,12 @@ export async function createMainTrunkForUser({ accountSid, authToken, userId, la
 
     const trunkSid = trunk.sid;
     console.log(`Created main trunk: ${trunkSid}`);
-    
+
     // Enable recording from ringing after trunk creation using direct API call
     try {
       // Wait for trunk to be fully created
       await new Promise(resolve => setTimeout(resolve, 3000));
-      
+
       // Use direct HTTP request to update recording settings
       const response = await fetch(`https://trunking.twilio.com/v1/Trunks/${trunkSid}/Recording`, {
         method: 'POST',
@@ -42,7 +42,7 @@ export async function createMainTrunkForUser({ accountSid, authToken, userId, la
         },
         body: 'Mode=record-from-ringing&Trim=do-not-trim'
       });
-      
+
       if (response.ok) {
         const recordingData = await response.json();
         console.log(`✅ Recording enabled: ${recordingData.mode}`);
@@ -58,22 +58,22 @@ export async function createMainTrunkForUser({ accountSid, authToken, userId, la
     // Add LiveKit origination URL if LIVEKIT_SIP_URI is configured
     const livekitSipUri = process.env.LIVEKIT_SIP_URI;
     console.log(`LIVEKIT_SIP_URI from env: ${livekitSipUri}`);
-    
+
     if (livekitSipUri) {
       // Wait longer for trunk to be fully created
       await new Promise(resolve => setTimeout(resolve, 5000));
-      
+
       try {
         // Use the SIP URI directly if it already has sip: prefix, otherwise add it
         const finalSipUrl = livekitSipUri.startsWith('sip:') ? livekitSipUri : `sip:${livekitSipUri}`;
-        
+
         console.log(`Final SIP URL: ${finalSipUrl}`);
         console.log(`Creating origination URL for trunk: ${trunkSid}`);
-        
+
         // Check if origination URL already exists
         const existingUrls = await client.trunking.v1.trunks(trunkSid).originationUrls.list();
         const alreadyExists = existingUrls.some(url => url.sipUrl === finalSipUrl);
-        
+
         if (alreadyExists) {
           console.log(`✅ LiveKit origination URL already exists: ${finalSipUrl}`);
         } else {
@@ -97,19 +97,19 @@ export async function createMainTrunkForUser({ accountSid, authToken, userId, la
           code: origError.code,
           moreInfo: origError.moreInfo
         });
-        
+
         // Try alternative approach - check if trunk exists and is accessible
         try {
           const trunkInfo = await client.trunking.v1.trunks(trunkSid).fetch();
           console.log(`Trunk exists and is accessible: ${trunkInfo.friendlyName}`);
-          
+
           // Try to list existing origination URLs
           const existingUrls = await client.trunking.v1.trunks(trunkSid).originationUrls.list();
           console.log(`Existing origination URLs:`, existingUrls.map(url => url.sipUrl));
         } catch (checkError) {
           console.error(`Failed to verify trunk:`, checkError.message);
         }
-        
+
         // Don't fail the entire operation if origination URL fails
       }
     } else {
@@ -146,7 +146,7 @@ export async function attachPhoneToMainTrunk({ twilio, phoneSid, e164Number, use
   // 2) Get the user's main trunk SID from credentials
   const { createClient } = await import('@supabase/supabase-js');
   const supa = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-  
+
   const { data: credentials } = await supa
     .from('user_twilio_credentials')
     .select('trunk_sid')
@@ -170,7 +170,7 @@ export async function attachPhoneToMainTrunk({ twilio, phoneSid, e164Number, use
   // 4) Attach phone number to the main trunk (idempotent)
   const attachedList = await twilio.trunking.v1.trunks(trunkSid).phoneNumbers.list({ limit: 200 });
   const alreadyAttached = attachedList.some(p => p.phoneNumberSid === pn.sid);
-  
+
   if (!alreadyAttached) {
     await twilio.trunking.v1.trunks(trunkSid).phoneNumbers.create({ phoneNumberSid: pn.sid });
     console.log(`Attached phone number ${e164} to main trunk ${trunkSid}`);
@@ -181,6 +181,7 @@ export async function attachPhoneToMainTrunk({ twilio, phoneSid, e164Number, use
   // 5) Persist phone number info in database
   await supa.from('phone_number').upsert(
     {
+      user_id: userId,
       phone_sid: pn.sid,
       number: e164,
       label: label || null,
@@ -243,16 +244,16 @@ export async function addLiveKitOriginationToTrunk({ accountSid, authToken, trun
 
   try {
     const client = twilio(accountSid, authToken);
-    
+
     // Use the SIP URI directly if it already has sip: prefix, otherwise add it
     const finalSipUrl = livekitSipUri.startsWith('sip:') ? livekitSipUri : `sip:${livekitSipUri}`;
-    
+
     console.log(`Adding LiveKit origination URL to trunk ${trunkSid}: ${finalSipUrl}`);
-    
+
     // Check if origination URL already exists
     const existingUrls = await client.trunking.v1.trunks(trunkSid).originationUrls.list();
     const alreadyExists = existingUrls.some(url => url.sipUrl === finalSipUrl);
-    
+
     if (alreadyExists) {
       console.log(`Origination URL already exists: ${finalSipUrl}`);
       return {
@@ -261,7 +262,7 @@ export async function addLiveKitOriginationToTrunk({ accountSid, authToken, trun
         sipUrl: finalSipUrl
       };
     }
-    
+
     // Create origination URL
     const originationUrl = await client.trunking.v1.trunks(trunkSid).originationUrls.create({
       sipUrl: finalSipUrl,
@@ -278,7 +279,7 @@ export async function addLiveKitOriginationToTrunk({ accountSid, authToken, trun
       sipUrl: originationUrl.sipUrl,
       sid: originationUrl.sid
     };
-    
+
   } catch (error) {
     console.error('Error adding LiveKit origination URL:', error);
     throw new Error(`Failed to add LiveKit origination URL: ${error.message}`);
@@ -296,7 +297,7 @@ export async function deleteMainTrunk({ accountSid, authToken, trunkSid }) {
   try {
     const client = twilio(accountSid, authToken);
     await client.trunking.v1.trunks(trunkSid).remove();
-    
+
     console.log(`Deleted trunk: ${trunkSid}`);
     return {
       success: true,
