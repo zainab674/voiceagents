@@ -568,7 +568,7 @@ class MultiCRMService {
   async disconnectPlatform(platform) {
     const { error } = await supabase
       .from('user_crm_credentials')
-      .update({ is_active: false })
+      .delete()
       .eq('user_id', this.userId)
       .eq('crm_platform', platform);
 

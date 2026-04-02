@@ -38,7 +38,7 @@ router.get('/', authenticateToken, async (req, res) => {
 router.post('/', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.userId;
-        const { name, subject, body, contactSource, contactListId, csvFileId, totalCount, scheduledAt } = req.body;
+        const { name, subject, body, signature, contactSource, contactListId, csvFileId, totalCount, scheduledAt } = req.body;
 
         const { data: campaign, error } = await supabase
             .from('email_campaigns')
@@ -47,6 +47,7 @@ router.post('/', authenticateToken, async (req, res) => {
                 name,
                 subject,
                 body,
+                signature: signature || null,
                 contact_source: contactSource,
                 contact_list_id: contactListId || null,
                 csv_file_id: csvFileId || null,

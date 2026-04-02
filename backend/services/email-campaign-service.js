@@ -106,12 +106,18 @@ export const emailCampaignService = {
                 }
 
                 try {
-                    // Personalize & Format
+                    // Personalize & Format body
                     const formattedBody = formatEmailBody(campaign.body);
                     let htmlBody = formattedBody
                         .replace(/{{first_name}}/g, contact.name?.split(' ')[0] || '')
                         .replace(/{{last_name}}/g, contact.name?.split(' ').slice(1).join(' ') || '')
                         .replace(/{{email}}/g, contact.email);
+
+                    // Append signature if present
+                    if (campaign.signature && campaign.signature.trim()) {
+                        const formattedSignature = formatEmailBody(campaign.signature.trim());
+                        htmlBody += `<hr style="border:none;border-top:1px solid #e0e0e0;margin:24px 0;" /><div style="color:#555;font-size:0.9em;">${formattedSignature}</div>`;
+                    }
 
                     const mailOptions = {
                         from: `"${credentials.from_name || credentials.username}" <${credentials.username}>`,

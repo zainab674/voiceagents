@@ -39,7 +39,8 @@ export const registerUser = async (req, res) => {
       slug,
       tenant: requestedTenant,
       planKey,
-      industry
+      industry,
+      paymentPending = false
     } = req.body;
 
     const tenant = slug || requestedTenant || 'main';
@@ -190,11 +191,27 @@ export const registerUser = async (req, res) => {
     // Check if user already exists
     const { data: existingUser, error: checkError } = await supabase
       .from('users')
-      .select('id, email')
+      .select('id, email, status')
       .eq('email', email)
       .single();
 
     if (existingUser) {
+      // Allow payment retry: if the existing user has pending_payment status and
+      // this is a paymentPending registration request, return the existing user
+      // so the payment flow can resume with their user ID
+      if (existingUser.status === 'pending_payment' && paymentPending) {
+        return res.status(200).json({
+          success: true,
+          message: 'Account found. Please complete payment to activate.',
+          data: {
+            user: {
+              id: existingUser.id,
+              email: existingUser.email
+            }
+          }
+        });
+      }
+
       return res.status(400).json({
         success: false,
         message: 'User with this email already exists'
@@ -243,7 +260,7 @@ export const registerUser = async (req, res) => {
       last_name: lastName,
       phone: phone || null,
       role: whitelabel ? 'admin' : 'user',
-      status: 'Active',
+      status: paymentPending ? 'pending_payment' : 'Active',
       tenant,
       slug_name: normalizedSlug,
       is_whitelabel: !!whitelabel,
@@ -390,6 +407,15 @@ export const loginUser = async (req, res) => {
         success: false,
         message: 'Error fetching user profile',
         error: profileError.message
+      });
+    }
+
+    // Block login for users who registered but never completed payment
+    if (userData.status === 'pending_payment') {
+      return res.status(402).json({
+        success: false,
+        message: 'Payment required. Please complete your payment to activate your account.',
+        paymentRequired: true
       });
     }
 

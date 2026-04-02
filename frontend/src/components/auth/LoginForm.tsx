@@ -7,6 +7,8 @@ import { Label } from '../ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { paymentApi } from '../../http/paymentHttp';
+import { extractTenantFromHostname } from '../../lib/tenant-utils';
 
 interface LoginFormProps {
   onSwitchToRegister: () => void;
@@ -27,6 +29,29 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onSwit
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const hashParams = new URLSearchParams(window.location.hash.substring(1));
+
+    // Handle payment success redirect from Stripe
+    if (params.get('payment') === 'success') {
+      const sessionId = params.get('session_id');
+      if (sessionId) {
+        setLoading(true);
+        const tenant = extractTenantFromHostname();
+        paymentApi.activateAfterPayment({ sessionId, tenant })
+          .then((result) => {
+            setSuccess(result.message || 'Payment confirmed! Your account is now active. Please sign in.');
+            // Clean up localStorage after successful activation
+            localStorage.removeItem('signup-data');
+            localStorage.removeItem('onboarding-state');
+          })
+          .catch((err) => {
+            setError('Failed to confirm payment. Please contact support if this issue persists.');
+          })
+          .finally(() => setLoading(false));
+      } else {
+        setSuccess('Payment successful! Please sign in to access your account.');
+      }
+      return;
+    }
 
     // Check for success messages in search params
     if (params.get('registered') === 'true') {

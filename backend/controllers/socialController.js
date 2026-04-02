@@ -72,6 +72,7 @@ export const connectSocialAccount = async (req, res) => {
 
     // Construct webhook URL
     const baseUrl = process.env.PUBLIC_BASE_URL || process.env.BACKEND_URL || 'http://localhost:3000';
+    const frontendUrl = process.env.FRONTEND_URL || baseUrl;
     const webhookUrl = `${baseUrl.replace(/\/+$/, '')}/api/social/webhook`;
 
     // Create hosted auth link using the correct SDK method
@@ -92,8 +93,8 @@ export const connectSocialAccount = async (req, res) => {
         providers: [provider], // Single provider array
         api_url: dsn,
         expiresOn: expiresOn,
-        success_redirect_url: `${baseUrl.replace(/\/+$/, '')}/social-integrations?status=success`,
-        failure_redirect_url: `${baseUrl.replace(/\/+$/, '')}/social-integrations?status=failure`,
+        success_redirect_url: `${frontendUrl.replace(/\/+$/, '')}/social-integrations?status=success`,
+        failure_redirect_url: `${frontendUrl.replace(/\/+$/, '')}/social-integrations?status=failure`,
         notify_url: webhookUrl,
         name: userId, // Pass userId so we can match it in the webhook
         ...(reconnect && existingAccountId ? { reconnect_account: existingAccountId } : {})

@@ -202,10 +202,10 @@ const storeCRMCredentials = async (userId, platform, tokens) => {
     account_name: tokens.account_name || `${platform} Account`
   };
 
-  // Deactivate any existing credentials for this platform
+  // Remove any existing credentials for this platform (to avoid unique constraint violations)
   await supabase
     .from('user_crm_credentials')
-    .update({ is_active: false })
+    .delete()
     .eq('user_id', userId)
     .eq('crm_platform', platform);
 
@@ -323,13 +323,12 @@ export const storeCRMAppCredentials = async (req, res) => {
       data = updateResult.data;
       error = updateResult.error;
     } else {
-      // Deactivate any existing active records for this platform (shouldn't happen due to constraint, but safety check)
+      // Remove any existing active records for this platform (to avoid unique constraint violations)
       await supabase
         .from('user_crm_app_credentials')
-        .update({ is_active: false })
+        .delete()
         .eq('user_id', userId)
-        .eq('crm_platform', platform)
-        .eq('is_active', true);
+        .eq('crm_platform', platform);
 
       // Insert new app credentials
       const insertResult = await supabase

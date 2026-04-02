@@ -36,6 +36,7 @@ export const CreateEmailCampaignDialog: React.FC<CreateEmailCampaignDialogProps>
     const [isScheduled, setIsScheduled] = useState(false);
     const [scheduledAt, setScheduledAt] = useState("");
     const [viewMode, setViewMode] = useState<"write" | "preview">("write");
+    const [signature, setSignature] = useState("");
 
     // Lists/Files (Mocked or fetched)
     const [csvFiles, setCsvFiles] = useState<{ id: string; original_filename: string }[]>([]);
@@ -130,6 +131,7 @@ export const CreateEmailCampaignDialog: React.FC<CreateEmailCampaignDialogProps>
                 name,
                 subject,
                 body,
+                signature: signature.trim() || null,
                 contactSource,
                 contactListId: contactSource === 'crm' ? contactListId : null,
                 csvFileId: contactSource === 'csv' ? csvFileId : null,
@@ -162,6 +164,7 @@ export const CreateEmailCampaignDialog: React.FC<CreateEmailCampaignDialogProps>
                 setPrompt("");
                 setIsScheduled(false);
                 setScheduledAt("");
+                setSignature("");
             } else {
                 throw new Error(data.message);
             }
@@ -293,26 +296,66 @@ export const CreateEmailCampaignDialog: React.FC<CreateEmailCampaignDialogProps>
                         ) : (
                             <div className="min-h-[300px] p-4 rounded-md border bg-muted/30 overflow-y-auto prose prose-sm max-w-none">
                                 {body ? (
-                                    <div
-                                        dangerouslySetInnerHTML={{
-                                            __html: body
-                                                .trim()
-                                                .replace(/&/g, '&amp;')
-                                                .replace(/</g, '&lt;')
-                                                .replace(/>/g, '&gt;')
-                                                .replace(/"/g, '&quot;')
-                                                .replace(/'/g, '&#039;')
-                                                .split(/\n\s*\n/)
-                                                .map(para => `<p style="margin-bottom: 1em;">${para.split('\n').join('<br />')}</p>`)
-                                                .join('')
-                                        }}
-                                    />
+                                    <>
+                                        <div
+                                            dangerouslySetInnerHTML={{
+                                                __html: body
+                                                    .trim()
+                                                    .replace(/&/g, '&amp;')
+                                                    .replace(/</g, '&lt;')
+                                                    .replace(/>/g, '&gt;')
+                                                    .replace(/"/g, '&quot;')
+                                                    .replace(/'/g, '&#039;')
+                                                    .split(/\n\s*\n/)
+                                                    .map(para => `<p style="margin-bottom: 1em;">${para.split('\n').join('<br />')}</p>`)
+                                                    .join('')
+                                            }}
+                                        />
+                                        {signature.trim() && (
+                                            <>
+                                                <hr className="my-4 border-muted-foreground/30" />
+                                                <div
+                                                    className="text-muted-foreground text-sm"
+                                                    dangerouslySetInnerHTML={{
+                                                        __html: signature
+                                                            .trim()
+                                                            .replace(/&/g, '&amp;')
+                                                            .replace(/</g, '&lt;')
+                                                            .replace(/>/g, '&gt;')
+                                                            .replace(/"/g, '&quot;')
+                                                            .replace(/'/g, '&#039;')
+                                                            .split('\n')
+                                                            .join('<br />')
+                                                    }}
+                                                />
+                                            </>
+                                        )}
+                                    </>
                                 ) : (
                                     <p className="text-muted-foreground italic">No content to preview</p>
                                 )}
                             </div>
                         )}
                         <p className="text-xs text-muted-foreground">Supported variables: {'{{first_name}}'}, {'{{last_name}}'}, {'{{email}}'}</p>
+                    </div>
+
+                    {/* Signature Box */}
+                    <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                            <Label>Signature</Label>
+                            <span className="text-xs text-muted-foreground">(Optional — appended to every email)</span>
+                        </div>
+                        <div className="rounded-md border bg-muted/20">
+                            <div className="px-3 py-2 border-b border-dashed border-muted-foreground/30">
+                                <span className="text-xs text-muted-foreground font-mono">-- (signature separator)</span>
+                            </div>
+                            <Textarea
+                                value={signature}
+                                onChange={(e) => setSignature(e.target.value)}
+                                className="min-h-[100px] border-0 bg-transparent focus-visible:ring-0 rounded-t-none resize-none"
+                                placeholder={`Best regards,\nJohn Smith\nSales Manager | Acme Corp\njohn@acme.com`}
+                            />
+                        </div>
                     </div>
                 </div>
 

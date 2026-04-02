@@ -46,6 +46,78 @@ const getStripeForTenant = async (tenantSlug) => {
     return new Stripe(admin.stripe_secret_key);
 };
 
+export const activateUserAfterPayment = async (req, res) => {
+    try {
+        const { sessionId, tenant } = req.body;
+
+        if (!sessionId) {
+            return res.status(400).json({ success: false, message: 'Session ID is required' });
+        }
+
+        // Retrieve the Stripe session using the correct tenant's key
+        const stripe = await getStripeForTenant(tenant || 'main');
+        let session;
+        try {
+            session = await stripe.checkout.sessions.retrieve(sessionId);
+        } catch (err) {
+            console.error('❌ Failed to retrieve Stripe session:', err.message);
+            return res.status(400).json({ success: false, message: 'Invalid or expired payment session' });
+        }
+
+        if (session.payment_status !== 'paid') {
+            return res.status(402).json({
+                success: false,
+                message: 'Payment not completed for this session'
+            });
+        }
+
+        const userId = session.metadata?.userId;
+
+        if (!userId || userId === 'new_user') {
+            return res.status(400).json({
+                success: false,
+                message: 'No user associated with this payment session'
+            });
+        }
+
+        // Activate the user account
+        const { data: updatedUser, error } = await supabase
+            .from('users')
+            .update({ status: 'Active' })
+            .eq('id', userId)
+            .eq('status', 'pending_payment')
+            .select()
+            .single();
+
+        if (error) {
+            console.error('❌ Error activating user:', error);
+            return res.status(500).json({ success: false, message: 'Failed to activate account' });
+        }
+
+        if (!updatedUser) {
+            // User might already be active (e.g., webhook fired first or duplicate call)
+            return res.status(200).json({
+                success: true,
+                message: 'Account is already active. Please sign in.'
+            });
+        }
+
+        console.log('✅ User activated after payment:', userId);
+
+        return res.status(200).json({
+            success: true,
+            message: 'Payment confirmed! Your account is now active. Please sign in.',
+            data: {
+                user: { id: updatedUser.id, email: updatedUser.email, status: updatedUser.status }
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Activate after payment error:', error);
+        return res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+};
+
 export const createCheckoutSession = async (req, res) => {
     try {
         const { planKey, successUrl, cancelUrl, customerEmail, userId } = req.body;

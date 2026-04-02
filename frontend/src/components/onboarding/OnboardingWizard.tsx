@@ -182,31 +182,20 @@ export const OnboardingWizard: React.FC = () => {
       const selectedPlan = plans.find(p => p.plan_key === data.plan);
       if (selectedPlan && selectedPlan.price > 0) {
         toast({
-          title: "Redirecting to Payment",
-          description: "Please wait while we redirect you to the secure checkout page...",
+          title: "Setting up your account...",
+          description: "Please wait while we prepare your checkout.",
         });
 
         // Save current onboarding state to restore after payment if needed
         localStorage.setItem('onboarding-state', JSON.stringify(data));
 
         try {
-          const checkoutSession = await paymentApi.createCheckoutSession({
-            planKey: data.plan,
-            successUrl: `${window.location.origin}/auth?registered=true&payment=success`,
-            cancelUrl: window.location.href, // Return here on cancel
-            customerEmail: signupData.email,
-            // Pass temp user data if needed, or we register after success?
-            // Strategy: We can register the user NOW, but mark as inactive?
-            // OR pass metadata to Stripe and register in webhook?
-            // Simpler approach for now: Register User FIRST, then redirect to pay.
-            // If they cancel payment, they have an account but no active sub.
-          });
-
-          // Register user first
           const tenantFromDomain = extractTenantFromHostname();
           const requestedTenant = tenantFromDomain !== 'main' ? tenantFromDomain : undefined;
 
-          // Create auth user via backend
+          // Step 1: Register user first with status 'pending_payment'.
+          // If the user already exists as pending_payment (cancelled a previous attempt),
+          // the backend returns their existing ID so payment can be retried.
           const registerResponse = await fetch(`${API_BASE_URL}/api/v1/auth/register`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -218,9 +207,10 @@ export const OnboardingWizard: React.FC = () => {
               phone: signupData.phone,
               whitelabel: signupData.whitelabel,
               slug: signupData.slug,
-              planKey: data.plan, // Pass the selected plan
+              planKey: data.plan,
               industry: data.industry || null,
-              tenant: requestedTenant
+              tenant: requestedTenant,
+              paymentPending: true
             })
           });
 
@@ -230,20 +220,19 @@ export const OnboardingWizard: React.FC = () => {
             throw new Error(registerResult.message || 'Registration failed');
           }
 
-          // If whitelabel, complete signup
-          if (signupData.whitelabel && signupData.slug && registerResult.data?.user?.id) {
-            await fetch(`${API_BASE_URL}/api/v1/users/complete-signup`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                user_id: registerResult.data.user.id,
-                slug: signupData.slug,
-                whitelabel: true
-              })
-            });
-          }
+          const registeredUserId = registerResult.data?.user?.id;
 
-          // Now redirect to Stripe
+          // Step 2: Create Stripe checkout session with the real user ID in metadata.
+          // The success URL includes {CHECKOUT_SESSION_ID} so we can verify payment on return.
+          const checkoutSession = await paymentApi.createCheckoutSession({
+            planKey: data.plan,
+            successUrl: `${window.location.origin}/auth?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+            cancelUrl: window.location.href,
+            customerEmail: signupData.email,
+            userId: registeredUserId
+          });
+
+          // Step 3: Redirect to Stripe. Account stays 'pending_payment' until payment completes.
           window.location.href = checkoutSession.url;
           return;
 

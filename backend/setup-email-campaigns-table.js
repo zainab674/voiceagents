@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS email_campaigns (
   name TEXT NOT NULL,
   subject TEXT NOT NULL,
   body TEXT NOT NULL,
+  signature TEXT,
   contact_source TEXT NOT NULL CHECK (contact_source IN ('csv', 'crm', 'manual')),
   contact_list_id UUID,
   csv_file_id UUID,
@@ -33,6 +34,9 @@ CREATE TABLE IF NOT EXISTS email_campaigns (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Add signature column if it doesn't exist (migration for existing tables)
+ALTER TABLE email_campaigns ADD COLUMN IF NOT EXISTS signature TEXT;
 
 -- Index for faster queries
 CREATE INDEX IF NOT EXISTS idx_email_campaigns_user_id ON email_campaigns(user_id);
