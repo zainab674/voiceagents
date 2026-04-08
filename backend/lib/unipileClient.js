@@ -65,7 +65,12 @@ export async function getUnipileClientForTenant(tenantSlugOrId = 'main', userId 
     throw new Error('Unipile is not configured. Please set DSN and access token in Website Settings.');
   }
 
-  return new UnipileClient(dsn, accessToken);
+  // Ensure DSN has a protocol prefix — the SDK rejects bare host:port strings
+  const normalizedDsn = dsn.startsWith('http://') || dsn.startsWith('https://')
+    ? dsn
+    : `https://${dsn}`;
+
+  return new UnipileClient(normalizedDsn, accessToken);
 }
 
 
